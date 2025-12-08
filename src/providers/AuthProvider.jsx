@@ -1,134 +1,171 @@
-import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
-import { getAccessToken } from "@/services/StorageService";
-import SSEService from "@/api/SSEService";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import {
+  loginUser,
+  logoutUser,
+  refreshToken,
+  registerUser,
+} from "@/api/AuthService";
+import {
+  setTokens,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  setExpiresAt,
+  getExpiresAt,
+} from "@/services/StorageService";
 
-
-const SSEContext = createContext({
-  connected: false,
-  lastMessage: null,
-  subscribeChannel: async () => {},
-  unsubscribeChannel: async () => {}
+// Auth context default shape
+export const AuthContext = createContext({
+  isAuthenticated: false,
+  login: async () => {},
+  logout: async () => {},
+  refresh: async () => {},
+  register: async () => {},
 });
 
-export function SSEProvider({ children }) {
-  const [connected, setConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState(null);
-  const subscribedChannelsRef = useRef(new Set());
-  const initRef = useRef(false);
-  const retryTimer = useRef(null);
-  const resetState = useCallback(() => {
-    setConnected(false);
-    setLastMessage(null);
-    subscribedChannelsRef.current.clear();
-    if (retryTimer.current) {
-      clearTimeout(retryTimer.current);
-      retryTimer.current = null;
+export function AuthProvider({ children }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(!!getAccessToken());
+  const refreshTimerId = useRef(null);
+
+  const clearSession = useCallback(() => {
+    clearTokens();
+    if (refreshTimerId.current) {
+      clearTimeout(refreshTimerId.current);
+      refreshTimerId.current = null;
     }
-    SSEService.close();
+    setIsAuthenticated(false);
   }, []);
-  const scheduleRetry = useCallback((delay = 1000) => {
-    if (retryTimer.current) {
-      clearTimeout(retryTimer.current);
-    }
-    retryTimer.current = setTimeout(() => {
-      connect();
-    }, delay);
-  }, []);
-  const connect = useCallback(() => {
-    const token = getAccessToken();
-    if (!token) {
-      console.warn("[SSEProvider] No token found, will retry...");
-      setConnected(false);
-      scheduleRetry(2000);
-      return;
-    }
-    SSEService.connect();
-    SSEService.onOpen(() => {
-      console.log("[SSEProvider] onopen => connected!");
-      if (retryTimer.current) {
-        clearTimeout(retryTimer.current);
-        retryTimer.current = null;
-      }
-      setConnected(true);
-    });
-    SSEService.onError((err) => {
-      console.error("[SSEProvider] onerror =>", err);
-      setConnected(false);
-      SSEService.close();
-      scheduleRetry(1000);
-    });
-    SSEService.onMessage((evt) => {
-      try {
-        const parsed = JSON.parse(evt.data);
-        console.log("[SSEProvider] message:", evt.data);
-        setLastMessage({
-          event: parsed.event,
-          channel: parsed.channel,
-          data: parsed.data
-        });
-      } catch (error) {
-        console.warn(
-          "[SSEProvider] Failed to parse SSE data =>",
-          evt.data,
-          error
-        );
-      }
-    });
-  }, [scheduleRetry]);
 
-  useEffect(() => {
-    if (!initRef.current) {
-      initRef.current = true;
-      connect();
-    }
-    return () => {
-      if (retryTimer.current) {
-        clearTimeout(retryTimer.current);
-      }
-      resetState();
-    };
-  }, [connect, resetState]);
-
-  subscribeChannel = useCallback(
-    async (channel) => {
-      if (!connected) {
-        console.warn(`[SSEProvider] Not connected yet, cannot subscribe to ${channel}`);
-        return;
-      }
-      const trimmed = channel.trim();
-      if (!trimmed) return;
-      if (subscribedChannelsRef.current.has(trimmed)) {
-        return;
-      }
-      try {
-        await SSEService.subscribe(trimmed);
-        subscribedChannelsRef.current.add(trimmed);
-      } catch (err) {
-        console.error(`[SSEProvider] Failed to subscribe ${trimmed} =>`, err);
-      }
-    }, [connected]);
-
-  const unsubscribeChannel = useCallback(async (channel) => {
-    const trimmed = channel.trim();
-    if (!subscribedChannelsRef.current.has(trimmed)) {
-      return
-    }
+  const refreshTokens = useCallback(async () => {
     try {
-      await SSEService.unsubscribe(trimmed);
-      subscribedChannelsRef.current.delete(trimmed);
+      const currentRefreshToken = getRefreshToken();
+      if (!currentRefreshToken) {
+        throw new Error("No refresh token in localStorage");
+      }
+      const { access_token, refresh_token, expires_in } = await refreshToken();
+      doSessionLogin(access_token, refresh_token, expires_in);
     } catch (err) {
-      console.error(
-        `[SSEProvider] Failed to unsubscribe ${trimmed} =>`,
-        err
-      );
+      console.error("[AuthProvider] Token refresh failed:", err);
+      clearSession();
     }
-  }, []);
+  }, [clearSession]);
 
-  const value = { connected, lastMessage, subscribeChannel, unsubscribeChannel };
+  const doSessionLogin = useCallback(
+    (accessToken, newRefreshToken, expiresIn) => {
+      setTokens(accessToken, newRefreshToken);
+      const expiresAt = Date.now() + expiresIn * 1000;
+      setExpiresAt(expiresAt);
+      setIsAuthenticated(true);
 
-  return <SSEContext.Provider value={value}>{children}</SSEContext.Provider>;
+      // Clear any existing timer
+      if (refreshTimerId.current) {
+        clearTimeout(refreshTimerId.current);
+      }
+
+      // Schedule refresh a bit before expiry (30s early)
+      const delayBeforeRefresh = expiresAt - Date.now() - 30000;
+      const safeDelay = Math.max(0, delayBeforeRefresh);
+      refreshTimerId.current = setTimeout(() => {
+        refreshTokens();
+      }, safeDelay);
+    },
+    [refreshTokens]
+  );
+
+  const login = useCallback(
+    async (email, password) => {
+      const { access_token, refresh_token, expires_in } = await loginUser({
+        email,
+        password,
+      });
+      doSessionLogin(access_token, refresh_token, expires_in);
+    },
+    [doSessionLogin]
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error("[AuthProvider] Logout error (ignored):", err);
+    }
+    clearSession();
+  }, [clearSession]);
+
+  const register = useCallback(
+    async (
+      email,
+      password,
+      first_name,
+      last_name,
+      new_company_name,
+      new_wms_name,
+      company_id,
+      wms_id
+    ) => {
+      await registerUser({
+        email,
+        password,
+        first_name,
+        last_name,
+        new_company_name,
+        new_wms_name,
+        company_id,
+        wms_id,
+      });
+    },
+    []
+  );
+
+  /**
+   * On mount: If tokens are in localStorage, schedule a refresh
+   * (or refresh immediately if near expiry).
+   */
+  useEffect(() => {
+    const existingToken = getAccessToken();
+    const existingExpiresAt = getExpiresAt();
+
+    if (existingToken && existingExpiresAt) {
+      const now = Date.now();
+      const timeLeft = existingExpiresAt - now - 30000; // 30s early
+
+      if (timeLeft > 0) {
+        // Schedule a timer
+        refreshTimerId.current = setTimeout(() => {
+          refreshTokens();
+        }, timeLeft);
+      } else {
+        // Already expired or near expiry => refresh immediately
+        refreshTokens();
+      }
+
+      setIsAuthenticated(true);
+    }
+
+    return () => {
+      // Clear any leftover timer
+      if (refreshTimerId.current) {
+        clearTimeout(refreshTimerId.current);
+      }
+    };
+  }, [refreshTokens]);
+
+  return (
+    <AuthContext.Provider
+      value={{ isAuthenticated, login, logout, refresh: refreshTokens, register }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export function useSSEContext() {
-  return useContext(SSEContext);
+export function useAuth() {
+  return useContext(AuthContext);
 }

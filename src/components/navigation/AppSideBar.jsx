@@ -1,6 +1,6 @@
 import { Sidebar, SidebarContent } from "@/components/ui/sidebar"
 
-export function AppSidebar() {
+export function AppSideBar() {
   return (
     <Sidebar>
       <SidebarContent />

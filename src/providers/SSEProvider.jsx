@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useCallback, useEffect, useState, useRef } from "react";
 import { getAccessToken } from "@/services/StorageService";
-import SSEProvider from "@/api/SSEService";
+import SSEService from "@/api/SSEService";
 import { useAuth } from "@/providers/AuthProvider";
 
 const SSEContext = createContext({

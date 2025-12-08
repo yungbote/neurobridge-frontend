@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/providers/AuthProvider";
+import { useSSEContext } from "@/providers/SSEProvider";
 import { getMe } from "@/api/UserService";
 
-const userContext = createContext({
+const UserContext = createContext({
   user: null,
   loading: false,
   error: null,
@@ -11,6 +12,7 @@ const userContext = createContext({
 
 export function UserProvider({ children }) {
   const { isAuthenticated } = useAuth();
+  const { lastMessage } = useSSEContext();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
