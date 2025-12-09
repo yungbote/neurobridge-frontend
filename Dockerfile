@@ -1,4 +1,4 @@
-FROM node:20-apline as build
+FROM node:20-alpine as build
 WORKDIR /app
 
 ARG VITE_API_BASE_URL

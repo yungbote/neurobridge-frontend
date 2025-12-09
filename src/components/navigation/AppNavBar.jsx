@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { LoginDialog } from "@/components/auth/LoginDialog";
+import { SignupDialog } from "@/components/auth/SignupDialog";
 import { AppLogo } from "@/components/app/AppLogo";
 
 export function AppNavBar() {
@@ -26,6 +27,7 @@ export function AppNavBar() {
         </div>
 
         <LoginDialog triggerLabel="Login" />
+        <SignupDialog triggerLabel="Signup" />
 
         {/*<DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -55,4 +57,13 @@ export function AppNavBar() {
     </nav>
   )
 }
+
+
+
+
+
+
+
+
+
 
