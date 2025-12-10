@@ -21,7 +21,7 @@ function splitName(fullName) {
   };
 }
 
-export function SignupDialog({ className, triggerLabel = "Signup", ...props }) {
+export function SignupDialog({ className, triggerLabel = "Sign up", onSwitchToLogin, ...props }) {
   const { register } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -64,12 +64,12 @@ export function SignupDialog({ className, triggerLabel = "Signup", ...props }) {
   return (
     <Dialog {...props}>
       <DialogTrigger asChild>
-        <Button variant="outline">{triggerLabel}</Button>
+        <Button variant="outline" className="rounded-3xl">{triggerLabel}</Button>
       </DialogTrigger>
 
       <DialogContent className={cn("max-w-md rounded-3xl", className)}>
         <div className="flex flex-col gap-6">
-          <Card className="border-none shadow-none">
+          <Card className="bg-transparent border-none shadow-none">
             <CardHeader className="text-center">
               <CardTitle className="text-xl">Create your account</CardTitle>
               <CardDescription>
@@ -131,7 +131,10 @@ export function SignupDialog({ className, triggerLabel = "Signup", ...props }) {
                       {submitting ? "Creating account..." : "Create Account"}
                     </Button>
                     <FieldDescription className="mt-2 text-center">
-                      Already have an account? <a href="#">Sign in</a>
+                      Already have an account?{" "}
+                      <button type="button" className="underline underline offset-4" onClick={() => { onSwitchToLogin?.(); }}>
+                        Sign in
+                      </button>
                     </FieldDescription>
                   </Field>
 

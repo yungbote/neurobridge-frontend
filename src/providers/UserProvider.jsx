@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/providers/AuthProvider";
 import { useSSEContext } from "@/providers/SSEProvider";
-import { getMe } from "@/api/UserService";
+import { getMe, changeName as apiChangeName } from "@/api/UserService";
 
 const UserContext = createContext({
   user: null,
   loading: false,
   error: null,
-  reload: async () => {}
+  reload: async () => {},
+  changeName: async () => {},
 });
 
 export function UserProvider({ children }) {
@@ -70,11 +71,16 @@ export function UserProvider({ children }) {
     });
   }, [lastMessage]);
 
+  const changeName = useCallback(async (data) => {
+    await apiChangeName(data); 
+  }, []);
+
   const value = {
     user,
     loading,
     error,
-    reload: loadUser
+    reload: loadUser,
+    changeName,
   };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

@@ -16,3 +16,16 @@ export async function getMe() {
   return { user };
 }
 
+export async function changeName(data) {
+  await axiosClient.patch("/user/name", data);
+}
+
+
+
+
+
+
+
+
+
+

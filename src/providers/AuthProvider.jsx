@@ -100,29 +100,10 @@ export function AuthProvider({ children }) {
   }, [clearSession]);
 
   const register = useCallback(
-    async (
-      email,
-      password,
-      first_name,
-      last_name,
-      new_company_name,
-      new_wms_name,
-      company_id,
-      wms_id
-    ) => {
-      await registerUser({
-        email,
-        password,
-        first_name,
-        last_name,
-        new_company_name,
-        new_wms_name,
-        company_id,
-        wms_id,
-      });
-    },
-    []
-  );
+    async ({ email, password, first_name, last_name }) => {
+      await registerUser({ email, password, first_name, last_name });
+      await login(email, password);
+    }, [login]);
 
   /**
    * On mount: If tokens are in localStorage, schedule a refresh
@@ -169,3 +150,13 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+
+
+
+
+
+
+
+
+
+

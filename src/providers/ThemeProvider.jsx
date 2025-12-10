@@ -1,50 +1,103 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Moon, Sun } from "lucide-react";
 
-const ThemeProviderContext = createContext({ theme: 'system', setTheme: () => null });
-export function ThemeProvider({
-  children,
-  defaultTheme = 'system',
-  storageKey = 'vite-ui-theme',
-  ...props
-}) {
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem(storageKey) ||
-    defaultTheme
-  );
+const ThemeContext = createContext({
+  theme: "system",
+  setTheme: () => {},
+  effectiveTheme: "light",
+});
+
+function getSystemTheme() {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+export function ThemeProvider({ children, defaultTheme = "system", storageKey = "vite-ui-theme" }) {
+  const [theme, setThemeState] = useState(defaultTheme);
+  const [systemTheme, setSystemTheme] = useState(getSystemTheme);
 
   useEffect(() => {
-    const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
-        .matches
-        ? 'dark'
-        : 'light';
-      root.classList.add(systemTheme);
-      return;
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored === "light" || stored === "dark" || stored === "system") {
+      setThemeState(stored);
+    } else {
+      setThemeState(defaultTheme);
     }
-    root.classList.add(theme);
-  }, [theme]);
+  }, [defaultTheme, storageKey]);
+  
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      setSystemTheme(media.matches ? "dark" : "light");
+    };
+    handler();
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
 
-  const value = {
-    theme,
-    setTheme: (newTheme) => {
-      localStorage.setItem(storageKey, newTheme);
-      setTheme(newTheme);
-    },
-  };
+  const effectiveTheme = theme === "system" ? systemTheme : theme;
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (effectiveTheme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    root.setAttribute("data-theme", effectiveTheme);
+  }, [effectiveTheme]);
+
+  function setTheme(next) {
+    setThemeState(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, next);
+    }
+  }
+
+  const value = { theme, setTheme, effectiveTheme };
 
   return (
-    <ThemeProviderContext.Provider value={value} {...props}>
-      {children}
-    </ThemeProviderContext.Provider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 }
 
-export const useTheme = () => {
-  const context = useContext(ThemeProviderContext);
-  if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+
+export function ThemeToggle() {
+  const { effectiveTheme, setTheme } = useTheme();
+  const isDark = effectiveTheme === "dark";
+  
+  function handleClick() {
+    setTheme(isDark ? "light" : "dark");
   }
-  return context;
-};
+  
+  return (
+    <Button
+      variant="outline" 
+      size="icon" 
+      onClick={handleClick} 
+      aria-label="Toggle theme"
+      className="rounded-3xl"
+    >
+      { isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" /> }
+    </Button>
+  );
+}
+
+
+
+
+
+
+
+
+
+

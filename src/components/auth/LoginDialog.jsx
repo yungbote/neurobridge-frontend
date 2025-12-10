@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
-export function LoginDialog({ className, triggerLabel = "Login", ...props }) {
+export function LoginDialog({ className, triggerLabel = "Login", onSwitchToSignup, ...props }) {
   const { login } = useAuth();
   const { reload } = useUser();
   const [email, setEmail] = useState("");
@@ -43,7 +43,7 @@ export function LoginDialog({ className, triggerLabel = "Login", ...props }) {
   return (
     <Dialog {...props}>
       <DialogTrigger asChild>
-        <Button variant="outline">{triggerLabel}</Button>
+        <Button variant="default" className="rounded-3xl">{triggerLabel}</Button>
       </DialogTrigger>
 
       <DialogContent className={cn("max-w-md rounded-3xl", className)}>
@@ -55,7 +55,7 @@ export function LoginDialog({ className, triggerLabel = "Login", ...props }) {
         </DialogHeader>*/}
 
         <div className="flex flex-col gap-6">
-          <Card className="border-none shadow-none">
+          <Card className="bg-transparent border-none shadow-none">
             <CardHeader className="text-center">
               <CardTitle className="text-xl">Welcome back</CardTitle>
               <CardDescription>Login with your Apple or Google Account </CardDescription>
@@ -85,7 +85,7 @@ export function LoginDialog({ className, triggerLabel = "Login", ...props }) {
                     </Button>
                   </Field>
 
-                  <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
+                  <FieldSeparator className="*:data-[slot=field-separator-content]:bg-transparent">
                     Or continue with
                   </FieldSeparator>
 
@@ -108,7 +108,10 @@ export function LoginDialog({ className, triggerLabel = "Login", ...props }) {
                       {submitting ? "Logging in..." : "Login"}
                     </Button>
                     <FieldDescription className="mt-2 text-center">
-                      Don&apos;t have an account ? <a href="#">Sign up</a>
+                      Don&apos;t have an account ?{" "}
+                      <button type="button" className="underline underline-offset-4" onClick={() => { onSwitchToSignup?.(); }}>
+                        Sign up
+                      </button>
                     </FieldDescription>
                   </Field>
                   { error && (

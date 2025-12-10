@@ -4,6 +4,24 @@
 /* allow dark mode via `.dark` class on <html> or <body> */
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "Riforma";
+  src: url("/fonts/Riforma-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.debug-riforma {
+  font-family: "Riforma", cursive;
+}
+
+@layer utilities {
+  .font-brand {
+    font-family: "Riforma", system-ui, sans-serif;
+  }
+}
+
 /* === shadcn theme variables (light mode) === */
 :root {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
