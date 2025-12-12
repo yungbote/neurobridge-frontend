@@ -45,6 +45,7 @@ export function UserProvider({ children }) {
 
   useEffect(() => {
     if (!lastMessage) return;
+    console.log(lastMessage);
     setUser((prev) => {
       if (!prev) return prev;
       if (lastMessage.channel != prev.id) return prev;

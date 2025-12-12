@@ -82,9 +82,11 @@ export function SSEProvider({ children }) {
   useEffect(() => {
     if (!initRef.current) {
       initRef.current = true;
+      console.log("[SSEProvider] mounting, calling connect()");
       connect();
     }
     return () => {
+      console.log("[SSEProvider] unmounting, closing SSE");
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
       }

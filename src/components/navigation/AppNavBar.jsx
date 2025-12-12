@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, CircleDashed, BadgePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,6 +13,7 @@ import { AppLogo } from "@/components/app/AppLogo";
 import { ThemeToggle } from "@/providers/ThemeProvider";
 import { MarketingNav } from "@/components/navigation/MarketingNav";
 import { UserAvatar } from "@/components/app/UserAvatar";
+import { FileUploadDialog } from "@/components/app/UploadFilesDialog";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUser } from "@/providers/UserProvider";
 
@@ -31,7 +32,7 @@ export function AppNavBar() {
       <div className="mx-auto flex h-13 items-center px-6">
         {/* LEFT: Sidebar Trigger + Logo */}
         <div className="flex items-center gap-3">
-          {isAuthenticated && !(<SidebarTrigger className="h-10 w-10" />)}
+          {isAuthenticated && (<SidebarTrigger className="h-10 w-10" />)}
           <div className="flex items-center justify-center">
             <AppLogo className="cursor-pointer" />
           </div>
@@ -70,17 +71,30 @@ export function AppNavBar() {
         {isAuthenticated && !userLoading && user && (
           <div className="ml-auto flex items-center gap-3">
             {location.pathname === "/" && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="group data-[state=open]:bg-accent data-[state=open]:text-accent-foreground justify-between"
-                  >
-                    <span>In Progress</span>
-                    <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </DropdownMenu>
+              <>
+                <FileUploadDialog
+                  trigger={
+                    <Button variant="ghost" size="sm" className="gap-2">
+                      <BadgePlus className="size-5" />
+                      New Course
+                    </Button>
+                  }
+                />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="flex group data-[state=open]:bg-accent data-[state=open]:text-accent-foreground justify-between items-center"
+                    >
+                      <div className="flex gap-1 items-center">
+                        <CircleDashed className="size-5" />
+                        <span>In Progress</span>
+                      </div>
+                      <ChevronDownIcon className="size-5 transition-transform group-data-[state=open]:rotate-180" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </DropdownMenu>
+              </>
             )}
             <UserAvatar />
           </div>

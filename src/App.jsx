@@ -7,7 +7,7 @@ const App = () => {
   return (
     <BrowserRouter>
       <Layout>
-        <div className="h-full flex justify-center">
+        <div className="min-h-screen overflow-hidden h-full flex justify-center">
           <main className="pt-8 md:pt-12 lg:pt-16">
             <AppRouter />
           </main>

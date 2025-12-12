@@ -7,7 +7,7 @@ export default function Layout({ children }) {
   return (
     <SidebarProvider>
       <div className="flex w-full">
-        {isAuthenticated && !(<AppSideBar />)}
+        {isAuthenticated && (<AppSideBar />)}
         <div className="flex-1 flex flex-col">
           <AppNavBar />
           <main className="flex-1">
