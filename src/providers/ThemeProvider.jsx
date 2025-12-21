@@ -1,7 +1,27 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Moon, Sun } from "lucide-react";
+import { useAuth } from "@/providers/AuthProvider";
+import { useUser } from "@/providers/UserProvider";
 
+
+const VALID = new Set(["light", "dark", "system"]);
+
+export function ThemeSync() {
+  const { isAuthenticated } = useAuth();
+  const { user } = useUser();
+  const { theme, setTheme } = useTheme();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const pref = user?.preferredTheme;
+    if (!pref || !VALID.has(pref)) return;
+    if (theme !== pref) {
+      setTheme(pref);
+    }
+  }, [isAuthenticated, user?.preferredTheme, theme, setTheme]);
+  return null;
+}
 const ThemeContext = createContext({
   theme: "system",
   setTheme: () => {},

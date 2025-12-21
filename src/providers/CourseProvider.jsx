@@ -4,35 +4,109 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
 import { useAuth } from "@/providers/AuthProvider";
 import { useUser } from "@/providers/UserProvider";
 import { useSSEContext } from "@/providers/SSEProvider";
-
-import {
-  listCourses,
-  mapCourse,
-  getCourseGeneration,
-  isCourseGenerating,
-} from "@/api/CourseService";
-import { uploadMaterialSet as apiUploadMaterialSet } from "@/api/MaterialService";
+import axiosClient from "@/api/AxiosClient";
+import { uploadCourseMaterials as apiUploadCourseMaterials } from "@/api/CourseService";
 
 const CourseContext = createContext({
   courses: [],
-  coursesWithGeneration: [], // NEW: merged view for UI
   loading: false,
   error: null,
   reload: async () => {},
+  getById: () => null,
   uploadMaterialSet: async () => {},
-  generationByCourseId: {}, // { [courseId]: { runId, stage, progress, status, error, message? } }
-  generationByRunId: {}, // { [runId]: { courseId, stage, progress, status, error, message? } }
 });
 
-function normalizeEventName(e) {
-  return String(e || "").trim();
+function upsertById(list, next, opts = {}) {
+  const replace = Boolean(opts.replace);
+  if (!next?.id) return list;
+
+  const idx = list.findIndex((c) => c?.id === next.id);
+  if (idx === -1) return [next, ...list];
+
+  const out = list.slice();
+  out[idx] = replace ? next : { ...out[idx], ...next };
+  return out;
+}
+
+function attachJobFields(course, { job, stage, progress, message, status } = {}) {
+  if (!course) return course;
+
+  const jobId = job?.id ?? course.jobId;
+  const jobType = job?.job_type ?? job?.jobType ?? course.jobType;
+
+  const jobStatus = status ?? job?.status ?? course.jobStatus;
+  const jobStage = stage ?? job?.stage ?? course.jobStage;
+
+  const jobProgress =
+    typeof progress === "number"
+      ? progress
+      : typeof job?.progress === "number"
+        ? job.progress
+        : course.jobProgress ?? 0;
+
+  const jobMessage = message ?? course.jobMessage ?? "";
+
+  return {
+    ...course,
+    jobId,
+    jobType,
+    jobStatus,
+    jobStage,
+    jobProgress,
+    jobMessage,
+  };
+}
+
+function stripJobFields(course) {
+  if (!course) return course;
+  // eslint-disable-next-line no-unused-vars
+  const { jobId, jobType, jobStatus, jobStage, jobProgress, jobMessage, ...rest } =
+    course;
+  return rest;
+}
+
+// --- READY detection (works whether metadata is object or stringified) ---
+function getMetaStatus(course) {
+  const m = course?.metadata;
+  if (!m) return "";
+  if (typeof m === "object") return String(m.status || "").toLowerCase();
+  if (typeof m === "string") {
+    try {
+      const parsed = JSON.parse(m);
+      return String(parsed?.status || "").toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+function isReady(course) {
+  return getMetaStatus(course) === "ready";
+}
+
+// --- finalize locally on JobDone (NO refetch) ---
+function markCourseReadyLocally(course) {
+  if (!course) return course;
+
+  const meta =
+    course.metadata && typeof course.metadata === "object"
+      ? { ...course.metadata }
+      : {};
+
+  meta.status = "ready";
+
+  return {
+    ...course,
+    metadata: meta,
+    updated_at: course.updated_at ?? new Date().toISOString(),
+  };
 }
 
 export function CourseProvider({ children }) {
@@ -41,339 +115,251 @@ export function CourseProvider({ children }) {
   const { lastMessage } = useSSEContext();
 
   const [courses, setCourses] = useState([]);
-  const [generationByCourseId, setGenerationByCourseId] = useState({});
-  const [generationByRunId, setGenerationByRunId] = useState({});
-
-  // IMPORTANT: ref for generationByRunId to avoid effect dependency loops
-  const generationByRunIdRef = useRef({});
-  useEffect(() => {
-    generationByRunIdRef.current = generationByRunId;
-  }, [generationByRunId]);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const upsertGeneration = useCallback((patch) => {
-    const runId = patch?.runId || null;
-    const courseId = patch?.courseId || null;
-
-    if (runId) {
-      setGenerationByRunId((prev) => {
-        const current = prev[runId] || {};
-        const next = { ...current, ...patch };
-
-        if (typeof next.progress === "number") {
-          next.progress = Math.max(0, Math.min(100, next.progress));
-        }
-
-        const same =
-          current.runId === next.runId &&
-          current.courseId === next.courseId &&
-          current.status === next.status &&
-          current.stage === next.stage &&
-          current.progress === next.progress &&
-          current.error === next.error &&
-          current.message === next.message;
-
-        if (same) return prev;
-        return { ...prev, [runId]: next };
-      });
-    }
-
-    if (courseId) {
-      setGenerationByCourseId((prev) => {
-        const current = prev[courseId] || {};
-        const next = { ...current, ...patch };
-
-        if (typeof next.progress === "number") {
-          next.progress = Math.max(0, Math.min(100, next.progress));
-        }
-
-        const same =
-          current.runId === next.runId &&
-          current.courseId === next.courseId &&
-          current.status === next.status &&
-          current.stage === next.stage &&
-          current.progress === next.progress &&
-          current.error === next.error &&
-          current.message === next.message;
-
-        if (same) return prev;
-        return { ...prev, [courseId]: next };
-      });
-    }
-  }, []);
-
-  const hydrateGeneration = useCallback(
-    async (loadedCourses) => {
-      const generating = (loadedCourses || []).filter((c) =>
-        isCourseGenerating(c),
-      );
-      if (generating.length === 0) return;
-
-      const results = await Promise.allSettled(
-        generating.map((c) => getCourseGeneration(c.id)),
-      );
-
-      results.forEach((res, idx) => {
-        if (res.status !== "fulfilled") return;
-        const run = res.value;
-        const courseId = generating[idx]?.id;
-
-        if (!run || !run.id || !courseId) return;
-
-        upsertGeneration({
-          runId: run.id,
-          courseId,
-          status: run.status || "running",
-          stage: run.stage || null,
-          progress: typeof run.progress === "number" ? run.progress : 0,
-          error: run.error || null,
-          message: null,
-        });
-      });
-    },
-    [upsertGeneration],
-  );
-
   const loadCourses = useCallback(async () => {
-    if (!isAuthenticated) {
-      setCourses([]);
-      setError(null);
-      setLoading(false);
-      setGenerationByCourseId({});
-      setGenerationByRunId({});
-      return;
-    }
+    if (!isAuthenticated) return;
 
     try {
       setLoading(true);
       setError(null);
 
-      const loadedCourses = await listCourses();
-      setCourses(loadedCourses);
+      const resp = await axiosClient.get("/courses");
+      const data = resp?.data ?? resp; // handles interceptors returning data directly
+      const raws = data?.courses ?? [];
 
-      // Rehydrate generation state so refresh doesn't lose progress
-      await hydrateGeneration(loadedCourses);
+      setCourses(Array.isArray(raws) ? raws : []);
     } catch (err) {
-      console.debug("[CourseProvider] Failed to load courses:", err);
+      console.error("[CourseProvider] Failed to load courses:", err);
       setError(err);
       setCourses([]);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, hydrateGeneration]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setCourses([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     loadCourses();
   }, [isAuthenticated, loadCourses]);
 
-  // SSE merge
   useEffect(() => {
     if (!lastMessage) return;
-    if (!user) return;
+    if (!user?.id) return;
 
-    const { channel, event, data } = lastMessage;
-    if (channel !== user.id) return;
+    if (lastMessage.channel !== user.id) return;
 
-    const ev = normalizeEventName(event);
+    const event = String(lastMessage.event || "").toLowerCase();
+    const data = lastMessage.data || {};
 
-    // ---- 1) Course created (initial placeholder course) ----
-    if (
-      ev === "UserCourseCreated" ||
-      ev === "USERCOURSECREATED" ||
-      ev === "CourseCreated"
-    ) {
-      const raw = data?.course || data;
-      const course = mapCourse(raw);
-      if (!course?.id) return;
+    setCourses((prev) => {
+      // --- UserCourseCreated ---
+      if (event === "usercoursecreated") {
+        const incomingCourse = data.course;
+        if (!incomingCourse?.id) return prev;
 
-      setCourses((prev) => {
-        const idx = prev.findIndex((c) => c.id === course.id);
-        if (idx === -1) return [...prev, course];
-        const next = [...prev];
-        next[idx] = { ...next[idx], ...course };
-        return next;
-      });
+        const next = data.job
+          ? attachJobFields(incomingCourse, {
+              job: data.job,
+              status: data.job?.status,
+              stage: data.job?.stage,
+              progress: data.job?.progress,
+              message: "Starting generation…",
+            })
+          : incomingCourse;
 
-      const run = data?.run;
-      if (run?.id) {
-        upsertGeneration({
-          runId: run.id,
-          courseId: course.id,
-          status: run.status || "queued",
-          stage: run.stage || "ingest",
-          progress: typeof run.progress === "number" ? run.progress : 0,
-          error: run.error || null,
-        });
+        // If snapshot already says ready, end overlay immediately
+        if (isReady(next)) {
+          return upsertById(prev, stripJobFields(next), { replace: true });
+        }
+        return upsertById(prev, next);
       }
 
-      return;
-    }
+      // --- CourseGenerationProgress ---
+      if (event === "coursegenerationprogress") {
+        const courseId = data.course_id ?? data.course?.id;
+        if (!courseId) return prev;
 
-    // ---- 2) Generation progress ----
-    if (ev === "CourseGenerationProgress") {
-      const runId = data?.run_id || data?.runId || data?.id;
-      const stage = data?.stage || null;
-      const progress = typeof data?.progress === "number" ? data.progress : null;
+        const existing = prev.find((c) => c?.id === courseId);
+        const base = data.course ?? existing ?? { id: courseId };
 
-      const known = runId ? generationByRunIdRef.current[runId] : null;
-      const courseId = data?.course_id || data?.courseId || known?.courseId || null;
+        const next = attachJobFields(base, {
+          job: data.job,
+          status: data.job?.status ?? "running",
+          stage: data.stage,
+          progress: typeof data.progress === "number" ? data.progress : undefined,
+          message: data.message,
+        });
 
-      upsertGeneration({
-        runId,
-        courseId,
-        status: "running",
-        stage,
-        progress,
-        message: data?.message || null,
-      });
+        // If backend includes ready snapshot (sometimes happens), end overlay
+        if (isReady(next)) {
+          return upsertById(prev, stripJobFields(next), { replace: true });
+        }
+        return upsertById(prev, next);
+      }
 
-      return;
-    }
+      // --- CourseGenerationFailed ---
+      if (event === "coursegenerationfailed") {
+        const courseId = data.course_id ?? data.course?.id;
+        if (!courseId) return prev;
 
-    // ---- 3) Generation done ----
-    if (ev === "CourseGenerationDone") {
-      const runId = data?.run_id || data?.runId;
-      const known = runId ? generationByRunIdRef.current[runId] : null;
-      const courseId = data?.course_id || data?.courseId || known?.courseId || null;
+        const existing = prev.find((c) => c?.id === courseId);
+        const base = data.course ?? existing ?? { id: courseId };
 
-      upsertGeneration({
-        runId,
-        courseId,
-        status: "succeeded",
-        stage: "done",
-        progress: 100,
-        error: null,
-      });
+        const next = attachJobFields(base, {
+          job: data.job,
+          status: "failed",
+          stage: data.stage,
+          progress: typeof data.progress === "number" ? data.progress : undefined,
+          message: data.error || "Generation failed",
+        });
 
-      loadCourses();
-      return;
-    }
+        return upsertById(prev, next);
+      }
 
-    // ---- 4) Generation failed ----
-    if (ev === "CourseGenerationFailed") {
-      const runId = data?.run_id || data?.runId;
-      const known = runId ? generationByRunIdRef.current[runId] : null;
-      const courseId = data?.course_id || data?.courseId || known?.courseId || null;
+      // --- CourseGenerationDone ---
+      if (event === "coursegenerationdone") {
+        const courseId = data.course_id ?? data.course?.id;
+        if (!courseId) return prev;
 
-      upsertGeneration({
-        runId,
-        courseId,
-        status: "failed",
-        stage: data?.stage || "unknown",
-        error: data?.error || "Generation failed",
-      });
-    }
-  }, [lastMessage, user, loadCourses, upsertGeneration]);
+        const existing = prev.find((c) => c?.id === courseId);
+        const base = data.course ?? existing ?? { id: courseId };
 
-  // Upload: optimistically create a “generating” course entry so UI updates immediately
+        // Strip transient job fields on done
+        const next = stripJobFields(base);
+        return upsertById(prev, stripJobFields(next), { replace: true });
+      }
+
+      // --- JobDone fallback (NO refetch) ---
+      if (event === "jobdone") {
+        const job = data.job;
+        const jobType = String(job?.job_type ?? job?.jobType ?? "").toLowerCase();
+        if (jobType !== "course_build") return prev;
+
+        // resolve courseId from entity_id OR payload.course_id
+        let courseId = job?.entity_id ?? job?.entityId ?? null;
+        if (!courseId) {
+          const payload = job?.payload;
+          if (payload && typeof payload === "object") {
+            courseId = payload.course_id ?? payload.courseId ?? null;
+          } else if (typeof payload === "string") {
+            try {
+              const parsed = JSON.parse(payload);
+              courseId = parsed?.course_id ?? parsed?.courseId ?? null;
+            } catch {
+              // ignore malformed JSON
+            }
+          }
+        }
+        if (!courseId) return prev;
+
+        const existing = prev.find((c) => c?.id === courseId);
+        if (!existing) return prev;
+
+        // finalize locally: mark ready + strip overlay fields
+        const finalized = stripJobFields(markCourseReadyLocally(existing));
+        return upsertById(prev, finalized, { replace: true });
+      }
+
+      return prev;
+    });
+  }, [lastMessage, user?.id]);
+
+  const getById = useCallback(
+    (id) => courses.find((c) => c?.id === id) ?? null,
+    [courses]
+  );
+
   const uploadMaterialSet = useCallback(
     async (files) => {
-      const res = await apiUploadMaterialSet(files);
+      if (!files || files.length === 0) {
+        throw new Error("uploadMaterialSet: no files provided");
+      }
 
-      const courseId = res?.course_id || res?.courseId || null;
-      const runId = res?.generation_run_id || res?.generationRunId || null;
+      const res = await apiUploadCourseMaterials(files);
+
+      const courseId = res?.course_id ?? res?.courseId ?? null;
+      const jobId = res?.job_id ?? res?.jobId ?? null;
+      const materialSetId = res?.material_set_id ?? res?.materialSetId ?? null;
 
       if (courseId) {
         setCourses((prev) => {
-          const exists = prev.some((c) => c.id === courseId);
-          if (exists) return prev;
-          return [
-            ...prev,
-            {
-              id: courseId,
-              userId: user?.id ?? null,
-              materialSetId: res?.material_set_id || res?.materialSetId || null,
-              title: "Generating course…",
-              description: "We’re analyzing your files and building your course.",
-              level: null,
-              subject: null,
-              progress: 0,
-              metadata: { status: "generating" },
-              createdAt: null,
-              updatedAt: null,
-            },
-          ];
-        });
-      }
+          const existing = prev.find((c) => c?.id === courseId);
 
-      if (runId || courseId) {
-        upsertGeneration({
-          runId,
-          courseId,
-          status: "queued",
-          stage: "ingest",
-          progress: 0,
-          error: null,
+          const placeholder = {
+            id: courseId,
+            user_id: user?.id ?? null,
+            material_set_id: materialSetId,
+            title: "Generating course…",
+            description: "We’re analyzing your files and building your course.",
+            level: null,
+            subject: null,
+            progress: 0,
+            metadata: { status: "generating" },
+            created_at: existing?.created_at ?? null,
+            updated_at: existing?.updated_at ?? null,
+
+            // transient job fields (card overlay)
+            jobId: jobId ?? existing?.jobId,
+            jobType: existing?.jobType ?? "course_build",
+            jobStatus: "queued",
+            jobStage: "ingest",
+            jobProgress: 0,
+            jobMessage: "Uploading materials…",
+          };
+
+          if (!existing) return [placeholder, ...prev];
+
+          const merged = {
+            ...existing,
+            ...placeholder,
+            title:
+              existing.title &&
+              !String(existing.title).toLowerCase().includes("generating")
+                ? existing.title
+                : placeholder.title,
+            description: existing.description || placeholder.description,
+            metadata: existing.metadata || placeholder.metadata,
+          };
+
+          const out = prev.slice();
+          const idx = out.findIndex((c) => c?.id === courseId);
+          out[idx] = merged;
+          return out;
         });
       }
 
       return res;
     },
-    [upsertGeneration, user],
+    [user?.id]
   );
 
-  // NEW: derived courses list merged with generation info so UI stays consistent
-  const coursesWithGeneration = useMemo(() => {
-    return (courses || []).map((c) => {
-      const gen = c?.id ? generationByCourseId[c.id] : null;
-      if (!gen) return c;
-
-      const derivedProgress =
-        typeof gen.progress === "number"
-          ? gen.progress
-          : typeof c.progress === "number"
-            ? c.progress
-            : 0;
-
-      return {
-        ...c,
-        generation: {
-          runId: gen.runId || null,
-          status: gen.status || null,
-          stage: gen.stage || null,
-          progress: typeof gen.progress === "number" ? gen.progress : null,
-          error: gen.error || null,
-          message: gen.message || null,
-        },
-        // unify: card reads course.progress
-        progress: derivedProgress,
-      };
-    });
-  }, [courses, generationByCourseId]);
-
-  const value = useMemo(() => {
-    return {
+  const value = useMemo(
+    () => ({
       courses,
-      coursesWithGeneration,
       loading,
       error,
       reload: loadCourses,
+      getById,
       uploadMaterialSet,
-      generationByCourseId,
-      generationByRunId,
-    };
-  }, [
-    courses,
-    coursesWithGeneration,
-    loading,
-    error,
-    loadCourses,
-    uploadMaterialSet,
-    generationByCourseId,
-    generationByRunId,
-  ]);
+    }),
+    [courses, loading, error, loadCourses, getById, uploadMaterialSet]
+  );
 
-  return <CourseContext.Provider value={value}>{children}</CourseContext.Provider>;
+  return (
+    <CourseContext.Provider value={value}>{children}</CourseContext.Provider>
+  );
 }
 
 export function useCourses() {
   return useContext(CourseContext);
 }
-
-
-
 
 
 

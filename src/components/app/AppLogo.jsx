@@ -13,7 +13,7 @@ export function AppLogo({ className }) {
   const logo = effectiveTheme === "dark" ? darkLogo : lightLogo;
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex items-center gap-2 shrink-0", className)}>
       <img src={logo} alt="NeuroBridge" className="h-8 w-auto" />
       {!isAuthenticated  && (
         <span className="mt-2 hidden md:inline text-lg font-semibold text-foreground font-brand">

@@ -2,11 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { ThemeProvider } from '@/providers/ThemeProvider';
+import { ThemeProvider, ThemeSync } from '@/providers/ThemeProvider';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { SSEGate } from '@/providers/SSEProvider';
 import { UserProvider } from '@/providers/UserProvider';
-import { CourseProvider } from '@/providers/CourseProvider';
+import { PathProvider } from '@/providers/PathProvider';
 import App from './App.jsx';
 import "./index.css";
 
@@ -18,9 +18,10 @@ createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <SSEGate>
           <UserProvider>
-            <CourseProvider>
+            <ThemeSync />
+            <PathProvider>
               <App />
-            </CourseProvider>
+            </PathProvider>
           </UserProvider>
         </SSEGate>
       </AuthProvider>

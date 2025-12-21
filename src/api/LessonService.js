@@ -29,6 +29,15 @@ export async function listLessonsForModule(moduleId) {
   return raws.map(mapLesson).filter(Boolean);
 }
 
+export async function getLesson(lessonId) {
+  const resp = await axiosClient.get(`/lessons/${lessonId}`);
+  const data = resp?.data ?? resp;
+  return {
+    lesson: data?.lesson ?? null,
+    module: data?.module ?? null,
+  };
+}
+
 
 
 

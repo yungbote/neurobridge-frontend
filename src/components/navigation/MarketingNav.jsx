@@ -5,11 +5,14 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ABOUT_SECTIONS } from "@/pages/nonauthenticated/AboutPage";
 import { FEATURES_SECTIONS } from "@/pages/nonauthenticated/FeaturesPage";
 import { PRICING_SECTIONS } from "@/pages/nonauthenticated/PricingPage";
 import { Button } from "@/components/ui/button";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 function TopLink({ to, children }) {
   return (
@@ -23,8 +26,6 @@ function TopLink({ to, children }) {
 }
 
 function NavDropdown({ id, label, basePath, sections, isOpen, setOpenKey }) {
-  const topHref = basePath;
-
   return (
     <DropdownMenu
       open={isOpen}
@@ -41,13 +42,21 @@ function NavDropdown({ id, label, basePath, sections, isOpen, setOpenKey }) {
         asChild
         onMouseEnter={() => setOpenKey(id)}
       >
-        <Button variant="ghost" size="sm" asChild>
-          <Link
-            to={topHref}
-            className="inline-flex items-center px-3 py-1.5 text-sm font-normal l text-muted-foreground hover:text-foreground transition-colors data-[state=open]:bg-accent dark:data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
-          >
-            {label}
-          </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-normal text-muted-foreground hover:text-foreground transition-colors",
+            "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
+          )}
+        >
+          <span>{label}</span>
+          <ChevronDown
+            className={cn(
+              "size-4 transition-transform",
+              isOpen && "rotate-180"
+            )}
+          />
         </Button>
       </DropdownMenuTrigger>
 
@@ -58,7 +67,20 @@ function NavDropdown({ id, label, basePath, sections, isOpen, setOpenKey }) {
         onMouseLeave={() => setOpenKey(null)}
         className="bg-muted/70 dark:bg-muted/60 border border-border/60 backdrop-blur-xl rounded-lg p-2 min-w-[180px]"
       >
-        {sections.map((section) => (
+        <DropdownMenuItem asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+            className="w-full justify-start px-2 py-1.5 text-sm font-normal hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+          >
+            <Link to={basePath}>Overview</Link>
+          </Button>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        {sections.filter((s) => s.id !== "overview").map((section) => (
           <DropdownMenuItem key={section.id} asChild>
             <Button
               variant="ghost"
@@ -121,8 +143,6 @@ export function MarketingNav() {
     </ul>
   );
 }
-
-
 
 
 

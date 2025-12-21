@@ -16,6 +16,7 @@ export function SSEProvider({ children }) {
   const subscribedChannelsRef = useRef(new Set());
   const initRef = useRef(false);
   const retryTimer = useRef(null);
+  const connectRef = useRef(null);
 
   const resetState = useCallback(() => {
     setConnected(false);
@@ -33,7 +34,7 @@ export function SSEProvider({ children }) {
       clearTimeout(retryTimer.current);
     }
     retryTimer.current = setTimeout(() => {
-      connect();
+      connectRef.current?.();
     }, delay);
   }, []);
 
@@ -78,6 +79,10 @@ export function SSEProvider({ children }) {
       }
     });
   }, [scheduleRetry]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     if (!initRef.current) {

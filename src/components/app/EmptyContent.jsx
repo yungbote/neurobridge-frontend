@@ -6,7 +6,7 @@ export function EmptyContent({
   className = "",
 }) {
   return (
-    <div className={`flex-1 w-full relartive ${className}`}>
+    <div className={`flex-1 w-full relative ${className}`}>
       <div className="bg-background rounded-2xl overflow-hidden border border-border shadow-sm w-full">
         <div className="relative min-h-[260px] sm:min-h-[320px] md:min-h-[380px] flex flex-col items-center justify-center px-6 py-10">
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -39,7 +39,7 @@ export function EmptyContent({
           </div>
 
           {/* Content */}
-          <div className="relative z-10 text-center max-w-md mx-auto">
+          <div className="relative z-10 text-center">
             <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-6 rounded-xl bg-muted flex items-center justify-center transition-transform hover:scale-105">
               {icon ? (
                 <div className="text-muted-foreground">{icon}</div>

@@ -20,6 +20,14 @@
   .font-brand {
     font-family: "Riforma", system-ui, sans-serif;
   }
+
+  .scrollbar-none {
+    -ms-overflow-style: none; /* IE + Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none; /* Chrome + Safari */
+  }
 }
 
 /* === shadcn theme variables (light mode) === */
@@ -138,15 +146,115 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Base layer: apply theme to everything */
-@layer base {
-  * {
-    @apply border-border;
+/* Minimal typography styling (without @tailwindcss/typography) */
+@layer components {
+  .prose {
+    color: var(--foreground);
+    line-height: 1.75;
   }
 
-  body {
-    @apply bg-background text-foreground;
-    margin: 0;
+  .prose :where(p):not(:where(.not-prose, .not-prose *)) {
+    margin-block: 1em;
+  }
+
+  .prose :where(h1, h2, h3, h4):not(:where(.not-prose, .not-prose *)) {
+    color: var(--foreground);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    scroll-margin-top: 6rem;
+  }
+  .prose :where(h1):not(:where(.not-prose, .not-prose *)) {
+    font-size: 2rem;
+    margin-block: 0 0.9em;
+  }
+  .prose :where(h2):not(:where(.not-prose, .not-prose *)) {
+    font-size: 1.5rem;
+    margin-block: 1.6em 0.8em;
+  }
+  .prose :where(h3):not(:where(.not-prose, .not-prose *)) {
+    font-size: 1.25rem;
+    margin-block: 1.4em 0.6em;
+  }
+  .prose :where(h4):not(:where(.not-prose, .not-prose *)) {
+    font-size: 1.125rem;
+    margin-block: 1.2em 0.5em;
+  }
+
+  .prose :where(a):not(:where(.not-prose, .not-prose *)) {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
+    padding-left: 1.25rem;
+    margin-block: 1em;
+  }
+  .prose :where(ul):not(:where(.not-prose, .not-prose *)) {
+    list-style: disc;
+  }
+  .prose :where(ol):not(:where(.not-prose, .not-prose *)) {
+    list-style: decimal;
+  }
+  .prose :where(li):not(:where(.not-prose, .not-prose *)) {
+    margin-block: 0.35em;
+  }
+
+  .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
+    border-left: 2px solid var(--border);
+    padding-left: 1rem;
+    color: var(--muted-foreground);
+    margin-block: 1.25em;
+  }
+
+  .prose :where(code):not(:where(pre code, .not-prose, .not-prose *)) {
+    font-size: 0.875em;
+    padding: 0.2em 0.35em;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    background: color-mix(in oklch, var(--muted) 55%, transparent);
+  }
+
+  .prose :where(pre):not(:where(.not-prose, .not-prose *)) {
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: color-mix(in oklch, var(--muted) 35%, transparent);
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  .prose :where(pre code):not(:where(.not-prose, .not-prose *)) {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    font-size: 0.875rem;
+  }
+
+  .prose :where(hr):not(:where(.not-prose, .not-prose *)) {
+    border-color: var(--border);
+    margin-block: 2em;
+  }
+
+  .prose :where(table):not(:where(.not-prose, .not-prose *)) {
+    width: 100%;
+    border-collapse: collapse;
+    margin-block: 1.25em;
+    font-size: 0.95em;
+  }
+  .prose :where(th, td):not(:where(.not-prose, .not-prose *)) {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+  }
+  .prose :where(th):not(:where(.not-prose, .not-prose *)) {
+    background: color-mix(in oklch, var(--muted) 40%, transparent);
+    text-align: left;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  /* Compatibility aliases */
+  .prose-invert {
+    color: var(--foreground);
   }
 }
 
@@ -154,8 +262,23 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    height: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    margin: 0;
+    min-height: 100svh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  #root {
+    min-height: 100svh;
+  }
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
   }
 }
-

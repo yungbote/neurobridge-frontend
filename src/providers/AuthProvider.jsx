@@ -9,6 +9,9 @@ import React, {
 import {
   loginUser,
   logoutUser,
+  createOAuthNonce,
+  oauthGoogle,
+  oauthApple,
   refreshToken,
   registerUser,
 } from "@/api/AuthService";
@@ -20,11 +23,18 @@ import {
   setExpiresAt,
   getExpiresAt,
 } from "@/services/StorageService";
+import {
+  getAppleIdTokenWithNonce,
+  getFallbackNameFromIdToken,
+  getGoogleIdTokenWithNonce,
+} from "@/services/OAuthService";
 
 // Auth context default shape
 export const AuthContext = createContext({
   isAuthenticated: false,
   login: async () => {},
+  loginWithGoogle: async () => {},
+  loginWithApple: async () => {},
   logout: async () => {},
   refresh: async () => {},
   register: async () => {},
@@ -105,6 +115,39 @@ export function AuthProvider({ children }) {
       await login(email, password);
     }, [login]);
 
+  const loginWithGoogle = useCallback(async () => {
+    const { nonce_id, nonce } = await createOAuthNonce("google");
+    const idToken = await getGoogleIdTokenWithNonce(nonce);
+
+    const { first_name, last_name } = getFallbackNameFromIdToken(idToken);
+    const { access_token, refresh_token, expires_in } = await oauthGoogle({
+      id_token: idToken,
+      nonce_id,
+      first_name,
+      last_name,
+    });
+
+    doSessionLogin(access_token, refresh_token, expires_in);
+  }, [doSessionLogin]);
+
+  const loginWithApple = useCallback(async () => {
+    const { nonce_id, nonce } = await createOAuthNonce("apple");
+    const { idToken, user } = await getAppleIdTokenWithNonce(nonce);
+
+    const fromToken = getFallbackNameFromIdToken(idToken);
+    const first_name = user?.name?.firstName || fromToken.first_name || "";
+    const last_name = user?.name?.lastName || fromToken.last_name || "";
+
+    const { access_token, refresh_token, expires_in } = await oauthApple({
+      id_token: idToken,
+      nonce_id,
+      first_name,
+      last_name,
+    });
+
+    doSessionLogin(access_token, refresh_token, expires_in);
+  }, [doSessionLogin]);
+
   /**
    * On mount: If tokens are in localStorage, schedule a refresh
    * (or refresh immediately if near expiry).
@@ -140,7 +183,15 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, login, logout, refresh: refreshTokens, register }}
+      value={{
+        isAuthenticated,
+        login,
+        loginWithGoogle,
+        loginWithApple,
+        logout,
+        refresh: refreshTokens,
+        register,
+      }}
     >
       {children}
     </AuthContext.Provider>

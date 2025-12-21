@@ -4,11 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Upload, X, FileText, ImageIcon, File as FileIcon, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCourses } from "@/providers/CourseProvider";
+import { usePaths } from "@/providers/PathProvider";
 
 // Shape we are using internally: { id, name, size, type, file?: File, content?: string }
-export function FileUploadDialog({ trigger }) {
-  const { uploadMaterialSet } = useCourses();
+export function FileUploadDialog({
+  trigger,
+  onUpload,
+  title = "Upload Materials",
+  description = "Upload PDFs, slides, notes, or any other course materials.",
+  submitLabel = "Upload",
+}) {
+  const { uploadMaterialSet } = usePaths();
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -95,6 +101,9 @@ export function FileUploadDialog({ trigger }) {
   }, []);
 
   const handleSend = useCallback(async () => {
+    const uploadFn = onUpload || uploadMaterialSet;
+    if (!uploadFn) return;
+
     let filesToUpload = files.map((f) => f.file).filter(Boolean);
 
     if (textContent.trim()) {
@@ -113,14 +122,14 @@ export function FileUploadDialog({ trigger }) {
     );
 
     try {
-      await uploadMaterialSet(filesToUpload);
+      await uploadFn(filesToUpload);
       setOpen(false);
       setFiles([]);
       setTextContent("");
     } catch (err) {
       console.error("[FileUploadDialog] uploadMaterialSet failed:", err);
     }
-  }, [files, textContent, uploadMaterialSet]);
+  }, [files, textContent, uploadMaterialSet, onUpload]);
 
   const formatFileSize = (bytes) => {
     if (bytes === 0) return "0 Bytes";
@@ -158,14 +167,14 @@ export function FileUploadDialog({ trigger }) {
         onDrop={handleDrop}
       >
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
-          <DialogTitle className="text-xl font-semibold">Upload Materials</DialogTitle>
+          <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* Drop Zone */}
           <div
             className={cn(
-              "relative border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer hover:border-primary/50 hover:bg-muted/30",
+              "relative border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer hover:border-primary/50 hover:bg-muted/30 sm:p-8",
               isDragging ? "border-primary bg-primary/5 scale-[0.98]" : "border-border",
             )}
             onClick={() => fileInputRef.current?.click()}
@@ -196,7 +205,7 @@ export function FileUploadDialog({ trigger }) {
                   {isDragging ? "Drop files here" : "Click to upload or drag and drop"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Upload PDFs, slides, notes, or any other course materials.
+                  {description}
                 </p>
               </div>
             </div>
@@ -254,7 +263,7 @@ export function FileUploadDialog({ trigger }) {
                         onClick={() => removeFile(file.id)}
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        className="h-8 w-8 opacity-100 transition-opacity flex-shrink-0 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -267,13 +276,13 @@ export function FileUploadDialog({ trigger }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border flex items-center justify-between gap-3">
+        <div className="px-4 py-4 border-t border-border flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p className="text-sm text-muted-foreground">
             {readyCount === 0
               ? "No files ready"
               : `${readyCount} file${readyCount === 1 ? "" : "s"} ready`}
           </p>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
             <Button
               onClick={() => {
                 setOpen(false);
@@ -281,16 +290,17 @@ export function FileUploadDialog({ trigger }) {
                 setTextContent("");
               }}
               variant="outline"
+              className="flex-1 sm:flex-none"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSend}
               disabled={readyCount === 0}
-              className="gap-2"
+              className="flex-1 gap-2 sm:flex-none"
             >
               <Send className="h-4 w-4" />
-              Upload
+              {submitLabel}
             </Button>
           </div>
         </div>
@@ -298,9 +308,6 @@ export function FileUploadDialog({ trigger }) {
     </Dialog>
   );
 }
-
-
-
 
 
 
