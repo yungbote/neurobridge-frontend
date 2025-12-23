@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { NavigationTabs } from "@/components/navigation/NavigationTabs";
 import { HomeTabContent } from "@/components/app/HomeTabContent";
+import { AnimatedChatbar } from "@/components/app/AnimatedChatbar";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUser } from "@/providers/UserProvider";
 import { usePaths } from "@/providers/PathProvider";
@@ -17,6 +18,10 @@ export default function HomePage() {
 
   if (!isAuthenticated || userLoading || !user) {
     return null;
+  }
+
+  const handleSubmit = (message) => {
+    console.log("Submitted:", message);
   }
 
   const firstName =
@@ -46,6 +51,10 @@ export default function HomePage() {
         </div>
       </Container>
 
+      <div className="mt-8 mb-16">
+        <AnimatedChatbar onSubmit={handleSubmit} />
+      </div>
+
       <NavigationTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
       <Container className="pt-8 pb-16">
@@ -58,6 +67,9 @@ export default function HomePage() {
     </div>
   );
 }
+
+
+
 
 
 

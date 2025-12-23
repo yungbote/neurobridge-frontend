@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Button } from "@/components/ui/button"
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,79 +8,102 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { UserNameDialog } from "@/components/app/UserNameDialog"
-import { SettingsDialog } from "@/components/app/SettingsDialog"
-import { LogoutDialog } from "@/components/app/LogoutDialog"
-import { Ampersand, Settings, LogOut } from "lucide-react"
-import { useAuth } from "@/providers/AuthProvider"
-import { useUser } from "@/providers/UserProvider"
+} from "@/components/ui/dropdown-menu";
+import { Ampersand, Settings, LogOut } from "lucide-react";
+import { useAuth } from "@/providers/AuthProvider";
+import { useUser } from "@/providers/UserProvider";
+import { useUserDialogs, USER_DIALOG_OPEN_EVENT } from "@/providers/UserDialogProvider";
+import { ColorPicker, AVATAR_COLORS } from "@/components/app/ColorPicker";
+import { cn } from "@/lib/utils";
 
-import { ColorPicker, AVATAR_COLORS } from "@/components/app/ColorPicker"
+function formatFullName(user) {
+  if (!user) return "";
+  const first = String(user.firstName || "").trim();
+  const last = String(user.lastName || "").trim();
+  const full = [first, last].filter(Boolean).join(" ").trim();
+  return full || String(user.email || "").trim() || "User";
+}
 
 export function UserAvatar({
   showMenu = true,
   showColorPicker = false,
+  showName = false,
+
+  menuSide = "bottom",
+  menuAlign = "end",
+  menuSideOffset = 8,
+  menuAlignOffset = -14,
+
+  triggerClassName,
+  nameClassName,
+  emailClassName,
+  menuClassName,
 }) {
-  const { isAuthenticated } = useAuth()
-  const { user, loading: userLoading, changeAvatarColor } = useUser()
+  const { isAuthenticated } = useAuth();
+  const { user, loading: userLoading, changeAvatarColor } = useUser();
+  const { openProfile, openSettings, openLogout } = useUserDialogs();
 
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [logoutOpen, setLogoutOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const [localColor, setLocalColor] = useState(null)
-  const debounceRef = useRef(null)
+  // Close this dropdown if ANY user dialog is opened (even from another avatar instance)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handler = () => setMenuOpen(false);
+    window.addEventListener(USER_DIALOG_OPEN_EVENT, handler);
+    return () => window.removeEventListener(USER_DIALOG_OPEN_EVENT, handler);
+  }, []);
+
+  const [localColor, setLocalColor] = useState(null);
+  const debounceRef = useRef(null);
 
   useEffect(() => {
-    if (!user) return
-    setLocalColor(user.avatarColor ?? AVATAR_COLORS[0])
-  }, [user?.avatarColor, user?.id])
+    if (!user) return;
+    setLocalColor(user.avatarColor ?? AVATAR_COLORS[0]);
+  }, [user?.avatarColor, user?.id]);
 
   const initials = useMemo(() => {
-    if (!user) return "NB"
+    if (!user) return "NB";
     return (
       (user.firstName?.[0] ?? user.email?.[0] ?? "?") +
       (user.lastName?.[0] ?? "")
-    ).toUpperCase()
-  }, [user])
+    ).toUpperCase();
+  }, [user]);
+
+  const fullName = useMemo(() => formatFullName(user), [user]);
+  const email = useMemo(() => String(user?.email || "").trim(), [user?.email]);
 
   const onPickColor = useCallback(
     (color) => {
-      setLocalColor(color)
+      setLocalColor(color);
 
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(async () => {
         try {
-          await changeAvatarColor(color)
+          await changeAvatarColor(color);
         } catch (e) {
-          console.error("[UserAvatar] changeAvatarColor failed:", e)
-          setLocalColor(user?.avatarColor ?? AVATAR_COLORS[0])
+          console.error("[UserAvatar] changeAvatarColor failed:", e);
+          setLocalColor(user?.avatarColor ?? AVATAR_COLORS[0]);
         }
-      }, 250)
+      }, 250);
     },
     [changeAvatarColor, user]
-  )
+  );
 
   useEffect(() => {
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [])
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
-  if (!isAuthenticated || userLoading || !user) return null
+  if (!isAuthenticated || userLoading || !user) return null;
 
-  const safeAvatarUrl = user.avatarUrl || "/placeholder.svg"
+  const safeAvatarUrl = user.avatarUrl || "/placeholder.svg";
 
   const AvatarNode = (
     <div className="relative h-8 w-8">
       <Avatar className="h-8 w-8">
-        {/* KEY forces remount when URL changes */}
-        <AvatarImage
-          key={safeAvatarUrl}
-          src={safeAvatarUrl}
-          alt={`${user.firstName} ${user.lastName}`}
-        />
+        <AvatarImage key={safeAvatarUrl} src={safeAvatarUrl} alt={fullName} />
         <AvatarFallback>{initials}</AvatarFallback>
       </Avatar>
 
@@ -94,88 +117,124 @@ export function UserAvatar({
         />
       )}
     </div>
-  )
+  );
 
-  if (!showMenu) return AvatarNode
+  if (!showMenu) return AvatarNode;
+
+  const defaultTriggerClasses = showName
+    ? "h-10 w-full justify-start px-2"
+    : "h-10 w-10 p-0";
 
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0">
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          className={cn(defaultTriggerClasses, triggerClassName)}
+        >
+          <div
+            className={cn(
+              "flex items-center",
+              showName ? "gap-2" : "justify-center"
+            )}
+          >
             {AvatarNode}
-          </Button>
-        </DropdownMenuTrigger>
 
-        <DropdownMenuContent className="w-60 rounded-2xl py-3 text-base" align="end" alignOffset={-14}>
-          <DropdownMenuItem>
-            <button
-              className="flex w-full items-center gap-2 cursor-pointer rounded-2xl hover:bg-muted"
-              onClick={() => setProfileOpen(true)}
-            >
-              <Avatar className="h-6 w-6">
-                {/* KEY here too */}
-                <AvatarImage
-                  key={safeAvatarUrl}
-                  src={safeAvatarUrl}
-                  alt={`${user.firstName} ${user.lastName}`}
-                />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
-              <span className="text-base font-medium mt-1">
-                {user.firstName?.charAt(0).toUpperCase() + user.firstName?.slice(1)}
-              </span>
+            {showName && (
+              <div className="min-w-0 leading-tight">
+                <div className={cn("truncate text-sm font-medium", nameClassName)}>
+                  {fullName}
+                </div>
+                {email && (
+                  <div
+                    className={cn(
+                      "truncate text-xs text-muted-foreground",
+                      emailClassName
+                    )}
+                  >
+                    {email}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        className={cn("w-60 rounded-2xl py-3 text-base", menuClassName)}
+        side={menuSide}
+        align={menuAlign}
+        sideOffset={menuSideOffset}
+        alignOffset={menuAlignOffset}
+      >
+        <DropdownMenuItem
+          className="cursor-pointer"
+          onSelect={(e) => {
+            e.preventDefault();
+            setMenuOpen(false);
+            openProfile();
+          }}
+        >
+          <div className="flex w-full items-center gap-2 rounded-2xl px-2 py-1.5 hover:bg-muted">
+            <Avatar className="h-6 w-6">
+              <AvatarImage key={safeAvatarUrl} src={safeAvatarUrl} alt={fullName} />
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-base font-medium">{fullName}</div>
+              {email && (
+                <div className="truncate text-xs text-muted-foreground">{email}</div>
+              )}
+            </div>
+          </div>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuGroup>
+          <DropdownMenuItem asChild>
+            <button className="flex w-full items-center gap-2 cursor-pointer px-2 py-1.5 rounded-2xl hover:bg-muted">
+              <Ampersand className="size-5 text-foreground" />
+              <span className="text-base font-medium">Personalization</span>
             </button>
           </DropdownMenuItem>
 
-          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={(e) => {
+              e.preventDefault();
+              setMenuOpen(false);
+              openSettings();
+            }}
+          >
+            <div className="flex w-full items-center gap-2 rounded-2xl px-2 py-1.5 hover:bg-muted">
+              <Settings className="size-5 text-foreground" />
+              <span className="text-base font-medium">Settings</span>
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
-          <DropdownMenuGroup>
-            <DropdownMenuItem asChild>
-              <button className="flex w-full items-center gap-2 cursor-pointer px-2 py-1.5 rounded-2xl hover:bg-muted">
-                <Ampersand className="size-5 text-foreground" />
-                <span className="text-base font-medium">Personalization</span>
-              </button>
-            </DropdownMenuItem>
+        <DropdownMenuSeparator />
 
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault()
-                setSettingsOpen(true)
-              }}
-              className="cursor-pointer"
-            >
-              <button className="flex w-full items-center gap-2 cursor-pointer px-2 py-1.5 rounded-2xl hover:bg-muted">
-                <Settings className="size-5 text-foreground" />
-                <span className="text-base font-medium">Settings</span>
-              </button>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault()
-                setLogoutOpen(true)
-              }}
-              className="cursor-pointer"
-            >
-              <button className="flex w-full items-center gap-2 cursor-pointer px-2 py-1.5 rounded-2xl hover:bg-muted">
-                <LogOut className="size-5 text-foreground" />
-                <span className="text-base font-medium">Log out</span>
-              </button>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <UserNameDialog open={profileOpen} onOpenChange={setProfileOpen} />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
-    </>
-  )
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={(e) => {
+              e.preventDefault();
+              setMenuOpen(false);
+              openLogout();
+            }}
+          >
+            <div className="flex w-full items-center gap-2 rounded-2xl px-2 py-1.5 hover:bg-muted">
+              <LogOut className="size-5 text-foreground" />
+              <span className="text-base font-medium">Log out</span>
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 

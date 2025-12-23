@@ -6,6 +6,7 @@ import {
   SidebarContent,
   SidebarHeader,
   SidebarTrigger,
+  SidebarFooter,
   useSidebar,
   SidebarMenu,
   SidebarMenuItem,
@@ -15,11 +16,13 @@ import {
   SidebarMenuSubButton,
   SidebarGroup,
   SidebarGroupLabel,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { AppLogo } from "@/components/app/AppLogo";
 import { Home, Library, Files } from "lucide-react";
 import { usePaths } from "@/providers/PathProvider";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/app/UserAvatar";
 
 function getMeta(path) {
   const m = path?.metadata;
@@ -41,12 +44,14 @@ function pathLabel(path) {
 }
 
 export function AppSideBar() {
-  const { state } = useSidebar();
+  const { state, isMobile, openMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
+
   const location = useLocation();
   const { paths } = usePaths();
 
-  // header buttons only
+  const showFooterName = isMobile ? openMobile : !isCollapsed;
+
   const sidebarGhost =
     "h-10 w-10 rounded-md hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground";
 
@@ -80,7 +85,6 @@ export function AppSideBar() {
 
   return (
     <Sidebar collapsible="icon">
-      {/* HEADER */}
       <SidebarHeader className="h-14 px-3 flex items-center">
         {isCollapsed ? (
           <div className="flex w-full items-center justify-center">
@@ -113,9 +117,7 @@ export function AppSideBar() {
         )}
       </SidebarHeader>
 
-      {/* CONTENT */}
       <SidebarContent className={cn("py-3", isCollapsed ? "px-0" : "px-2")}>
-        {/* Navigation */}
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarMenu className={cn(isCollapsed ? "items-center gap-3" : "gap-3")}>
@@ -127,6 +129,7 @@ export function AppSideBar() {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={activeTab === "paths"} tooltip="Paths">
                 <Link to="/" aria-label="Paths" className="flex items-center">
@@ -135,6 +138,7 @@ export function AppSideBar() {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={activeTab === "files"} tooltip="Files">
                 <Link to="/files" aria-label="Files" className="flex items-center">
@@ -146,7 +150,6 @@ export function AppSideBar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {/* Your paths (expanded only) */}
         {!isCollapsed && (
           <SidebarGroup>
             <SidebarGroupLabel>Your paths</SidebarGroupLabel>
@@ -172,9 +175,35 @@ export function AppSideBar() {
           </SidebarGroup>
         )}
       </SidebarContent>
+
+      {!isCollapsed && (
+        <div className="px-2">
+          <SidebarSeparator className="mx-0" />
+        </div>
+      )}
+
+      <SidebarFooter className={cn("pb-3", isCollapsed ? "items-center" : "")}>
+        <UserAvatar
+  showMenu
+  showColorPicker={false}
+  showName={showFooterName}
+  triggerClassName={cn(
+    showFooterName
+      ? "w-full justify-start rounded-2xl hover:bg-muted"
+      : "h-10 w-10 p-0 rounded-2xl hover:bg-muted"
+  )}
+  menuSide="top"
+  menuAlign={isCollapsed ? "center" : "start"}
+  menuAlignOffset={0}
+  menuSideOffset={8}
+/>
+      </SidebarFooter>
     </Sidebar>
   );
 }
+
+
+
 
 
 

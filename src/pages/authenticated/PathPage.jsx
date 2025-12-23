@@ -35,6 +35,19 @@ export default function PathPage() {
   }, [cached]);
 
   useEffect(() => {
+    const showGen =
+      cached?.jobId ||
+      cached?.jobStatus ||
+      cached?.jobStage ||
+      typeof cached?.jobProgress === "number" ||
+      cached?.jobMessage;
+
+    if (showGen && cached?.jobId) {
+      navigate(`/paths/build/${cached.jobId}`, { replace: true });
+    }
+  }, [cached, navigate]);
+
+  useEffect(() => {
     let mounted = true;
 
     async function load() {
@@ -46,6 +59,19 @@ export default function PathPage() {
         if (!cached) {
           const p = await getPath(pathId);
           if (!mounted) return;
+
+          const showGen =
+            p?.jobId ||
+            p?.jobStatus ||
+            p?.jobStage ||
+            typeof p?.jobProgress === "number" ||
+            p?.jobMessage;
+
+          if (showGen && p?.jobId) {
+            navigate(`/paths/build/${p.jobId}`, { replace: true });
+            return;
+          }
+
           setPath(p);
         }
 
@@ -76,7 +102,7 @@ export default function PathPage() {
     return () => {
       mounted = false;
     };
-  }, [pathId, cached]);
+  }, [pathId, cached, navigate]);
 
   const firstActivity = useMemo(() => {
     const sortedNodes = (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
@@ -221,3 +247,13 @@ export default function PathPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+

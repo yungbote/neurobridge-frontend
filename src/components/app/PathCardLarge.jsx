@@ -137,11 +137,17 @@ export function PathCardLarge({ path }) {
     </Card>
   );
 
-  if (isPlaceholder) return <div className="cursor-default">{card}</div>;
+  const to = showGen && path.jobId
+    ? `/paths/build/${path.jobId}`
+    : !isPlaceholder
+      ? `/paths/${path.id}`
+      : null;
+
+  if (!to) return <div className="cursor-default">{card}</div>;
 
   return (
     <Link
-      to={`/paths/${path.id}`}
+      to={to}
       className="cursor-pointer"
       aria-label={`Open path ${path.title || "path"}`}
     >
@@ -149,3 +155,13 @@ export function PathCardLarge({ path }) {
     </Link>
   );
 }
+
+
+
+
+
+
+
+
+
+

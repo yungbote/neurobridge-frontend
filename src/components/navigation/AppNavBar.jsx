@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useViewport } from "@/providers/ViewportProvider";
 import { AlignJustify, ChevronDownIcon, CircleDashed, BadgePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,12 +20,18 @@ import { FileUploadDialog } from "@/components/app/UploadFilesDialog";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUser } from "@/providers/UserProvider";
 import { Container } from "@/layout/Container";
+import { useSidebar } from "@/components/ui/sidebar";
+import { Ellipsis } from "lucide-react";
 
 export function AppNavBar() {
   const location = useLocation();
   const { isAuthenticated } = useAuth();
   const { user, loading: userLoading } = useUser();
   const [authDialog, setAuthDialog] = useState(null);
+  const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -34,13 +41,13 @@ export function AppNavBar() {
       >
         {/* LEFT: Sidebar Trigger + Logo */}
         <div className="flex items-center gap-2">
-          {isAuthenticated && (
-            <SidebarTrigger className="md:hidden" aria-label="Open sidebar" />
+          {isAuthenticated && isCollapsed && isMobile &&  (
+            <SidebarTrigger aria-label="Expand sidebar" style={{ cursor: "e-resize" }} />
           )}
-
+          {!isAuthenticated && (
           <Link to="/" aria-label="Go to home" className="flex items-center">
             <AppLogo className="cursor-pointer" />
-          </Link>
+          </Link>)}
         </div>
 
         {/* CENTER: Marketing Nav (desktop) */}
@@ -102,6 +109,18 @@ export function AppNavBar() {
         )}
 
         {isAuthenticated && !userLoading && user && (
+          <div className="ml-auto">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+            >
+              <Ellipsis className="size-5" />
+            </Button>
+          </div>
+        )}
+
+        {isAuthenticated && !userLoading && !user && (
           <div className="ml-auto flex items-center gap-1.5 sm:gap-3">
             {location.pathname === "/" && (
               <>
@@ -131,13 +150,13 @@ export function AppNavBar() {
                 </DropdownMenu>
               </>
             )}
-            <UserAvatar />
           </div>
         )}
       </Container>
     </nav>
   );
 }
+
 
 
 
