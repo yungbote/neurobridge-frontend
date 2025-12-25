@@ -20,6 +20,48 @@ export function mapNodeActivity(raw) {
   };
 }
 
+function safeParseJSON(v) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function mapPathNode(raw) {
+  if (!raw) return null;
+  return {
+    id: raw.id,
+    pathId: raw.path_id ?? raw.pathId ?? null,
+    index: typeof raw.index === "number" ? raw.index : 0,
+    title: raw.title ?? "",
+    parentNodeId: raw.parent_node_id ?? raw.parentNodeId ?? null,
+    gating: raw.gating ?? null,
+    metadata: safeParseJSON(raw.metadata) ?? raw.metadata ?? null,
+    contentJson: safeParseJSON(raw.content_json ?? raw.contentJson) ?? raw.content_json ?? raw.contentJson ?? null,
+    createdAt: raw.created_at ?? raw.createdAt ?? null,
+    updatedAt: raw.updated_at ?? raw.updatedAt ?? null,
+  };
+}
+
+export function mapDrillSpec(raw) {
+  if (!raw) return null;
+  return {
+    kind: raw.kind ?? "",
+    label: raw.label ?? "",
+    reason: raw.reason ?? "",
+    suggestedCount:
+      typeof raw.suggested_count === "number"
+        ? raw.suggested_count
+        : raw.suggestedCount ?? null,
+  };
+}
+
 export async function listActivitiesForNode(pathNodeId) {
   if (!pathNodeId) throw new Error("listActivitiesForNode: missing pathNodeId");
   const resp = await axiosClient.get(`/path-nodes/${pathNodeId}/activities`);
@@ -27,3 +69,31 @@ export async function listActivitiesForNode(pathNodeId) {
   return raws.map(mapNodeActivity).filter(Boolean);
 }
 
+export async function getPathNodeContent(pathNodeId) {
+  if (!pathNodeId) throw new Error("getPathNodeContent: missing pathNodeId");
+  const resp = await axiosClient.get(`/path-nodes/${pathNodeId}/content`);
+  return mapPathNode(resp.data?.node);
+}
+
+export async function getPathNodeDoc(pathNodeId) {
+  if (!pathNodeId) throw new Error("getPathNodeDoc: missing pathNodeId");
+  const resp = await axiosClient.get(`/path-nodes/${pathNodeId}/doc`);
+  return resp.data?.doc ?? null;
+}
+
+export async function listDrillsForNode(pathNodeId) {
+  if (!pathNodeId) throw new Error("listDrillsForNode: missing pathNodeId");
+  const resp = await axiosClient.get(`/path-nodes/${pathNodeId}/drills`);
+  const raws = resp.data?.drills || [];
+  return raws.map(mapDrillSpec).filter(Boolean);
+}
+
+export async function generateDrillForNode(pathNodeId, kind, { count } = {}) {
+  if (!pathNodeId) throw new Error("generateDrillForNode: missing pathNodeId");
+  const k = String(kind || "").trim();
+  if (!k) throw new Error("generateDrillForNode: missing kind");
+  const body = {};
+  if (typeof count === "number" && Number.isFinite(count) && count > 0) body.count = count;
+  const resp = await axiosClient.post(`/path-nodes/${pathNodeId}/drills/${encodeURIComponent(k)}`, body);
+  return resp.data?.drill ?? null;
+}

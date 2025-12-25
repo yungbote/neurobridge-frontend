@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
@@ -7,7 +7,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { getActivity } from "@/api/ActivityService";
+import { ingestEvents } from "@/api/EventService";
 import { listActivitiesForNode } from "@/api/PathNodeService";
+import { Container } from "@/layout/Container";
 
 function safeParseJSON(v) {
   if (!v) return null;
@@ -88,6 +90,27 @@ export default function ActivityPage() {
 
   const blocks = useMemo(() => extractBlocks(activity?.contentJson), [activity]);
 
+  const handleMarkComplete = useCallback(async () => {
+    if (completed) return;
+    if (!activity?.id) return;
+    setCompleted(true);
+    try {
+      await ingestEvents([
+        {
+          client_event_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: "activity_completed",
+          occurred_at: new Date().toISOString(),
+          path_id: path?.id ?? undefined,
+          path_node_id: node?.id ?? undefined,
+          activity_id: activity.id,
+          data: { source: "ui" },
+        },
+      ]);
+    } catch (err) {
+      console.warn("[ActivityPage] failed to ingest activity_completed:", err);
+    }
+  }, [completed, activity?.id, path?.id, node?.id]);
+
   const renderBlock = (block, index) => {
     switch (block.type) {
       case "heading":
@@ -130,23 +153,27 @@ export default function ActivityPage() {
 
   if (loading && !activity) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground sm:px-6 lg:px-8">
-        Loading…
+      <div className="min-h-svh bg-background">
+        <Container size="2xl" className="py-10 text-sm text-muted-foreground">
+          Loading…
+        </Container>
       </div>
     );
   }
 
   if (!activity) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground sm:px-6 lg:px-8">
-        Activity not found.
+      <div className="min-h-svh bg-background">
+        <Container size="2xl" className="py-10 text-sm text-muted-foreground">
+          Activity not found.
+        </Container>
       </div>
     );
   }
 
   return (
     <div className="min-h-svh bg-background">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <Container size="2xl" className="py-8 sm:py-10">
         <div className="mb-8 flex items-center justify-between border-b border-border pb-6">
           <div className="flex-1">
             {prevActivity && (
@@ -218,7 +245,7 @@ export default function ActivityPage() {
             <Button
               variant={completed ? "secondary" : "default"}
               className="gap-2"
-              onClick={() => setCompleted(true)}
+              onClick={handleMarkComplete}
             >
               {completed ? (
                 <>
@@ -237,7 +264,7 @@ export default function ActivityPage() {
             )}
           </div>
         </div>
-      </div>
+      </Container>
     </div>
   );
 }

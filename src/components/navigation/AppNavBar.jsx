@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useViewport } from "@/providers/ViewportProvider";
 import { AlignJustify, ChevronDownIcon, CircleDashed, BadgePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +27,7 @@ export function AppNavBar() {
   const { isAuthenticated } = useAuth();
   const { user, loading: userLoading } = useUser();
   const [authDialog, setAuthDialog] = useState(null);
-  const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
+  const { state, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
 
 
@@ -156,7 +155,6 @@ export function AppNavBar() {
     </nav>
   );
 }
-
 
 
 

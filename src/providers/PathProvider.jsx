@@ -4,7 +4,6 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -12,7 +11,6 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useUser } from "@/providers/UserProvider";
 import { useSSEContext } from "@/providers/SSEProvider";
 import { uploadMaterialSet as apiUploadMaterialSet } from "@/api/MaterialService";
-import { getJob as apiGetJob } from "@/api/JobService";
 import { getPath as apiGetPath, listPaths as apiListPaths } from "@/api/PathService";
 
 const PathContext = createContext({
@@ -39,8 +37,7 @@ function upsertById(list, next, opts = {}) {
 function stripJobFields(path) {
   if (!path) return path;
   // eslint-disable-next-line no-unused-vars
-  const { jobId, jobType, jobStatus, jobStage, jobProgress, jobMessage, ...rest } =
-    path;
+  const { jobType, jobStatus, jobStage, jobProgress, jobMessage, ...rest } = path;
   return rest;
 }
 
@@ -99,9 +96,7 @@ function extractPathIdFromJob(job) {
 export function PathProvider({ children }) {
   const { isAuthenticated } = useAuth();
   const { user } = useUser();
-  const { lastMessage } = useSSEContext();
-
-  const jobPollersRef = useRef(new Map());
+  const { lastMessage, connected } = useSSEContext();
 
   const [paths, setPaths] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -115,9 +110,19 @@ export function PathProvider({ children }) {
       setError(null);
 
       const loaded = await apiListPaths();
+      const normalized = (Array.isArray(loaded) ? loaded : []).map((p) => {
+        if (!p?.jobId) return p;
+        return attachJobFields(p, {
+          jobId: p.jobId,
+          jobType: "learning_build",
+          status: p?.jobStatus ?? "queued",
+          stage: p?.jobStage ?? "queued",
+          progress: typeof p?.jobProgress === "number" ? p.jobProgress : 0,
+        });
+      });
       setPaths((prev) => {
         const pending = (prev || []).filter((p) => String(p?.id || "").startsWith("job:"));
-        return [...pending, ...(Array.isArray(loaded) ? loaded : [])];
+        return [...pending, ...normalized];
       });
     } catch (err) {
       console.error("[PathProvider] Failed to load paths:", err);
@@ -138,6 +143,13 @@ export function PathProvider({ children }) {
     loadPaths();
   }, [isAuthenticated, loadPaths]);
 
+  // Converge from a durable snapshot when SSE reconnects (SSE has no replay).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!connected) return;
+    loadPaths();
+  }, [connected, isAuthenticated, loadPaths]);
+
   useEffect(() => {
     if (!lastMessage) return;
     if (!user?.id) return;
@@ -148,6 +160,7 @@ export function PathProvider({ children }) {
     const job = data.job;
     const jobType = String(data.job_type ?? job?.job_type ?? job?.jobType ?? "").toLowerCase();
     const jobId = data.job_id ?? job?.id ?? null;
+    const pathIdFromEvent = data.path_id ?? data.pathId ?? null;
 
     if (!jobId || jobType !== "learning_build") return;
 
@@ -156,9 +169,10 @@ export function PathProvider({ children }) {
         const exists = (prev || []).some((p) => p?.jobId === jobId);
         if (exists) return prev;
 
+        const placeholderId = pathIdFromEvent ? String(pathIdFromEvent) : `job:${jobId}`;
         const placeholder = attachJobFields(
           {
-            id: `job:${jobId}`,
+            id: placeholderId,
             title: "Generating path…",
             description: "We’re analyzing your materials and building a learning path.",
             status: "draft",
@@ -178,6 +192,7 @@ export function PathProvider({ children }) {
         const existing =
           (prev || []).find((p) => p?.jobId === jobId) ||
           (prev || []).find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
           null;
 
         const base =
@@ -205,15 +220,11 @@ export function PathProvider({ children }) {
     }
 
     if (event === "jobfailed") {
-      // Stop any polling fallback for this job; SSE delivered the terminal state.
-      const poll = jobPollersRef.current.get(jobId);
-      if (poll?.timer) clearTimeout(poll.timer);
-      jobPollersRef.current.delete(jobId);
-
       setPaths((prev) => {
         const existing =
           (prev || []).find((p) => p?.jobId === jobId) ||
           (prev || []).find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
           null;
 
         const base =
@@ -241,12 +252,7 @@ export function PathProvider({ children }) {
     }
 
     if (event === "jobdone") {
-      // Stop any polling fallback for this job; SSE delivered the terminal state.
-      const poll = jobPollersRef.current.get(jobId);
-      if (poll?.timer) clearTimeout(poll.timer);
-      jobPollersRef.current.delete(jobId);
-
-      const pathId = extractPathIdFromJob(job);
+      const pathId = pathIdFromEvent ?? extractPathIdFromJob(job);
 
       // Optimistically mark placeholder done
       setPaths((prev) => {
@@ -287,136 +293,70 @@ export function PathProvider({ children }) {
         loadPaths();
       })();
     }
-  }, [lastMessage, user?.id, loadPaths]);
 
-  const stopJobPolling = useCallback((jobId) => {
-    if (!jobId) return;
-    const poll = jobPollersRef.current.get(jobId);
-    if (poll?.timer) clearTimeout(poll.timer);
-    jobPollersRef.current.delete(jobId);
-  }, []);
+    if (event === "jobcanceled") {
+      setPaths((prev) => {
+        const existing =
+          (prev || []).find((p) => p?.jobId === jobId) ||
+          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
+          null;
 
-  const pollJobOnce = useCallback(
-    async (jobId) => {
-      const poll = jobPollersRef.current.get(jobId);
-      if (!poll) return;
-
-      try {
-        const job = await apiGetJob(jobId);
-        if (!jobPollersRef.current.has(jobId)) return;
-
-        const status = String(job?.status ?? "").toLowerCase();
-        const stage = job?.stage ?? null;
-        const progress =
-          typeof job?.progress === "number" ? job.progress : undefined;
-        const errMsg = job?.error ?? null;
-
-        setPaths((prev) => {
-          const existing =
-            (prev || []).find((p) => p?.jobId === jobId) ||
-            (prev || []).find((p) => p?.id === `job:${jobId}`) ||
-            null;
-          if (!existing) return prev;
-
-          const next = attachJobFields(existing, {
-            job,
-            status: status || undefined,
-            stage,
-            progress,
-            message: status === "failed" ? errMsg || "Generation failed" : undefined,
-            jobId,
-            jobType: "learning_build",
+        const base =
+          existing ??
+          ({
+            id: pathIdFromEvent ? String(pathIdFromEvent) : `job:${jobId}`,
+            title: "Path generation canceled",
+            description: "",
+            status: "draft",
           });
 
-          return upsertById(prev || [], next);
+        const next = attachJobFields(base, {
+          job,
+          status: "canceled",
+          stage: data.stage ?? job?.stage,
+          progress: typeof data.progress === "number" ? data.progress : job?.progress,
+          message: data.message || "Canceled",
+          jobId,
+          jobType,
         });
 
-        if (status === "succeeded") {
-          stopJobPolling(jobId);
-
-          const pathId = extractPathIdFromJob(job);
-          if (pathId) {
-            try {
-              const fresh = await apiGetPath(pathId);
-              if (fresh?.id) {
-                setPaths((prev) => {
-                  const withoutPlaceholder = (prev || []).filter(
-                    (p) => p?.jobId !== jobId
-                  );
-                  return upsertById(withoutPlaceholder, stripJobFields(fresh), {
-                    replace: true,
-                  });
-                });
-                return;
-              }
-            } catch (err) {
-              console.warn(
-                "[PathProvider] Failed to fetch path after polled job done:",
-                err
-              );
-            }
-          }
-          loadPaths();
-          return;
-        }
-
-        if (status === "failed") {
-          stopJobPolling(jobId);
-          return;
-        }
-      } catch (err) {
-        console.warn("[PathProvider] Job poll failed:", err);
-      }
-
-      const nextPoll = jobPollersRef.current.get(jobId);
-      if (!nextPoll) return;
-      nextPoll.timer = setTimeout(() => pollJobOnce(jobId), 4000);
-      jobPollersRef.current.set(jobId, nextPoll);
-    },
-    [loadPaths, stopJobPolling]
-  );
-
-  const startJobPolling = useCallback(
-    (jobId) => {
-      if (!jobId) return;
-      if (jobPollersRef.current.has(jobId)) return;
-
-      jobPollersRef.current.set(jobId, { timer: null });
-      pollJobOnce(jobId);
-    },
-    [pollJobOnce]
-  );
-
-  useEffect(() => {
-    const active = new Set();
-    for (const p of paths || []) {
-      const jobId = p?.jobId;
-      const jobType = String(p?.jobType || "").toLowerCase();
-      const jobStatus = String(p?.jobStatus || "").toLowerCase();
-      if (!jobId || jobType !== "learning_build") continue;
-
-      if (jobStatus !== "succeeded" && jobStatus !== "failed") {
-        active.add(jobId);
-        startJobPolling(jobId);
-      }
+        return upsertById(prev || [], next);
+      });
     }
 
-    // Stop pollers for jobs no longer tracked in state.
-    for (const [jobId, poll] of jobPollersRef.current.entries()) {
-      if (active.has(jobId)) continue;
-      if (poll?.timer) clearTimeout(poll.timer);
-      jobPollersRef.current.delete(jobId);
-    }
-  }, [paths, startJobPolling]);
+    if (event === "jobrestarted") {
+      setPaths((prev) => {
+        const existing =
+          (prev || []).find((p) => p?.jobId === jobId) ||
+          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
+          null;
 
-  useEffect(() => {
-    return () => {
-      for (const poll of jobPollersRef.current.values()) {
-        if (poll?.timer) clearTimeout(poll.timer);
-      }
-      jobPollersRef.current.clear();
-    };
-  }, []);
+        const base =
+          existing ??
+          ({
+            id: pathIdFromEvent ? String(pathIdFromEvent) : `job:${jobId}`,
+            title: "Generating path…",
+            description: "We’re analyzing your materials and building a learning path.",
+            status: "draft",
+          });
+
+        const next = attachJobFields(base, {
+          job,
+          status: job?.status ?? "queued",
+          stage: job?.stage ?? "queued",
+          progress: typeof job?.progress === "number" ? job.progress : 0,
+          message: data.message || "Restarting…",
+          jobId,
+          jobType,
+        });
+
+        return upsertById(prev || [], next);
+      });
+      return;
+    }
+  }, [lastMessage, user?.id, loadPaths]);
 
   const getById = useCallback(
     (id) => paths.find((p) => p?.id === id) ?? null,
@@ -496,10 +436,6 @@ export function PathProvider({ children }) {
 export function usePaths() {
   return useContext(PathContext);
 }
-
-
-
-
 
 
 

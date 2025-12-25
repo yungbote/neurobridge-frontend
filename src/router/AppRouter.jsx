@@ -6,6 +6,7 @@ import FeaturesPage from "@/pages/nonauthenticated/FeaturesPage";
 import PricingPage from "@/pages/nonauthenticated/PricingPage";
 import HomePage from "@/pages/authenticated/HomePage";
 import PathPage from "@/pages/authenticated/PathPage";
+import PathNodePage from "@/pages/authenticated/PathNodePage";
 import ActivityPage from "@/pages/authenticated/ActivityPage";
 import PathBuildPage from "@/pages/authenticated/PathBuildPage";
 import ChatThreadPage from "@/pages/authenticated/ChatThreadPage";
@@ -29,12 +30,12 @@ export function AppRouter() {
       <Route path="/paths/build/:jobId" element={<PathBuildPage />} />
       <Route path="/chat/threads/:id" element={<ChatThreadPage />} />
       <Route path="/paths/:id" element={<PathPage />} />
+      <Route path="/path-nodes/:id" element={<PathNodePage />} />
       <Route path="/activities/:id" element={<ActivityPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
-
 
 
 

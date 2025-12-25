@@ -4,13 +4,13 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { matchPath, useLocation } from "react-router-dom";
 import { useSSEContext } from "@/providers/SSEProvider";
 import { useUser } from "@/providers/UserProvider";
-import { clampPct, stageLabel } from "@/lib/learningBuildStages";
+import { getJob as apiGetJob } from "@/api/JobService";
+import { clampPct, learningBuildStageOrder, normalizeStage, stageLabel } from "@/lib/learningBuildStages";
 
 const ActivityPanelContext = createContext(null);
 
@@ -34,10 +34,92 @@ function extractPathIdFromJob(job) {
   return typeof id === "string" && id.trim() ? id.trim() : null;
 }
 
+function isTerminalJobStatus(status) {
+  const s = String(status || "").toLowerCase();
+  return s === "succeeded" || s === "failed" || s === "canceled";
+}
+
+function buildLearningBuildItems(job, message) {
+  const jid = String(job?.id || "");
+  const status = String(job?.status || "").toLowerCase();
+  const stage = normalizeStage(job?.stage);
+  const progress = clampPct(job?.progress);
+  const errMsg = String(job?.error || "").trim();
+
+  const runningTitle = stageLabel(stage) || "Generating path…";
+  const title =
+    status === "succeeded"
+      ? "Path ready"
+      : status === "failed"
+        ? "Generation failed"
+        : status === "canceled"
+          ? "Generation canceled"
+          : runningTitle;
+
+  const content =
+    status === "failed"
+      ? errMsg || "Unknown error"
+      : status === "canceled"
+        ? "Generation paused. You can regenerate or keep chatting."
+        : status === "succeeded"
+          ? "Done"
+          : String(message || "").trim() ||
+            "We’re analyzing your materials and building a learning path.";
+
+  const items = [
+    {
+      id: `summary:${jid}`,
+      title,
+      content,
+      progress: typeof progress === "number" ? progress : 0,
+    },
+  ];
+
+  const obj = safeParseJSON(job?.result ?? job?.Result);
+  const stages =
+    obj && typeof obj === "object" && obj.stages && typeof obj.stages === "object"
+      ? obj.stages
+      : null;
+
+  const jobActive = !isTerminalJobStatus(status);
+
+  for (const stageName of learningBuildStageOrder) {
+    const ss = stages?.[stageName] ?? null;
+    const ssStatus = String(ss?.status || "").toLowerCase();
+    const childStatus = String(ss?.child_job_status || "").toLowerCase();
+    const isCurrent = stage && String(stage).toLowerCase() === String(stageName).toLowerCase();
+
+    if (!ss) continue;
+    const startedAt = ss?.started_at ?? ss?.startedAt ?? null;
+    const finishedAt = ss?.finished_at ?? ss?.finishedAt ?? null;
+    const hasChild = Boolean(ss?.child_job_id ?? ss?.childJobId ?? "");
+    const hasStarted = Boolean(startedAt || finishedAt || hasChild);
+    // Progressive disclosure: don't render stages that haven't actually started yet.
+    if (!hasStarted && !isCurrent) continue;
+    if (ssStatus === "pending" && !(status === "canceled" && isCurrent)) continue;
+    if (jobActive && isCurrent) continue;
+
+    let stageContent = "";
+    if (ssStatus === "succeeded") stageContent = "Completed";
+    else if (ssStatus === "failed") stageContent = ss?.last_error ? String(ss.last_error) : "Failed";
+    else if (status === "canceled" && isCurrent) stageContent = "Canceled";
+    else if (ssStatus === "waiting_child") stageContent = childStatus ? `Running (${childStatus})` : "Running…";
+    else if (isCurrent && !isTerminalJobStatus(status)) stageContent = "In progress…";
+
+    items.push({
+      id: `stage:${jid}:${stageName}`,
+      title: stageLabel(stageName) || stageName,
+      content: stageContent,
+    });
+  }
+
+  return items;
+}
+
 const WIDTH_KEY = "activity_panel_width";
 
 export function ActivityPanelProvider({ children }) {
-  const { lastMessage } = useSSEContext();
+  const { lastMessage, connected } = useSSEContext();
   const { user } = useUser();
   const location = useLocation();
 
@@ -52,21 +134,24 @@ export function ActivityPanelProvider({ children }) {
   });
 
   const [activeJobId, setActiveJobId] = useState(null);
+  const [activeJob, setActiveJob] = useState(null);
+  const [activeJobMessage, setActiveJobMessage] = useState("");
   const [donePathId, setDonePathId] = useState(null);
   const [items, setItems] = useState([]);
-
-  const lastStageRef = useRef("");
-  const lastBucketRef = useRef(-1);
 
   useEffect(() => {
     try {
       window.localStorage.setItem(WIDTH_KEY, String(width));
-    } catch {}
+    } catch (err) {
+      void err;
+    }
   }, [width]);
 
   const resetForJob = useCallback((jobId) => {
     const id = jobId ? String(jobId) : null;
     setActiveJobId(id);
+    setActiveJob(null);
+    setActiveJobMessage("");
     setDonePathId(null);
     setItems(
       id
@@ -80,8 +165,6 @@ export function ActivityPanelProvider({ children }) {
           ]
         : []
     );
-    lastStageRef.current = "";
-    lastBucketRef.current = -1;
   }, []);
 
   useEffect(() => {
@@ -101,6 +184,60 @@ export function ActivityPanelProvider({ children }) {
     },
     [activeJobId, resetForJob]
   );
+
+  const applyLearningBuildSnapshot = useCallback((job, message) => {
+    if (!job) return;
+    setActiveJob(job);
+    const msg = typeof message === "string" && message.trim()
+      ? message
+      : typeof job?.message === "string" && job.message.trim()
+        ? job.message
+        : "";
+    setActiveJobMessage(msg);
+
+    setItems(buildLearningBuildItems(job, msg));
+
+    const status = String(job?.status || "").toLowerCase();
+    if (status === "succeeded") {
+      const pid = extractPathIdFromJob(job);
+      if (pid) setDonePathId(pid);
+    }
+  }, []);
+
+  // Converge job state once on mount/selection (SSE has no replay).
+  useEffect(() => {
+    if (!activeJobId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const job = await apiGetJob(activeJobId);
+        if (!cancelled && job) applyLearningBuildSnapshot(job, job?.message);
+      } catch (err) {
+        console.warn("[ActivityPanelProvider] Load job snapshot failed:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeJobId, applyLearningBuildSnapshot]);
+
+  // Converge once on SSE reconnect (missed messages are not replayed).
+  useEffect(() => {
+    if (!connected) return;
+    if (!activeJobId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const job = await apiGetJob(activeJobId);
+        if (!cancelled && job) applyLearningBuildSnapshot(job, job?.message);
+      } catch (err) {
+        console.warn("[ActivityPanelProvider] Reconnect snapshot failed:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, activeJobId, applyLearningBuildSnapshot]);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -122,65 +259,37 @@ export function ActivityPanelProvider({ children }) {
     if (jid !== String(activeJobId)) return;
 
     if (event === "jobcreated") {
-      setItems((prev) =>
-        [...(prev || []), {
-          id: `created:${jid}:${Date.now()}`,
-          title: "Queued",
-          content: "Your materials are queued for processing.",
-          progress: 0,
-        }].slice(-200)
-      );
+      if (job) applyLearningBuildSnapshot(job, "Queued");
       return;
     }
 
     if (event === "jobprogress") {
-      const stage = String(data.stage ?? job?.stage ?? "");
-      const progRaw = typeof data.progress === "number" ? data.progress : job?.progress;
-      const progress = clampPct(progRaw);
-
-      const bucket = Math.floor(progress / 5);
-      if (String(stage) === lastStageRef.current && bucket === lastBucketRef.current) return;
-      lastStageRef.current = String(stage);
-      lastBucketRef.current = bucket;
-
-      setItems((prev) =>
-        [...(prev || []), {
-          id: `progress:${jid}:${Date.now()}`,
-          title: stageLabel(stage) || "Working…",
-          content: data.message || "",
-          progress,
-        }].slice(-200)
-      );
+      if (job) applyLearningBuildSnapshot(job, data.message || activeJobMessage);
       return;
     }
 
     if (event === "jobfailed") {
-      setItems((prev) =>
-        [...(prev || []), {
-          id: `failed:${jid}:${Date.now()}`,
-          title: "Generation failed",
-          content: data.error || job?.error || "Unknown error",
-          progress: clampPct(job?.progress),
-        }].slice(-200)
-      );
+      if (job) applyLearningBuildSnapshot(job, data.error || job?.error || "Unknown error");
       setOpen(true);
       return;
     }
 
     if (event === "jobdone") {
-      const pid = extractPathIdFromJob(job);
-      if (pid) setDonePathId(pid);
-
-      setItems((prev) =>
-        [...(prev || []), {
-          id: `done:${jid}:${Date.now()}`,
-          title: "Done",
-          content: "Finalizing…",
-          progress: 100,
-        }].slice(-200)
-      );
+      if (job) applyLearningBuildSnapshot(job, "Done");
+      return;
     }
-  }, [lastMessage, user?.id, activeJobId]);
+
+    if (event === "jobcanceled") {
+      if (job) applyLearningBuildSnapshot(job, "Canceled");
+      setOpen(true);
+      return;
+    }
+
+    if (event === "jobrestarted") {
+      if (job) applyLearningBuildSnapshot(job, "Restarting…");
+      return;
+    }
+  }, [lastMessage, user?.id, activeJobId, activeJobMessage, applyLearningBuildSnapshot]);
 
   const value = useMemo(
     () => ({
@@ -189,12 +298,15 @@ export function ActivityPanelProvider({ children }) {
       width,
       setWidth,
       activeJobId,
+      activeJob,
+      activeJobStatus: String(activeJob?.status || "").toLowerCase(),
+      activeJobMessage,
       setActiveJobId: resetForJob,
       donePathId,
       items,
       openForJob,
     }),
-    [open, width, activeJobId, donePathId, items, openForJob, resetForJob]
+    [open, width, activeJobId, activeJob, activeJobMessage, donePathId, items, openForJob, resetForJob]
   );
 
   return (
@@ -209,12 +321,3 @@ export function useActivityPanel() {
   if (!ctx) throw new Error("useActivityPanel must be used within ActivityPanelProvider");
   return ctx;
 }
-
-
-
-
-
-
-
-
-

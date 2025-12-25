@@ -6,6 +6,7 @@ const SIZE_CLASS = {
   md: "max-w-5xl",
   lg: "max-w-6xl",
   xl: "max-w-7xl",
+  "2xl": "max-w-[96rem]",
   full: "max-w-none",
 };
 

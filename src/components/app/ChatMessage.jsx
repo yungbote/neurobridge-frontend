@@ -250,7 +250,9 @@ function CodeBlock({ children, language, filename, showLineNumbers = false, high
       await navigator.clipboard.writeText(String(children || ""))
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch {}
+    } catch (err) {
+      void err
+    }
   }
 
   return (
@@ -488,7 +490,7 @@ function FileAttachment({ filename, size, url, type }) {
 
 function LinkPreview({ url, title, description, image, favicon }) {
   let host = url
-  try { host = new URL(url).hostname } catch {}
+  try { host = new URL(url).hostname } catch (err) { void err }
 
   return (
     <a
@@ -821,7 +823,6 @@ ChatMessage.Kbd = Kbd
 ChatMessage.ThinkingIndicator = ThinkingIndicator
 ChatMessage.ThinkingContent = ThinkingContent
 ChatMessage.ActionBar = ActionBar
-
 
 
 

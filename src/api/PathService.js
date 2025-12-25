@@ -8,6 +8,16 @@ export function mapPath(raw) {
     title: raw.title ?? "",
     description: raw.description ?? "",
     status: raw.status ?? "",
+    jobId: raw.job_id ?? raw.jobId ?? null,
+    jobStatus: raw.job_status ?? raw.jobStatus ?? null,
+    jobStage: raw.job_stage ?? raw.jobStage ?? null,
+    jobProgress:
+      typeof raw.job_progress === "number"
+        ? raw.job_progress
+        : typeof raw.jobProgress === "number"
+          ? raw.jobProgress
+          : null,
+    jobMessage: raw.job_message ?? raw.jobMessage ?? null,
     metadata: raw.metadata ?? null,
     createdAt: raw.created_at ?? raw.createdAt ?? null,
     updatedAt: raw.updated_at ?? raw.updatedAt ?? null,
@@ -24,6 +34,7 @@ export function mapPathNode(raw) {
     parentNodeId: raw.parent_node_id ?? raw.parentNodeId ?? null,
     gating: raw.gating ?? null,
     metadata: raw.metadata ?? null,
+    contentJson: raw.content_json ?? raw.contentJson ?? null,
     createdAt: raw.created_at ?? raw.createdAt ?? null,
     updatedAt: raw.updated_at ?? raw.updatedAt ?? null,
   };

@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { getLesson, listLessonsForModule } from "@/api/LessonService";
+import { Container } from "@/layout/Container";
 
 function safeParseJSON(v) {
   if (!v) return null;
@@ -141,23 +142,27 @@ export default function LessonPage() {
 
   if (loading && !lesson) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground sm:px-6 lg:px-8">
-        Loading…
+      <div className="min-h-svh bg-background">
+        <Container size="2xl" className="py-10 text-sm text-muted-foreground">
+          Loading…
+        </Container>
       </div>
     );
   }
 
   if (!lesson) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground sm:px-6 lg:px-8">
-        Lesson not found.
+      <div className="min-h-svh bg-background">
+        <Container size="2xl" className="py-10 text-sm text-muted-foreground">
+          Lesson not found.
+        </Container>
       </div>
     );
   }
 
   return (
     <div className="min-h-svh bg-background">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <Container size="2xl" className="py-8 sm:py-10">
         {/* Navigation Header */}
         <div className="mb-8 flex items-center justify-between border-b border-border pb-6">
           <div className="flex-1">
@@ -253,12 +258,10 @@ export default function LessonPage() {
             )}
           </div>
         </div>
-      </div>
+      </Container>
     </div>
   );
 }
-
-
 
 
 

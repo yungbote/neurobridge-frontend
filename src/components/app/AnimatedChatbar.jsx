@@ -46,6 +46,7 @@ export const AnimatedChatbar = ({
   className,
   disablePlaceholderAnimation = false,
   disableUploads = false,
+  submitMode = "send", // "send" | "cancel"
 }) => {
   const navigate = useNavigate();
   const { uploadMaterialSet } = usePaths();
@@ -54,7 +55,7 @@ export const AnimatedChatbar = ({
   const [currentPromptIndex, setCurrentPromptIndex] = useState(
     () => Math.floor(Math.random() * examplePrompts.length)
   );
-  const [charIndex, setCharIndex] = useState(0);
+  const [, setCharIndex] = useState(0);
   const [phase, setPhase] = useState("typing");
   const [isFocused, setIsFocused] = useState(false);
   const [files, setFiles] = useState([]);
@@ -75,7 +76,8 @@ export const AnimatedChatbar = ({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [isDraggingFilesStrip, setIsDraggingFilesStrip] = useState(false);
 
-  const canSend = value.trim().length > 0 || (!disableUploads && files.length > 0);
+  const isCancelMode = String(submitMode || "").toLowerCase() === "cancel";
+  const canSend = isCancelMode || value.trim().length > 0 || (!disableUploads && files.length > 0);
   const sendDisabled = !canSend || isGenerating;
 
   const updateFilesScroll = useCallback(() => {
@@ -154,7 +156,7 @@ export const AnimatedChatbar = ({
     updateFilesScroll();
   };
 
-  const endFilesDrag = (e) => {
+  const endFilesDrag = () => {
     if (!dragFilesRef.current.active) return;
 
     const el = filesStripRef.current;
@@ -164,7 +166,7 @@ export const AnimatedChatbar = ({
     dragFilesRef.current.pointerId = null;
 
     if (el && pid != null) {
-      try { el.releasePointerCapture(pid); } catch {}
+      try { el.releasePointerCapture(pid); } catch (err) { void err; }
     }
 
     setIsDraggingFilesStrip(false);
@@ -400,12 +402,6 @@ export const AnimatedChatbar = ({
     setIsFocused(false);
   }
 
-  const handleFileSelect = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }
-
   const handleDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -441,7 +437,7 @@ export const AnimatedChatbar = ({
     const uploadFn = onUpload || uploadMaterialSet;
     let filesToUpload = disableUploads ? [] : files.map((f) => f.file).filter(Boolean);
 
-    if (!value.trim() && filesToUpload.length === 0) {
+    if (!isCancelMode && !value.trim() && filesToUpload.length === 0) {
       return;
     }
 
@@ -487,7 +483,7 @@ export const AnimatedChatbar = ({
     } else if (nextJobId) {
       navigate(`/paths/build/${nextJobId}`);
     }
-  }, [files, value, onSubmit, onUpload, uploadMaterialSet, isGenerating, navigate, disableUploads]);
+  }, [files, value, onSubmit, onUpload, uploadMaterialSet, isGenerating, navigate, disableUploads, isCancelMode]);
 
   const addFiles = (incoming) => {
     const arr = Array.isArray(incoming) ? incoming : Array.from(incoming || []);
@@ -507,10 +503,6 @@ export const AnimatedChatbar = ({
       }
       return merged;
     });
-  }
-
-  const handlePickFilesClick = () => {
-    fileInputRef.current?.click();
   }
 
   const handleFileInputChange = (e) => {
@@ -549,10 +541,12 @@ export const AnimatedChatbar = ({
         />
       )}
       <div
-        className={cn(`
+        className={cn(
+          `
           relative bg-background border border-border rounded-3xl px-3
           sm:px-4 sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow
-          hover:shadow-md focus-within:shadow-md`
+          hover:shadow-md focus-within:shadow-md`,
+          isDragging && !disableUploads && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
         )}
         onDragEnter={disableUploads ? undefined : handleDragEnter}
         onDragLeave={disableUploads ? undefined : handleDragLeave}
@@ -672,10 +666,11 @@ export const AnimatedChatbar = ({
               ref={inputRef}
               type="text"
               value={value}
+              disabled={isCancelMode || isGenerating}
               onChange={(e) => setValue(e.target.value)}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              placeholder="Ask anything"
+              placeholder={isCancelMode ? "Generating… press send to cancel" : "Ask anything"}
               aria-label="Chat input"
               className={cn(
                 "w-full !bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground",
@@ -711,9 +706,9 @@ export const AnimatedChatbar = ({
                 "h-8 w-8 sm:h-9 sm:w-9 rounded-full hover:bg-muted",
                 sendDisabled && "text-muted-foreground/40 hover:bg-transparent"
               )}
-              aria-label="Send message"
+              aria-label={isCancelMode ? "Cancel generation" : "Send message"}
             >
-              {isGenerating ? (
+              {isGenerating || isCancelMode ? (
                 <Square className="h-4 w-4 sm:h-4 sm:w-4 fill-current" />
               ) : (
                 <ArrowUp className="h-4 w-4 sm:h-4 sm:w-4" />
@@ -725,8 +720,6 @@ export const AnimatedChatbar = ({
     </form>
   );
 }
-
-
 
 
 

@@ -91,7 +91,7 @@ export default function CoursePage() {
 
   return (
     <div className="min-h-svh bg-background">
-      <Container size="sm" className="py-10 sm:py-16">
+      <Container size="xl" className="py-10 sm:py-16">
         {/* Course Header */}
         <div className="mb-12 space-y-4">
           <h1 className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
@@ -190,7 +190,6 @@ export default function CoursePage() {
     </div>
   );
 }
-
 
 
 

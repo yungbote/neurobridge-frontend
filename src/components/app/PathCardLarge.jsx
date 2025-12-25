@@ -30,7 +30,10 @@ function stageLabel(stage) {
   if (s === "user_profile_refresh") return "Refreshing profile";
   if (s === "teaching_patterns_seed") return "Seeding teaching patterns";
   if (s === "path_plan_build") return "Planning path";
-  if (s === "realize_activities") return "Generating activities";
+  if (s === "node_figures_plan_build") return "Planning figures";
+  if (s === "node_figures_render") return "Rendering figures";
+  if (s === "node_doc_build") return "Writing unit docs";
+  if (s === "realize_activities") return "Writing lessons";
   if (s === "coverage_coherence_audit") return "Auditing plan";
   if (s === "progression_compact") return "Finalizing progression";
   if (s === "variant_stats_refresh") return "Refreshing stats";
@@ -155,8 +158,6 @@ export function PathCardLarge({ path }) {
     </Link>
   );
 }
-
-
 
 
 

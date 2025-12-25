@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ChatMessage } from "@/components/app/ChatMessage";
 import { AnimatedChatbar } from "@/components/app/AnimatedChatbar";
 import { getChatThread, listChatMessages, mapChatMessage, sendChatMessage } from "@/api/ChatService";
+import { cancelJob as apiCancelJob, restartJob as apiRestartJob } from "@/api/JobService";
 import { useSSEContext } from "@/providers/SSEProvider";
 import { useUser } from "@/providers/UserProvider";
 import { useActivityPanel } from "@/providers/ActivityPanelProvider";
@@ -14,7 +15,9 @@ import { clampPct, stageLabel } from "@/lib/learningBuildStages";
 function generateIdempotencyKey() {
   try {
     if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  } catch {}
+  } catch (err) {
+    void err;
+  }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
@@ -91,11 +94,12 @@ export default function ChatThreadPage() {
 
   const { user } = useUser();
   const { lastMessage } = useSSEContext();
-  const { setActiveJobId, openForJob, items, activeJobId } = useActivityPanel();
+  const { setActiveJobId, openForJob, items, activeJobId, activeJob, activeJobStatus } = useActivityPanel();
 
   const [loading, setLoading] = useState(false);
   const [thread, setThread] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [sendError, setSendError] = useState("");
 
   const scrollRef = useRef(null);
   const stickRef = useRef(true);
@@ -151,18 +155,19 @@ export default function ChatThreadPage() {
 
   const isPathBuildThread = useMemo(() => {
     const md = thread?.metadata;
-    if (!md) return false;
-    if (typeof md === "object") return String(md.kind || "").toLowerCase() === "path_build";
+    const fallback = Boolean(thread?.pathId && thread?.jobId);
+    if (!md) return fallback;
+    if (typeof md === "object") return String(md.kind || "").toLowerCase() === "path_build" || fallback;
     if (typeof md === "string") {
       try {
         const obj = JSON.parse(md);
-        return String(obj?.kind || "").toLowerCase() === "path_build";
+        return String(obj?.kind || "").toLowerCase() === "path_build" || fallback;
       } catch {
-        return false;
+        return fallback;
       }
     }
-    return false;
-  }, [thread?.metadata]);
+    return fallback;
+  }, [thread?.metadata, thread?.pathId, thread?.jobId]);
 
   // If this thread is attached to a learning_build job, hook it into the Activity panel + inline "thinking" feed.
   useEffect(() => {
@@ -173,6 +178,11 @@ export default function ChatThreadPage() {
     startedAtRef.current = Date.now();
     setActiveJobId(String(jid));
   }, [thread?.jobId, activeJobId, setActiveJobId, isPathBuildThread]);
+
+  const buildJobId = useMemo(() => {
+    if (!isPathBuildThread) return null;
+    return thread?.jobId ? String(thread.jobId) : null;
+  }, [isPathBuildThread, thread?.jobId]);
 
   // Apply SSE chat events for this thread.
   useEffect(() => {
@@ -264,30 +274,60 @@ export default function ChatThreadPage() {
     return rm ? `${h}h ${rm}m` : `${h}h`;
   }, [items.length]);
 
+  const learningBuildStatus = useMemo(() => {
+    if (!buildJobId) return "";
+    const panelStatus =
+      String(activeJobId || "") === String(buildJobId)
+        ? String(activeJobStatus || "").toLowerCase()
+        : "";
+    return panelStatus || "";
+  }, [buildJobId, activeJobId, activeJobStatus]);
+
   const learningBuildActive = useMemo(() => {
-    if (!isPathBuildThread) return false;
-    const jid = thread?.jobId;
-    if (!jid) return false;
-    if (String(activeJobId || "") !== String(jid)) return false;
-    const last = (items || [])[items.length - 1] || null;
-    const done = String(last?.title || "").toLowerCase() === "done" && clampPct(last?.progress) >= 100;
-    return !done;
-  }, [thread?.jobId, activeJobId, items, isPathBuildThread]);
+    if (!buildJobId) return false;
+    // Treat unknown status as active until we converge via polling.
+    return learningBuildStatus === "" || learningBuildStatus === "queued" || learningBuildStatus === "running";
+  }, [buildJobId, learningBuildStatus]);
+
+  const learningBuildCanceled = useMemo(() => learningBuildStatus === "canceled", [learningBuildStatus]);
+
+  const handleCancelBuild = useCallback(async () => {
+    const jid = buildJobId;
+    if (!jid) return;
+    try {
+      await apiCancelJob(jid);
+    } catch (err) {
+      console.error("[ChatThreadPage] cancel job failed:", err);
+    }
+  }, [buildJobId]);
+
+  const handleRestartBuild = useCallback(async () => {
+    const jid = buildJobId;
+    if (!jid) return;
+    try {
+      await apiRestartJob(jid);
+    } catch (err) {
+      console.error("[ChatThreadPage] restart job failed:", err);
+    }
+  }, [buildJobId]);
 
   const thinkingSteps = useMemo(() => {
-    const list = (items || []).slice(-80);
-    const last = list[list.length - 1] || null;
-    const title = last?.title || "Generating path…";
-    const progress = clampPct(last?.progress);
-    const msg = String(last?.content || "").trim();
+    if (!learningBuildActive && !learningBuildCanceled) return null;
 
-    if (!learningBuildActive) return null;
+    const firstId = String((items || [])[0]?.id || "");
+    const list =
+      buildJobId && firstId.includes(String(buildJobId)) ? (items || []).slice(0, 200) : [];
+    const summary = list[0] || null;
+    const stages = list.slice(1);
+    const title = summary?.title || stageLabel(String(activeJob?.stage || "")) || "Generating path…";
+    const progress = clampPct(summary?.progress ?? activeJob?.progress);
+    const msg = String(summary?.content || "").trim();
 
     return (
       <div className="space-y-1.5">
         <button
           type="button"
-          onClick={() => thread?.jobId && openForJob(thread.jobId)}
+          onClick={() => buildJobId && openForJob(buildJobId)}
           className="w-full text-left hover:text-foreground transition-colors"
         >
           <span className="font-semibold text-foreground">
@@ -300,13 +340,13 @@ export default function ChatThreadPage() {
           </span>
         </button>
 
-        {list.length > 0 && (
+        {stages.length > 0 && (
           <div className="pt-2 space-y-1">
-            {list.map((it) => (
+            {stages.map((it) => (
               <button
                 key={it.id || `${it.title}-${it.progress}`}
                 type="button"
-                onClick={() => thread?.jobId && openForJob(thread.jobId)}
+                onClick={() => buildJobId && openForJob(buildJobId)}
                 className="block w-full text-left hover:text-foreground transition-colors"
               >
                 <span className="font-medium text-foreground">{it.title}</span>
@@ -318,9 +358,21 @@ export default function ChatThreadPage() {
             ))}
           </div>
         )}
+
+        {learningBuildCanceled ? (
+          <div className="pt-3">
+            <button
+              type="button"
+              onClick={handleRestartBuild}
+              className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Regenerate
+            </button>
+          </div>
+        ) : null}
       </div>
     );
-  }, [items, learningBuildActive, openForJob, thread?.jobId]);
+  }, [items, buildJobId, activeJob?.stage, activeJob?.progress, learningBuildActive, learningBuildCanceled, openForJob, handleRestartBuild]);
 
   const handleSend = useCallback(
     async (text) => {
@@ -328,6 +380,7 @@ export default function ChatThreadPage() {
       if (!trimmed) return;
       if (!threadId) return;
 
+      setSendError("");
       const idempotencyKey = generateIdempotencyKey();
       // Optimistically echo; the backend will also emit ChatMessageCreated for both messages.
       try {
@@ -336,7 +389,13 @@ export default function ChatThreadPage() {
         if (out?.assistantMessage) setMessages((prev) => upsertByID(prev, out.assistantMessage));
         requestAnimationFrame(() => scrollToBottom("smooth"));
       } catch (err) {
+        const raw = String(err?.response?.data?.error || err?.message || "send_failed");
+        const msg = raw.toLowerCase().includes("thread is busy")
+          ? "The assistant is still responding. Try again in a moment."
+          : "Failed to send message. Please try again.";
+        setSendError(msg);
         console.error("[ChatThreadPage] send message failed:", err);
+        throw err;
       }
     },
     [threadId, scrollToBottom]
@@ -345,8 +404,22 @@ export default function ChatThreadPage() {
   const renderMessageContent = useCallback((msg) => {
     const role = String(msg?.role || "").toLowerCase();
     const content = String(msg?.content || "");
+    const status = String(msg?.status || "").toLowerCase();
 
     if (role === "user") return content;
+
+    if (status === "error") {
+      const errText = String(msg?.error || "").trim();
+      return (
+        <div className="text-sm text-destructive">
+          {errText ? `Error: ${errText}` : "Error: Something went wrong."}
+        </div>
+      );
+    }
+
+    if (status === "streaming" && !content.trim()) {
+      return <div className="text-sm text-muted-foreground animate-pulse">Thinking…</div>;
+    }
 
     return (
       <ReactMarkdown
@@ -422,14 +495,38 @@ export default function ChatThreadPage() {
         </div>
       </div>
 
-      <div className="shrink-0 mb-5 bg-background/80 backdrop-blur">
-        <AnimatedChatbar
-          className="max-w-3xl"
-          disablePlaceholderAnimation
-          disableUploads
-          onSubmit={(text) => handleSend(text)}
-        />
+      <div className="shrink-0 sticky bottom-5 z-10 bg-background/80 backdrop-blur">
+        {thread ? (
+          <>
+            {sendError ? (
+              <div className="mx-auto w-full max-w-3xl px-4 pb-2 text-xs text-destructive">
+                {sendError}
+              </div>
+            ) : null}
+            <AnimatedChatbar
+              className="max-w-3xl"
+              disablePlaceholderAnimation
+              disableUploads
+              submitMode={learningBuildActive ? "cancel" : "send"}
+              onSubmit={(text) => (learningBuildActive ? handleCancelBuild() : handleSend(text))}
+            />
+          </>
+        ) : (
+          <div className="mx-auto w-full max-w-3xl px-4 pb-5">
+            <div className="h-14 w-full rounded-3xl border border-border bg-muted/30" />
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+

@@ -26,7 +26,7 @@ export function stageLabel(stage) {
   if (s === "user_profile_refresh") return "Refreshing profile";
   if (s === "teaching_patterns_seed") return "Seeding teaching patterns";
   if (s === "path_plan_build") return "Planning path";
-  if (s === "realize_activities") return "Generating activities";
+  if (s === "realize_activities") return "Writing lessons";
   if (s === "coverage_coherence_audit") return "Auditing plan";
   if (s === "progression_compact") return "Finalizing progression";
   if (s === "variant_stats_refresh") return "Refreshing stats";
@@ -38,3 +38,20 @@ export function stageLabel(stage) {
   return stage;
 }
 
+export const learningBuildStageOrder = [
+  "ingest_chunks",
+  "embed_chunks",
+  "material_set_summarize",
+  "concept_graph_build",
+  "concept_cluster_build",
+  "chain_signature_build",
+  "user_profile_refresh",
+  "teaching_patterns_seed",
+  "path_plan_build",
+  "realize_activities",
+  "coverage_coherence_audit",
+  "progression_compact",
+  "variant_stats_refresh",
+  "priors_refresh",
+  "completed_unit_refresh",
+];
