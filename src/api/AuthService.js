@@ -28,6 +28,9 @@ export async function logoutUser() {
   return response.data;
 }
 
+
+// TODO: OAuth not working (google is fine on localhost, apple doesnt need to work atm). Changes might
+// need to be implemented on backend. 
 export async function createOAuthNonce(provider) {
   if (!provider) throw new Error("createOAuthNonce: missing provider");
   const response = await axiosClient.post("/oauth/nonce", { provider });

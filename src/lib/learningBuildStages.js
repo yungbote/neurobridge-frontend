@@ -26,7 +26,7 @@ export function stageLabel(stage) {
   if (s === "user_profile_refresh") return "Refreshing profile";
   if (s === "teaching_patterns_seed") return "Seeding teaching patterns";
   if (s === "path_plan_build") return "Planning path";
-  if (s === "realize_activities") return "Writing lessons";
+  if (s === "realize_activities") return "Writing node content";
   if (s === "coverage_coherence_audit") return "Auditing plan";
   if (s === "progression_compact") return "Finalizing progression";
   if (s === "variant_stats_refresh") return "Refreshing stats";

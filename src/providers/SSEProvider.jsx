@@ -3,6 +3,8 @@ import { getAccessToken } from "@/services/StorageService";
 import SSEService from "@/api/SSEService";
 import { useAuth } from "@/providers/AuthProvider";
 
+// TODO: Harden sse beyond a single last message variable. This is fragile.
+
 const SSEContext = createContext({
   connected: false,
   lastMessage: null,

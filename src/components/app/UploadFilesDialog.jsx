@@ -11,7 +11,7 @@ export function FileUploadDialog({
   trigger,
   onUpload,
   title = "Upload Materials",
-  description = "Upload PDFs, slides, notes, or any other course materials.",
+  description = "Upload PDFs, slides, notes, or any other learning materials.",
   submitLabel = "Upload",
 }) {
   const { uploadMaterialSet } = usePaths();
@@ -308,7 +308,6 @@ export function FileUploadDialog({
     </Dialog>
   );
 }
-
 
 
 

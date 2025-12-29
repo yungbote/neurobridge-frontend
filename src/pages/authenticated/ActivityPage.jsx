@@ -110,7 +110,8 @@ export default function ActivityPage() {
       console.warn("[ActivityPage] failed to ingest activity_completed:", err);
     }
   }, [completed, activity?.id, path?.id, node?.id]);
-
+  
+// TODO: Support for rendering video && Animation && Diagram (beyond image figures) Blocks
   const renderBlock = (block, index) => {
     switch (block.type) {
       case "heading":

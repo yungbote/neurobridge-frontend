@@ -14,6 +14,7 @@ export default function Layout({ children }) {
   return (
     <SidebarProvider>
       <UserDialogsProvider>
+        {/* TODO: Activity Panel should only be visible on the associated chat page */}
         <ActivityPanelProvider>
           <div className="flex w-full min-h-svh">
             {isAuthenticated && <AppSideBar />}

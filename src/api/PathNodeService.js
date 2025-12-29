@@ -88,6 +88,7 @@ export async function listDrillsForNode(pathNodeId) {
   return raws.map(mapDrillSpec).filter(Boolean);
 }
 
+// TODO: Generation is timing out; needs fix
 export async function generateDrillForNode(pathNodeId, kind, { count } = {}) {
   if (!pathNodeId) throw new Error("generateDrillForNode: missing pathNodeId");
   const k = String(kind || "").trim();

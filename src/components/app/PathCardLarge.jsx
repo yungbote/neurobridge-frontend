@@ -33,7 +33,7 @@ function stageLabel(stage) {
   if (s === "node_figures_plan_build") return "Planning figures";
   if (s === "node_figures_render") return "Rendering figures";
   if (s === "node_doc_build") return "Writing unit docs";
-  if (s === "realize_activities") return "Writing lessons";
+  if (s === "realize_activities") return "Writing node content";
   if (s === "coverage_coherence_audit") return "Auditing plan";
   if (s === "progression_compact") return "Finalizing progression";
   if (s === "variant_stats_refresh") return "Refreshing stats";
@@ -158,7 +158,6 @@ export function PathCardLarge({ path }) {
     </Link>
   );
 }
-
 
 
 

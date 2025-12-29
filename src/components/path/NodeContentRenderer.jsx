@@ -119,12 +119,22 @@ function isProbablyImageURL(url) {
   return false;
 }
 
+function isVideoURL(url) {
+  const u = safeString(url).trim().toLowerCase();
+  return (
+    u.endsWith(".mp4") ||
+    u.endsWith(".webm") ||
+    u.endsWith(".mov") ||
+    u.endsWith(".m4v")
+  );
+}
+
 export function NodeContentRenderer({ contentJson }) {
   const content = useMemo(() => normalizeContent(contentJson), [contentJson]);
   const blocks = asArray(content?.blocks);
 
   if (!content || blocks.length === 0) {
-    return <div className="text-sm text-muted-foreground">No lesson content yet.</div>;
+    return <div className="text-sm text-muted-foreground">No content yet.</div>;
   }
 
   return (
@@ -203,15 +213,15 @@ export function NodeContentRenderer({ contentJson }) {
           return (
             <div key={i} className="space-y-2">
               <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
-                <img src={url} alt={md || "Lesson image"} className="h-auto w-full" />
+                <img src={url} alt={md || "Content image"} className="h-auto w-full" />
               </div>
               {md ? <div className="text-xs text-muted-foreground">{md}</div> : null}
             </div>
           );
         }
 
-        if (kind === "video_embed") {
-          const url = assetRefs[0] || "";
+        if (kind === "video_embed" || kind === "video") {
+          const url = assetRefs[0] || safeString(b?.url).trim();
           if (!url) return null;
           const yt = toYouTubeEmbedURL(url);
           return (
@@ -228,6 +238,8 @@ export function NodeContentRenderer({ contentJson }) {
                     />
                   </div>
                 </div>
+              ) : isVideoURL(url) ? (
+                <video className="w-full rounded-xl border border-border" controls src={url} />
               ) : (
                 <a
                   href={url}
