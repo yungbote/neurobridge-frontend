@@ -317,31 +317,21 @@ export default function ChatThreadPage() {
     const firstId = String((items || [])[0]?.id || "");
     const list =
       buildJobId && firstId.includes(String(buildJobId)) ? (items || []).slice(0, 200) : [];
-    const summary = list[0] || null;
-    const stages = list.slice(1);
+    const summaryIndex = list.findIndex((it) => String(it?.id || "").startsWith("summary:"));
+    const summary =
+      summaryIndex >= 0 ? list[summaryIndex] : list.length > 0 ? list[list.length - 1] : null;
+    const stages =
+      summaryIndex >= 0
+        ? list.filter((_, idx) => idx !== summaryIndex)
+        : list.slice(0, Math.max(0, list.length - 1));
     const title = summary?.title || stageLabel(String(activeJob?.stage || "")) || "Generating path…";
     const progress = clampPct(summary?.progress ?? activeJob?.progress);
     const msg = String(summary?.content || "").trim();
 
     return (
       <div className="space-y-1.5">
-        <button
-          type="button"
-          onClick={() => buildJobId && openForJob(buildJobId)}
-          className="w-full text-left hover:text-foreground transition-colors"
-        >
-          <span className="font-semibold text-foreground">
-            <WaveText text={stageLabel(title) || title} />
-          </span>
-          <span className="text-muted-foreground">
-            {" "}
-            — {Math.round(progress)}%
-            {msg ? ` — ${msg}` : ""}
-          </span>
-        </button>
-
         {stages.length > 0 && (
-          <div className="pt-2 space-y-1">
+          <div className="space-y-1">
             {stages.map((it) => (
               <button
                 key={it.id || `${it.title}-${it.progress}`}
@@ -358,6 +348,23 @@ export default function ChatThreadPage() {
             ))}
           </div>
         )}
+
+        <div className={stages.length > 0 ? "pt-2" : ""}>
+          <button
+            type="button"
+            onClick={() => buildJobId && openForJob(buildJobId)}
+            className="w-full text-left hover:text-foreground transition-colors"
+          >
+            <span className="font-semibold text-foreground">
+              <WaveText text={stageLabel(title) || title} />
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              — {Math.round(progress)}%
+              {msg ? ` — ${msg}` : ""}
+            </span>
+          </button>
+        </div>
 
         {learningBuildCanceled ? (
           <div className="pt-3">
@@ -520,7 +527,6 @@ export default function ChatThreadPage() {
     </div>
   );
 }
-
 
 
 

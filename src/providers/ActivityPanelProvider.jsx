@@ -66,14 +66,13 @@ function buildLearningBuildItems(job, message) {
           : String(message || "").trim() ||
             "We’re analyzing your materials and building a learning path.";
 
-  const items = [
-    {
-      id: `summary:${jid}`,
-      title,
-      content,
-      progress: typeof progress === "number" ? progress : 0,
-    },
-  ];
+  const summaryItem = {
+    id: `summary:${jid}`,
+    title,
+    content,
+    progress: typeof progress === "number" ? progress : 0,
+  };
+  const items = [];
 
   const obj = safeParseJSON(job?.result ?? job?.Result);
   const stages =
@@ -113,6 +112,7 @@ function buildLearningBuildItems(job, message) {
     });
   }
 
+  items.push(summaryItem);
   return items;
 }
 
