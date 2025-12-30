@@ -80,12 +80,15 @@ function buildLearningBuildItems(job, message) {
       ? obj.stages
       : null;
 
-  const jobActive = !isTerminalJobStatus(status);
-
   for (const stageName of learningBuildStageOrder) {
     const ss = stages?.[stageName] ?? null;
     const ssStatus = String(ss?.status || "").toLowerCase();
     const childStatus = String(ss?.child_job_status || "").toLowerCase();
+    const childMessage = String(ss?.child_message ?? ss?.childMessage ?? "").trim();
+    const childProgressRaw = ss?.child_progress ?? ss?.childProgress;
+    const childProgress =
+      typeof childProgressRaw === "number" ? childProgressRaw : Number(childProgressRaw);
+    const hasChildProgress = Number.isFinite(childProgress);
     const isCurrent = stage && String(stage).toLowerCase() === String(stageName).toLowerCase();
 
     if (!ss) continue;
@@ -96,20 +99,25 @@ function buildLearningBuildItems(job, message) {
     // Progressive disclosure: don't render stages that haven't actually started yet.
     if (!hasStarted && !isCurrent) continue;
     if (ssStatus === "pending" && !(status === "canceled" && isCurrent)) continue;
-    if (jobActive && isCurrent) continue;
 
     let stageContent = "";
     if (ssStatus === "succeeded") stageContent = "Completed";
     else if (ssStatus === "failed") stageContent = ss?.last_error ? String(ss.last_error) : "Failed";
     else if (status === "canceled" && isCurrent) stageContent = "Canceled";
-    else if (ssStatus === "waiting_child") stageContent = childStatus ? `Running (${childStatus})` : "Running…";
+    else if (ssStatus === "waiting_child") {
+      stageContent = childMessage || (childStatus ? `Running (${childStatus})` : "Running…");
+    }
     else if (isCurrent && !isTerminalJobStatus(status)) stageContent = "In progress…";
 
-    items.push({
+    const item = {
       id: `stage:${jid}:${stageName}`,
       title: stageLabel(stageName) || stageName,
       content: stageContent,
-    });
+    };
+    if (ssStatus === "waiting_child" && hasChildProgress) {
+      item.progress = clampPct(childProgress);
+    }
+    items.push(item);
   }
 
   items.push(summaryItem);
