@@ -1,0 +1,49 @@
+name: Deploy Frontend
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: wise-vim-480800-n2
+  REGION: us-central1
+  AR_REPO: neurobridge
+  CLUSTER_NAME: neurobridge
+  LOCATION: us-central1-a
+  IMAGE_TAG: ${{ github.sha }}
+  VITE_API_BASE_URL: /api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.LOCATION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - uses: docker/setup-buildx-action@v3
+      - run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - run: |
+          docker buildx build --platform linux/amd64 \
+            -t $REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/neurobridge-frontend:$IMAGE_TAG \
+            -f Dockerfile . \
+            --build-arg VITE_API_BASE_URL=$VITE_API_BASE_URL \
+            --push
+
+      - run: |
+          kubectl -n neurobridge set image deploy/frontend frontend=$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/neurobridge-frontend:$IMAGE_TAG
+          kubectl -n neurobridge rollout status deploy/frontend
