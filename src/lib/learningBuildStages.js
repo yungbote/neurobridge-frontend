@@ -5,17 +5,37 @@ export function clampPct(n) {
 }
 
 export function normalizeStage(stage) {
-  const s = String(stage || "").trim();
+  let s = String(stage || "").trim();
   if (!s) return "";
-  if (s.toLowerCase().startsWith("waiting_child_")) {
-    return s.slice("waiting_child_".length);
+  const prefixes = ["waiting_child_", "stale_", "timeout_"];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const prefix of prefixes) {
+      if (s.toLowerCase().startsWith(prefix)) {
+        s = s.slice(prefix.length);
+        changed = true;
+      }
+    }
   }
   return s;
 }
 
 export function stageLabel(stage) {
-  const s = normalizeStage(stage).toLowerCase();
-  if (!s) return null;
+  const raw = String(stage || "").trim();
+  if (!raw) return null;
+  const lowered = raw.toLowerCase();
+  if (lowered.startsWith("stale_")) {
+    const base = raw.slice("stale_".length);
+    const baseLabel = stageLabel(base) || base;
+    return `Stalled - ${baseLabel}`;
+  }
+  if (lowered.startsWith("timeout_")) {
+    const base = raw.slice("timeout_".length);
+    const baseLabel = stageLabel(base) || base;
+    return `Timed out - ${baseLabel}`;
+  }
+  const s = normalizeStage(raw).toLowerCase();
   if (s === "queued") return "Queued";
   if (s === "ingest_chunks") return "Ingesting";
   if (s === "embed_chunks") return "Embedding";
@@ -38,9 +58,7 @@ export function stageLabel(stage) {
   if (s === "priors_refresh") return "Refreshing priors";
   if (s === "completed_unit_refresh") return "Finalizing";
   if (s === "done") return "Done";
-  if (s.startsWith("timeout_")) return "Timed out";
-  if (s.startsWith("stale_")) return "Stalled";
-  return stage;
+  return raw;
 }
 
 export const learningBuildStageOrder = [

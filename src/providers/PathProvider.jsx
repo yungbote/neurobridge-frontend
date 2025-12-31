@@ -17,6 +17,11 @@ const PathContext = createContext({
   paths: [],
   loading: false,
   error: null,
+  activePathId: null,
+  activePath: null,
+  setActivePathId: () => {},
+  setActivePath: () => {},
+  clearActivePath: () => {},
   reload: async () => {},
   getById: () => null,
   uploadMaterialSet: async () => {},
@@ -101,6 +106,8 @@ export function PathProvider({ children }) {
   const [paths, setPaths] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [activePathId, setActivePathIdState] = useState(null);
+  const [activePathOverride, setActivePathOverride] = useState(null);
 
   const loadPaths = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -138,6 +145,8 @@ export function PathProvider({ children }) {
       setPaths([]);
       setLoading(false);
       setError(null);
+      setActivePathIdState(null);
+      setActivePathOverride(null);
       return;
     }
     loadPaths();
@@ -363,6 +372,34 @@ export function PathProvider({ children }) {
     [paths]
   );
 
+  const setActivePathId = useCallback(
+    (id) => {
+      const next = id ? String(id) : null;
+      setActivePathIdState(next);
+      if (!next || String(activePathOverride?.id || "") !== next) {
+        setActivePathOverride(null);
+      }
+    },
+    [activePathOverride]
+  );
+
+  const setActivePath = useCallback((path) => {
+    if (!path) {
+      setActivePathIdState(null);
+      setActivePathOverride(null);
+      return;
+    }
+    const nextId = path?.id ? String(path.id) : null;
+    if (!nextId) return;
+    setActivePathIdState(nextId);
+    setActivePathOverride(path);
+  }, []);
+
+  const clearActivePath = useCallback(() => {
+    setActivePathIdState(null);
+    setActivePathOverride(null);
+  }, []);
+
   const uploadMaterialSet = useCallback(
     async (files) => {
       if (!files || files.length === 0) {
@@ -418,16 +455,39 @@ export function PathProvider({ children }) {
     []
   );
 
+  const activePath = useMemo(() => {
+    if (!activePathId) return null;
+    const fromList = (paths || []).find((p) => String(p?.id || "") === String(activePathId));
+    return fromList || activePathOverride || null;
+  }, [activePathId, activePathOverride, paths]);
+
   const value = useMemo(
     () => ({
       paths,
       loading,
       error,
+      activePathId,
+      activePath,
+      setActivePathId,
+      setActivePath,
+      clearActivePath,
       reload: loadPaths,
       getById,
       uploadMaterialSet,
     }),
-    [paths, loading, error, loadPaths, getById, uploadMaterialSet]
+    [
+      paths,
+      loading,
+      error,
+      activePathId,
+      activePath,
+      setActivePathId,
+      setActivePath,
+      clearActivePath,
+      loadPaths,
+      getById,
+      uploadMaterialSet,
+    ]
   );
 
   return <PathContext.Provider value={value}>{children}</PathContext.Provider>;
@@ -436,7 +496,6 @@ export function PathProvider({ children }) {
 export function usePaths() {
   return useContext(PathContext);
 }
-
 
 
 

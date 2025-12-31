@@ -26,6 +26,7 @@ import { NodeDocRenderer } from "@/components/path/NodeDocRenderer";
 import { Container } from "@/layout/Container";
 import { useSSEContext } from "@/providers/SSEProvider";
 import { useUser } from "@/providers/UserProvider";
+import { usePaths } from "@/providers/PathProvider";
 
 function safeParseJSON(v) {
   if (!v) return null;
@@ -247,6 +248,7 @@ export default function PathNodePage() {
   const navigate = useNavigate();
   const { lastMessage, connected } = useSSEContext();
   const { user } = useUser();
+  const { setActivePathId, setActivePath } = usePaths();
 
   const [loading, setLoading] = useState(false);
   const [node, setNode] = useState(null);
@@ -337,6 +339,14 @@ export default function PathNodePage() {
       cancelled = true;
     };
   }, [nodeId, loadDoc]);
+
+  useEffect(() => {
+    if (node?.pathId) setActivePathId(node.pathId);
+  }, [node?.pathId, setActivePathId]);
+
+  useEffect(() => {
+    if (path?.id) setActivePath(path);
+  }, [path, setActivePath]);
 
   const conceptKeys = useMemo(() => extractConceptKeys(node), [node]);
 

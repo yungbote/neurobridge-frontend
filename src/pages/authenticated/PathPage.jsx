@@ -1,29 +1,59 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, FolderOpen, Headphones } from "lucide-react";
 
 import { usePaths } from "@/providers/PathProvider";
 import { getPath, listNodesForPath } from "@/api/PathService";
 import { ConceptGraphView } from "@/components/path/ConceptGraphView";
+import { EmptyContent } from "@/components/app/EmptyContent";
 import { Container } from "@/layout/Container";
 
 export default function PathPage() {
   const { id: pathId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const { getById } = usePaths();
+  const { getById, setActivePathId, setActivePath } = usePaths();
   const cached = pathId ? getById(pathId) : null;
 
   const [path, setPath] = useState(cached);
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const [view, setView] = useState("outline"); // "outline" | "graph"
+  const viewParam = useMemo(() => {
+    return String(searchParams.get("view") || "").toLowerCase();
+  }, [searchParams]);
+  const view = viewParam === "mindmap" || viewParam === "graph" ? "graph" : "outline";
+  const isMaterialsView = viewParam === "materials";
+  const isAudioView = viewParam === "audio";
+  const isMindmapView = view === "graph";
+  const isUnitView = !isMindmapView && !isMaterialsView && !isAudioView;
+
+  const setView = useCallback(
+    (next) => {
+      const params = new URLSearchParams(searchParams);
+      if (next === "graph") {
+        params.set("view", "mindmap");
+      } else {
+        params.delete("view");
+      }
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   useEffect(() => {
     setPath(cached || null);
   }, [cached]);
+
+  useEffect(() => {
+    if (pathId) setActivePathId(pathId);
+  }, [pathId, setActivePathId]);
+
+  useEffect(() => {
+    if (path?.id) setActivePath(path);
+  }, [path, setActivePath]);
 
   useEffect(() => {
     const showGen =
@@ -116,23 +146,39 @@ export default function PathPage() {
           )}
         </div>
 
-        <div className="mb-10 flex flex-wrap items-center gap-2">
-          <Button
-            variant={view === "outline" ? "default" : "outline"}
-            onClick={() => setView("outline")}
-          >
-            Outline
-          </Button>
-          <Button
-            variant={view === "graph" ? "default" : "outline"}
-            onClick={() => setView("graph")}
-          >
-            Concept Graph
-          </Button>
-        </div>
+        {(isUnitView || isMindmapView) && (
+          <div className="mb-10 flex flex-wrap items-center gap-2">
+            <Button
+              variant={isUnitView ? "default" : "outline"}
+              onClick={() => setView("outline")}
+            >
+              Outline
+            </Button>
+            <Button
+              variant={isMindmapView ? "default" : "outline"}
+              onClick={() => setView("graph")}
+            >
+              Concept Graph
+            </Button>
+          </div>
+        )}
 
-        {view === "graph" ? (
+        {isMindmapView ? (
           <ConceptGraphView pathId={pathId} />
+        ) : isMaterialsView ? (
+          <EmptyContent
+            title="Materials view"
+            message="We are preparing a clean materials workspace for this path."
+            helperText="Switch to Unit or Mindmap to continue learning."
+            icon={<FolderOpen className="h-7 w-7" />}
+          />
+        ) : isAudioView ? (
+          <EmptyContent
+            title="Audio view"
+            message="Audio summaries are coming soon for this path."
+            helperText="Switch to Unit or Mindmap to continue learning."
+            icon={<Headphones className="h-7 w-7" />}
+          />
         ) : (
           <>
             <div className="mb-12">
@@ -190,9 +236,6 @@ export default function PathPage() {
     </div>
   );
 }
-
-
-
 
 
 

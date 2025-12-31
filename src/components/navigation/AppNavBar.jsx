@@ -1,6 +1,16 @@
-import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { AlignJustify, ChevronDownIcon, CircleDashed, BadgePlus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
+import {
+  AlignJustify,
+  BadgePlus,
+  BookOpen,
+  Brain,
+  ChevronDownIcon,
+  CircleDashed,
+  Ellipsis,
+  FolderOpen,
+  Headphones,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,19 +28,83 @@ import { UserAvatar } from "@/components/app/UserAvatar";
 import { FileUploadDialog } from "@/components/app/UploadFilesDialog";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUser } from "@/providers/UserProvider";
+import { usePaths } from "@/providers/PathProvider";
 import { Container } from "@/layout/Container";
 import { useSidebar } from "@/components/ui/sidebar";
-import { Ellipsis } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const PATH_NAV_TABS = [
+  { id: "materials", label: "Materials", icon: FolderOpen },
+  { id: "unit", label: "Unit", icon: BookOpen },
+  { id: "audio", label: "Audio", icon: Headphones },
+  { id: "mindmap", label: "Mindmap", icon: Brain },
+];
 
 export function AppNavBar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { user, loading: userLoading } = useUser();
+  const { activePathId, clearActivePath } = usePaths();
   const [authDialog, setAuthDialog] = useState(null);
   const { state, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
 
+  const isPathContext = useMemo(() => {
+    const path = location.pathname;
+    if (matchPath({ path: "/paths/build/:jobId", end: false }, path)) {
+      return false;
+    }
+    return Boolean(
+      matchPath({ path: "/paths/:id", end: false }, path) ||
+        matchPath({ path: "/path-nodes/:id", end: false }, path) ||
+        matchPath({ path: "/activities/:id", end: false }, path)
+    );
+  }, [location.pathname]);
 
+  const pathIdFromRoute = useMemo(() => {
+    const match = matchPath({ path: "/paths/:id", end: false }, location.pathname);
+    return match?.params?.id ? String(match.params.id) : null;
+  }, [location.pathname]);
+
+  const viewParam = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return String(params.get("view") || "").toLowerCase();
+  }, [location.search]);
+
+  const activePathTab = useMemo(() => {
+    if (!isPathContext) return "unit";
+    if (viewParam === "mindmap" || viewParam === "graph") return "mindmap";
+    if (viewParam === "materials") return "materials";
+    if (viewParam === "audio") return "audio";
+    return "unit";
+  }, [isPathContext, viewParam]);
+
+  useEffect(() => {
+    if (!activePathId) return;
+    if (!isPathContext) clearActivePath();
+  }, [activePathId, clearActivePath, isPathContext]);
+
+  const showPathTabs = isAuthenticated && isPathContext && (activePathId || pathIdFromRoute);
+
+  const handlePathTabClick = (tabId) => {
+    const targetPathId = pathIdFromRoute || activePathId;
+    if (!targetPathId) return;
+    const base = `/paths/${targetPathId}`;
+    if (tabId === "mindmap") {
+      navigate(`${base}?view=mindmap`);
+      return;
+    }
+    if (tabId === "materials") {
+      navigate(`${base}?view=materials`);
+      return;
+    }
+    if (tabId === "audio") {
+      navigate(`${base}?view=audio`);
+      return;
+    }
+    navigate(base);
+  };
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -53,6 +127,39 @@ export function AppNavBar() {
         {!isAuthenticated && (
           <div className="hidden md:flex flex-1 justify-center">
             <MarketingNav />
+          </div>
+        )}
+
+        {showPathTabs && (
+          <div className="flex flex-1 justify-center">
+            <div
+              role="tablist"
+              aria-label="Path sections"
+              className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-muted/40 p-1 shadow-sm backdrop-blur scrollbar-none"
+            >
+              {PATH_NAV_TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activePathTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => handlePathTabClick(tab.id)}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 sm:text-sm",
+                      isActive
+                        ? "bg-foreground text-background shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/70"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="whitespace-nowrap">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -155,12 +262,6 @@ export function AppNavBar() {
     </nav>
   );
 }
-
-
-
-
-
-
 
 
 

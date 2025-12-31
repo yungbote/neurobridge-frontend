@@ -42,11 +42,12 @@ function isTerminalJobStatus(status) {
 function buildLearningBuildItems(job, message) {
   const jid = String(job?.id || "");
   const status = String(job?.status || "").toLowerCase();
-  const stage = normalizeStage(job?.stage);
+  const rawStage = String(job?.stage || "");
+  const stage = normalizeStage(rawStage);
   const progress = clampPct(job?.progress);
   const errMsg = String(job?.error || "").trim();
 
-  const runningTitle = stageLabel(stage) || "Generating path…";
+  const runningTitle = stageLabel(rawStage) || stageLabel(stage) || "Generating path…";
   const title =
     status === "succeeded"
       ? "Path ready"
@@ -81,7 +82,12 @@ function buildLearningBuildItems(job, message) {
       : null;
 
   for (const stageName of learningBuildStageOrder) {
-    const ss = stages?.[stageName] ?? null;
+    const ss =
+      stages?.[stageName] ??
+      stages?.[`stale_${stageName}`] ??
+      stages?.[`timeout_${stageName}`] ??
+      stages?.[`waiting_child_${stageName}`] ??
+      null;
     const ssStatus = String(ss?.status || "").toLowerCase();
     const childStatus = String(ss?.child_job_status || "").toLowerCase();
     const childMessage = String(ss?.child_message ?? ss?.childMessage ?? "").trim();
@@ -103,6 +109,8 @@ function buildLearningBuildItems(job, message) {
     let stageContent = "";
     if (ssStatus === "succeeded") stageContent = "Completed";
     else if (ssStatus === "failed") stageContent = ss?.last_error ? String(ss.last_error) : "Failed";
+    else if (ssStatus === "stale") stageContent = "Stalled";
+    else if (ssStatus === "timeout") stageContent = "Timed out";
     else if (status === "canceled" && isCurrent) stageContent = "Canceled";
     else if (ssStatus === "waiting_child") {
       stageContent = childMessage || (childStatus ? `Running (${childStatus})` : "Running…");

@@ -10,6 +10,7 @@ import { getActivity } from "@/api/ActivityService";
 import { ingestEvents } from "@/api/EventService";
 import { listActivitiesForNode } from "@/api/PathNodeService";
 import { Container } from "@/layout/Container";
+import { usePaths } from "@/providers/PathProvider";
 
 function safeParseJSON(v) {
   if (!v) return null;
@@ -36,6 +37,7 @@ function extractBlocks(contentJSON) {
 export default function ActivityPage() {
   const { id: activityId } = useParams();
   const navigate = useNavigate();
+  const { setActivePath } = usePaths();
 
   const [activity, setActivity] = useState(null);
   const [path, setPath] = useState(null);
@@ -79,6 +81,10 @@ export default function ActivityPage() {
       mounted = false;
     };
   }, [activityId]);
+
+  useEffect(() => {
+    if (path?.id) setActivePath(path);
+  }, [path, setActivePath]);
 
   const { prevActivity, nextActivity } = useMemo(() => {
     if (!activity) return { prevActivity: null, nextActivity: null };
