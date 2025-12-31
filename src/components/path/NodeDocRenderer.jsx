@@ -1,8 +1,17 @@
 import React, { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  MessageSquare,
+  RotateCcw,
+  ThumbsDown,
+  ThumbsUp,
+  Undo2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function normalizeDoc(doc) {
@@ -176,7 +185,99 @@ function QuickCheck({ promptMd, answerMd }) {
   );
 }
 
-export function NodeDocRenderer({ doc }) {
+function ActionButton({ label, active, disabled, onClick, children }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-pressed={active}
+          disabled={disabled}
+          onClick={onClick}
+          className={cn(
+            "h-7 w-7 rounded-full text-muted-foreground transition",
+            "hover:text-foreground hover:bg-accent",
+            active && "bg-accent text-foreground shadow-sm",
+            disabled && "opacity-60"
+          )}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function BlockSkeleton({ type }) {
+  const pulse = "bg-muted/60 !animate-[pulse_2.4s_ease-in-out_infinite]";
+  if (type === "heading") {
+    return <Skeleton className={cn("h-6 w-2/3", pulse)} />;
+  }
+  if (type === "code") {
+    return (
+      <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+        <Skeleton className={cn("h-4 w-32", pulse)} />
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className={cn("h-3 w-full", pulse)} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (type === "figure" || type === "video" || type === "diagram") {
+    return (
+      <div className="space-y-2">
+        <Skeleton className={cn("h-[220px] w-full rounded-xl", pulse)} />
+        <Skeleton className={cn("h-3 w-40", pulse)} />
+      </div>
+    );
+  }
+  if (type === "table") {
+    return (
+      <div className="space-y-2">
+        <Skeleton className={cn("h-5 w-40", pulse)} />
+        <div className="space-y-2 rounded-xl border border-border p-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className={cn("h-3 w-full", pulse)} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (type === "quick_check") {
+    return (
+      <div className="space-y-3 rounded-xl border border-border bg-background p-4">
+        <Skeleton className={cn("h-3 w-24", pulse)} />
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className={cn("h-3 w-full", pulse)} />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className={cn("h-3 w-full", pulse)} />
+      ))}
+    </div>
+  );
+}
+
+export function NodeDocRenderer({
+  doc,
+  pendingBlocks = {},
+  blockFeedback = {},
+  undoableBlocks = {},
+  onLike,
+  onDislike,
+  onRegenerate,
+  onChat,
+  onUndo,
+}) {
   const d = useMemo(() => normalizeDoc(doc), [doc]);
   const blocks = asArray(d?.blocks);
 
@@ -199,20 +300,95 @@ export function NodeDocRenderer({ doc }) {
 
       {blocks.map((b, i) => {
         const type = safeString(b?.type).toLowerCase();
+        const blockId = safeString(b?.id) || String(i);
+        const isPending = Boolean(pendingBlocks?.[blockId]);
+        const feedback = blockFeedback?.[blockId] || "";
+        const undoAllowed = type !== "figure" && type !== "video";
+        const canUndo = Boolean(undoableBlocks?.[blockId]) && undoAllowed;
+        const showActions = Boolean(onLike || onDislike || onRegenerate || onChat || onUndo);
 
         if (type === "divider") return <Separator key={i} className="my-6" />;
+
+        const actionBar = showActions ? (
+          <div
+            className={cn(
+              "absolute -top-3 right-0 z-10 flex items-center gap-1 rounded-full border border-border",
+              "bg-background/90 px-1.5 py-1 shadow-sm backdrop-blur",
+              "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+            )}
+          >
+            {onLike ? (
+              <ActionButton
+                label={feedback === "like" ? "Liked" : "Like"}
+                active={feedback === "like"}
+                onClick={() => onLike?.(b, i)}
+              >
+                <ThumbsUp className="h-3.5 w-3.5" />
+              </ActionButton>
+            ) : null}
+            {onDislike ? (
+              <ActionButton
+                label={feedback === "dislike" ? "Disliked" : "Dislike"}
+                active={feedback === "dislike"}
+                onClick={() => onDislike?.(b, i)}
+              >
+                <ThumbsDown className="h-3.5 w-3.5" />
+              </ActionButton>
+            ) : null}
+            {onRegenerate ? (
+              <ActionButton
+                label="Regenerate"
+                disabled={isPending}
+                onClick={() => onRegenerate?.(b, i)}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </ActionButton>
+            ) : null}
+            {onChat ? (
+              <ActionButton label="Chat" onClick={() => onChat?.(b, i)}>
+                <MessageSquare className="h-3.5 w-3.5" />
+              </ActionButton>
+            ) : null}
+            {onUndo && undoAllowed ? (
+              <ActionButton
+                label={canUndo ? "Undo" : "Undo (unavailable)"}
+                disabled={!canUndo || isPending}
+                onClick={() => onUndo?.(b, i)}
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </ActionButton>
+            ) : null}
+          </div>
+        ) : null;
+
+        const wrap = (content) => (
+          <div key={blockId} className="group relative">
+            {actionBar}
+            {isPending ? (
+              <div className="rounded-xl border border-border bg-muted/10 p-4">
+                <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="inline-flex h-2 w-2 rounded-full bg-amber-500/70 animate-pulse" />
+                  Regenerating this block
+                </div>
+                <BlockSkeleton type={type} />
+              </div>
+            ) : (
+              content
+            )}
+          </div>
+        );
 
         if (type === "heading") {
           const level = Number(b?.level || 2);
           const text = safeString(b?.text);
-          if (level === 3) return <h3 key={i} className="text-lg font-semibold tracking-tight">{text}</h3>;
-          if (level === 4) return <h4 key={i} className="text-base font-semibold tracking-tight">{text}</h4>;
-          return <h2 key={i} className="text-xl font-semibold tracking-tight">{text}</h2>;
+          if (level === 3) return wrap(<h3 className="text-lg font-semibold tracking-tight">{text}</h3>);
+          if (level === 4) return wrap(<h4 className="text-base font-semibold tracking-tight">{text}</h4>);
+          return wrap(<h2 className="text-xl font-semibold tracking-tight">{text}</h2>);
         }
 
         if (type === "paragraph") {
-          return (
-            <div key={i} className="text-[15px] leading-relaxed text-foreground/90">
+          return wrap(
+            <div className="text-[15px] leading-relaxed text-foreground/90">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                 {safeString(b?.md)}
               </ReactMarkdown>
@@ -229,8 +405,8 @@ export function NodeDocRenderer({ doc }) {
               : variant === "tip"
               ? "border-emerald-500/40 bg-emerald-500/5"
               : "border-border bg-muted/20";
-          return (
-            <div key={i} className={cn("rounded-xl border p-4", border)}>
+          return wrap(
+            <div className={cn("rounded-xl border p-4", border)}>
               {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
               <div className={cn("text-[15px] leading-relaxed text-foreground/90", title && "mt-2")}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
@@ -242,9 +418,8 @@ export function NodeDocRenderer({ doc }) {
         }
 
         if (type === "code") {
-          return (
+          return wrap(
             <CodeBlock
-              key={i}
               language={b?.language}
               filename={b?.filename}
               code={b?.code}
@@ -256,8 +431,8 @@ export function NodeDocRenderer({ doc }) {
           const url = safeString(b?.asset?.url).trim();
           if (!url) return null;
           const caption = safeString(b?.caption).trim();
-          return (
-            <div key={i} className="space-y-2">
+          return wrap(
+            <div className="space-y-2">
               <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
                 <img src={url} alt={caption || "Figure"} className="h-auto w-full" />
               </div>
@@ -271,8 +446,8 @@ export function NodeDocRenderer({ doc }) {
           if (!url) return null;
           const caption = safeString(b?.caption).trim();
           const yt = toYouTubeEmbedURL(url);
-          return (
-            <div key={i} className="space-y-2">
+          return wrap(
+            <div className="space-y-2">
               {yt ? (
                 <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
                   <div className="aspect-video w-full">
@@ -308,8 +483,8 @@ export function NodeDocRenderer({ doc }) {
           if (kind === "svg") {
             const dataUrl = svgToDataURL(b?.source);
             if (!dataUrl) return null;
-            return (
-              <div key={i} className="space-y-2">
+            return wrap(
+              <div className="space-y-2">
                 <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
                   <img src={dataUrl} alt={caption || "Diagram"} className="h-auto w-full" />
                 </div>
@@ -317,8 +492,8 @@ export function NodeDocRenderer({ doc }) {
               </div>
             );
           }
-          return (
-            <div key={i} className="rounded-xl border border-border bg-muted/20 p-4">
+          return wrap(
+            <div className="rounded-xl border border-border bg-muted/20 p-4">
               <div className="text-xs font-medium text-muted-foreground">Diagram</div>
               <pre className="mt-2 overflow-x-auto text-sm text-foreground/90">
                 <code>{safeString(b?.source)}</code>
@@ -333,8 +508,8 @@ export function NodeDocRenderer({ doc }) {
           const columns = asArray(b?.columns).map(safeString).filter(Boolean);
           const rows = asArray(b?.rows).map((r) => asArray(r).map(safeString));
           if (columns.length === 0 || rows.length === 0) return null;
-          return (
-            <div key={i} className="space-y-2">
+          return wrap(
+            <div className="space-y-2">
               <div className="overflow-x-auto rounded-xl border border-border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30">
@@ -365,7 +540,7 @@ export function NodeDocRenderer({ doc }) {
         }
 
         if (type === "quick_check") {
-          return <QuickCheck key={i} promptMd={b?.prompt_md} answerMd={b?.answer_md} />;
+          return wrap(<QuickCheck promptMd={b?.prompt_md} answerMd={b?.answer_md} />);
         }
 
         return null;
@@ -373,4 +548,3 @@ export function NodeDocRenderer({ doc }) {
     </div>
   );
 }
-

@@ -81,6 +81,24 @@ export async function getPathNodeDoc(pathNodeId) {
   return resp.data?.doc ?? null;
 }
 
+export async function enqueuePathNodeDocPatch(pathNodeId, payload) {
+  if (!pathNodeId) throw new Error("enqueuePathNodeDocPatch: missing pathNodeId");
+  if (!payload || typeof payload !== "object") {
+    throw new Error("enqueuePathNodeDocPatch: missing payload");
+  }
+  const resp = await axiosClient.post(`/path-nodes/${pathNodeId}/doc/patch`, payload);
+  return resp.data ?? null;
+}
+
+export async function listPathNodeDocRevisions(pathNodeId, { limit, includeDocs } = {}) {
+  if (!pathNodeId) throw new Error("listPathNodeDocRevisions: missing pathNodeId");
+  const params = {};
+  if (typeof limit === "number") params.limit = limit;
+  if (includeDocs === true) params.include_docs = "1";
+  const resp = await axiosClient.get(`/path-nodes/${pathNodeId}/doc/revisions`, { params });
+  return resp.data?.revisions ?? [];
+}
+
 export async function listDrillsForNode(pathNodeId) {
   if (!pathNodeId) throw new Error("listDrillsForNode: missing pathNodeId");
   const resp = await axiosClient.get(`/path-nodes/${pathNodeId}/drills`);

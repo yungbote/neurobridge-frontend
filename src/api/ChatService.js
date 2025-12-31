@@ -35,6 +35,15 @@ export function mapChatMessage(raw) {
   };
 }
 
+export async function createChatThread({ title, pathId, jobId } = {}) {
+  const payload = {};
+  if (typeof title === "string" && title.trim()) payload.title = title.trim();
+  if (pathId) payload.path_id = pathId;
+  if (jobId) payload.job_id = jobId;
+  const resp = await axiosClient.post("/chat/threads", payload);
+  return mapChatThread(resp.data?.thread);
+}
+
 export async function getChatThread(threadId, limit = 50) {
   if (!threadId) throw new Error("getChatThread: missing threadId");
   const resp = await axiosClient.get(`/chat/threads/${threadId}`, { params: { limit } });
@@ -75,4 +84,3 @@ export async function sendChatMessage(threadId, content, { idempotencyKey } = {}
     job: resp.data?.job ?? null,
   };
 }
-
