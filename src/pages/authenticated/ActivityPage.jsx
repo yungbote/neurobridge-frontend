@@ -11,6 +11,7 @@ import { ingestEvents } from "@/api/EventService";
 import { listActivitiesForNode } from "@/api/PathNodeService";
 import { Container } from "@/layout/Container";
 import { usePaths } from "@/providers/PathProvider";
+import { ImageLightbox } from "@/components/app/ImageLightbox";
 
 function safeParseJSON(v) {
   if (!v) return null;
@@ -142,15 +143,13 @@ export default function ActivityPage() {
         );
       case "image":
         return (
-          <div key={index} className="space-y-2">
-            <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
-              <img
-                src={block.url}
-                alt={block.alt || "Activity image"}
-                className="h-auto w-full"
-              />
-            </div>
-            {block.caption && <p className="text-xs text-muted-foreground">{block.caption}</p>}
+          <div key={index}>
+            <ImageLightbox
+              src={block.url}
+              alt={block.alt || "Activity image"}
+              caption={block.caption}
+              frameClassName="bg-muted/30"
+            />
           </div>
         );
       default:

@@ -1,12 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { ChatMessage } from "@/components/app/ChatMessage";
 import { AnimatedChatbar } from "@/components/app/AnimatedChatbar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { getChatThread, listChatMessages, mapChatMessage, sendChatMessage } from "@/api/ChatService";
 import { cancelJob as apiCancelJob, restartJob as apiRestartJob } from "@/api/JobService";
+import { enqueuePathNodeDocPatch, getPathNodeContent, getPathNodeDoc } from "@/api/PathNodeService";
 import { useSSEContext } from "@/providers/SSEProvider";
 import { useUser } from "@/providers/UserProvider";
 import { useActivityPanel } from "@/providers/ActivityPanelProvider";
@@ -30,6 +41,47 @@ function parseDeltaState(meta) {
   const attempt = parseIntSafe(meta?.attempt, 0);
   const deltaSeq = parseIntSafe(meta?.delta_seq, 0);
   return { attempt, deltaSeq };
+}
+
+function safeParseJSON(v) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeDoc(doc) {
+  const d = safeParseJSON(doc) || doc;
+  if (!d || typeof d !== "object") return null;
+  return d;
+}
+
+function clampSnippet(text, max = 160) {
+  const s = String(text || "").trim().replace(/\s+/g, " ");
+  if (!s) return "";
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function summarizeBlock(block) {
+  if (!block) return "";
+  const type = String(block?.type || "").toLowerCase();
+  if (type === "heading") return clampSnippet(block?.text);
+  if (type === "paragraph") return clampSnippet(block?.md);
+  if (type === "callout") return clampSnippet(block?.title || block?.md);
+  if (type === "code") return clampSnippet(block?.code);
+  if (type === "figure") return clampSnippet(block?.caption || block?.asset?.url);
+  if (type === "video") return clampSnippet(block?.caption || block?.url);
+  if (type === "diagram") return clampSnippet(block?.caption || block?.source);
+  if (type === "table") return clampSnippet(block?.caption);
+  if (type === "quick_check") return clampSnippet(block?.prompt_md);
+  return clampSnippet(JSON.stringify(block));
 }
 
 function upsertByID(list, msg) {
@@ -91,6 +143,7 @@ export default function ChatThreadPage() {
   const { id: threadId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const { user } = useUser();
   const { lastMessage } = useSSEContext();
@@ -100,6 +153,15 @@ export default function ChatThreadPage() {
   const [thread, setThread] = useState(null);
   const [messages, setMessages] = useState([]);
   const [sendError, setSendError] = useState("");
+
+  const [blockNode, setBlockNode] = useState(null);
+  const [blockDoc, setBlockDoc] = useState(null);
+  const [blockDocLoaded, setBlockDocLoaded] = useState(false);
+  const [revisionInstruction, setRevisionInstruction] = useState("");
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisionSubmitting, setRevisionSubmitting] = useState(false);
+  const [revisionError, setRevisionError] = useState("");
+  const [revisionQueued, setRevisionQueued] = useState(false);
 
   const scrollRef = useRef(null);
   const stickRef = useRef(true);
@@ -143,6 +205,65 @@ export default function ChatThreadPage() {
       cancelled = true;
     };
   }, [threadId]);
+
+  const blockNodeId = useMemo(() => {
+    const v = String(searchParams.get("nodeId") || "").trim();
+    return v || null;
+  }, [searchParams]);
+
+  const blockId = useMemo(() => {
+    const v = String(searchParams.get("blockId") || "").trim();
+    return v || null;
+  }, [searchParams]);
+
+  const blockTypeParam = useMemo(() => {
+    const v = String(searchParams.get("blockType") || "").trim();
+    return v || "";
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!blockNodeId || !blockId) return;
+    let cancelled = false;
+    setBlockDocLoaded(false);
+    setRevisionQueued(false);
+    setRevisionError("");
+
+    (async () => {
+      try {
+        const [doc, node] = await Promise.all([
+          getPathNodeDoc(blockNodeId),
+          getPathNodeContent(blockNodeId),
+        ]);
+        if (cancelled) return;
+        setBlockNode(node || null);
+        setBlockDoc(doc || null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[ChatThreadPage] Failed to load block context:", err);
+          setBlockNode(null);
+          setBlockDoc(null);
+        }
+      } finally {
+        if (!cancelled) setBlockDocLoaded(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [blockNodeId, blockId]);
+
+  const blockContext = useMemo(() => {
+    if (!blockId) return null;
+    const d = normalizeDoc(blockDoc);
+    const blocks = Array.isArray(d?.blocks) ? d.blocks : [];
+    const found = blocks.find((b) => String(b?.id || "") === String(blockId));
+    if (!found) return null;
+    return {
+      block: found,
+      summary: summarizeBlock(found),
+    };
+  }, [blockDoc, blockId]);
 
   // Best-effort: if we navigated here from an upload response, start tracking the build job immediately.
   useEffect(() => {
@@ -290,6 +411,52 @@ export default function ChatThreadPage() {
   }, [buildJobId, learningBuildStatus]);
 
   const learningBuildCanceled = useMemo(() => learningBuildStatus === "canceled", [learningBuildStatus]);
+
+  const lastAssistantMessage = useMemo(() => {
+    const list = (messages || []).slice().reverse();
+    return list.find((m) => String(m?.role || "").toLowerCase() === "assistant" && String(m?.content || "").trim());
+  }, [messages]);
+
+  const handleUseLastAssistant = useCallback(() => {
+    if (!lastAssistantMessage?.content) return;
+    setRevisionInstruction(String(lastAssistantMessage.content || "").trim());
+  }, [lastAssistantMessage]);
+
+  const handleApplyRevision = useCallback(async () => {
+    if (!blockNodeId || !blockId) return;
+    const instruction = String(revisionInstruction || "").trim();
+    if (!instruction) {
+      setRevisionError("Add the revision you want applied to this block.");
+      return;
+    }
+    setRevisionSubmitting(true);
+    setRevisionError("");
+    try {
+      const payload = [
+        "Rewrite this block using the user-approved revision below.",
+        "Keep the block id and type unchanged.",
+        "REVISION:",
+        instruction,
+      ].join("\n");
+      await enqueuePathNodeDocPatch(blockNodeId, {
+        block_id: blockId,
+        action: "rewrite",
+        citation_policy: "reuse_only",
+        instruction: payload,
+      });
+      setRevisionQueued(true);
+      setRevisionDialogOpen(false);
+    } catch (err) {
+      setRevisionError(String(err?.response?.data?.error || err?.message || "Failed to apply revision"));
+    } finally {
+      setRevisionSubmitting(false);
+    }
+  }, [blockNodeId, blockId, revisionInstruction]);
+
+  const goToNode = useCallback(() => {
+    if (!blockNodeId) return;
+    navigate(`/path-nodes/${blockNodeId}`);
+  }, [blockNodeId, navigate]);
 
   const handleCancelBuild = useCallback(async () => {
     const jid = buildJobId;
@@ -451,6 +618,9 @@ export default function ChatThreadPage() {
     navigate(`/paths/${thread.pathId}`);
   }, [navigate, thread?.pathId]);
 
+  const blockLabel = blockTypeParam || blockContext?.block?.type || "block";
+  const hasRevisionText = String(revisionInstruction || "").trim().length > 0;
+
   return (
     <div className="h-full min-h-0 bg-background flex flex-col">
       <style>{`
@@ -479,6 +649,78 @@ export default function ChatThreadPage() {
               >
                 View path
               </button>
+            </div>
+          ) : null}
+
+          {blockNodeId && blockId ? (
+            <div className="mb-6 rounded-xl border border-border bg-muted/20 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Block revision
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">
+                    {blockLabel}
+                  </div>
+                  {blockNode?.title ? (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Unit: {blockNode.title}
+                    </div>
+                  ) : null}
+                  {blockContext?.summary ? (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      “{blockContext.summary}”
+                    </div>
+                  ) : blockDocLoaded ? (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Block details unavailable. You can still apply revisions.
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Loading block details…
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={goToNode}>
+                    Open unit
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <Textarea
+                  value={revisionInstruction}
+                  onChange={(e) => setRevisionInstruction(e.target.value)}
+                  placeholder="Describe exactly how you want this block revised."
+                  className="min-h-[120px] resize-none bg-background"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setRevisionDialogOpen(true)}
+                    disabled={revisionSubmitting || !hasRevisionText}
+                  >
+                    Review & Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleUseLastAssistant}
+                    disabled={!lastAssistantMessage?.content}
+                  >
+                    Use last assistant reply
+                  </Button>
+                  {revisionQueued ? (
+                    <span className="text-xs text-muted-foreground">
+                      Revision queued. Open the unit to confirm.
+                    </span>
+                  ) : null}
+                </div>
+                {revisionError ? (
+                  <div className="text-xs text-destructive">{revisionError}</div>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -524,13 +766,31 @@ export default function ChatThreadPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={revisionDialogOpen} onOpenChange={(open) => !revisionSubmitting && setRevisionDialogOpen(open)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Apply revision to this block?</DialogTitle>
+            <DialogDescription>
+              This will rewrite the selected block using the revision text below. You can undo from the unit page if needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
+            {revisionInstruction || "No revision provided."}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevisionDialogOpen(false)} disabled={revisionSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleApplyRevision} disabled={revisionSubmitting || !hasRevisionText}>
+              {revisionSubmitting ? "Applying…" : "Apply revision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-
-
-
 
 
 

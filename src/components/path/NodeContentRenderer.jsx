@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Separator } from "@/components/ui/separator";
+import { ImageLightbox } from "@/components/app/ImageLightbox";
 
 function safeString(v) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -211,11 +212,13 @@ export function NodeContentRenderer({ contentJson }) {
           const url = assetRefs[0] || "";
           if (!url) return null;
           return (
-            <div key={i} className="space-y-2">
-              <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
-                <img src={url} alt={md || "Content image"} className="h-auto w-full" />
-              </div>
-              {md ? <div className="text-xs text-muted-foreground">{md}</div> : null}
+            <div key={i}>
+              <ImageLightbox
+                src={url}
+                alt={md || "Content image"}
+                caption={md}
+                frameClassName="bg-muted/30"
+              />
             </div>
           );
         }
@@ -259,11 +262,13 @@ export function NodeContentRenderer({ contentJson }) {
           const ref = assetRefs[0] || "";
           if (ref && isProbablyImageURL(ref)) {
             return (
-              <div key={i} className="space-y-2">
-                <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
-                  <img src={ref} alt={md || "Diagram"} className="h-auto w-full" />
-                </div>
-                {md ? <div className="text-xs text-muted-foreground">{md}</div> : null}
+              <div key={i}>
+                <ImageLightbox
+                  src={ref}
+                  alt={md || "Diagram"}
+                  caption={md}
+                  frameClassName="bg-muted/30"
+                />
               </div>
             );
           }

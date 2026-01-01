@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "@/components/app/ImageLightbox";
 
 function normalizeDoc(doc) {
   if (!doc) return null;
@@ -432,12 +433,12 @@ export function NodeDocRenderer({
           if (!url) return null;
           const caption = safeString(b?.caption).trim();
           return wrap(
-            <div className="space-y-2">
-              <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                <img src={url} alt={caption || "Figure"} className="h-auto w-full" />
-              </div>
-              {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
-            </div>
+            <ImageLightbox
+              src={url}
+              alt={caption || "Figure"}
+              caption={caption}
+              frameClassName="bg-muted/20"
+            />
           );
         }
 
@@ -484,12 +485,12 @@ export function NodeDocRenderer({
             const dataUrl = svgToDataURL(b?.source);
             if (!dataUrl) return null;
             return wrap(
-              <div className="space-y-2">
-                <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                  <img src={dataUrl} alt={caption || "Diagram"} className="h-auto w-full" />
-                </div>
-                {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
-              </div>
+              <ImageLightbox
+                src={dataUrl}
+                alt={caption || "Diagram"}
+                caption={caption}
+                frameClassName="bg-muted/20"
+              />
             );
           }
           return wrap(

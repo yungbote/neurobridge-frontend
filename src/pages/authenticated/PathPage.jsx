@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, FolderOpen, Headphones } from "lucide-react";
+import { ChevronRight, Headphones } from "lucide-react";
 
 import { usePaths } from "@/providers/PathProvider";
 import { getPath, listNodesForPath } from "@/api/PathService";
 import { ConceptGraphView } from "@/components/path/ConceptGraphView";
 import { EmptyContent } from "@/components/app/EmptyContent";
+import { PathMaterialsView } from "@/components/path/PathMaterialsView";
 import { Container } from "@/layout/Container";
 
 export default function PathPage() {
@@ -166,12 +167,7 @@ export default function PathPage() {
         {isMindmapView ? (
           <ConceptGraphView pathId={pathId} />
         ) : isMaterialsView ? (
-          <EmptyContent
-            title="Materials view"
-            message="We are preparing a clean materials workspace for this path."
-            helperText="Switch to Unit or Mindmap to continue learning."
-            icon={<FolderOpen className="h-7 w-7" />}
-          />
+          <PathMaterialsView pathId={pathId} />
         ) : isAudioView ? (
           <EmptyContent
             title="Audio view"
@@ -236,6 +232,5 @@ export default function PathPage() {
     </div>
   );
 }
-
 
 

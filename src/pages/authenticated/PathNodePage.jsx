@@ -647,7 +647,12 @@ export default function PathNodePage() {
         .join("\n\n");
       await sendChatMessage(thread.id, prompt);
       setChatDialogOpen(false);
-      navigate(`/chat/threads/${thread.id}`);
+      const params = new URLSearchParams();
+      if (nodeId) params.set("nodeId", nodeId);
+      if (chatBlock?.id) params.set("blockId", String(chatBlock.id));
+      if (chatBlock?.type) params.set("blockType", String(chatBlock.type));
+      const qs = params.toString();
+      navigate(`/chat/threads/${thread.id}${qs ? `?${qs}` : ""}`);
     } catch (err) {
       setChatError(String(err?.response?.data?.error || err?.message || "Failed to start chat"));
     } finally {
