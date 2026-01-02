@@ -8,6 +8,7 @@ type TooltipAlign = React.ComponentPropsWithoutRef<typeof TooltipContent>["align
 
 interface IconButtonProps extends ButtonProps {
   label: string;
+  shortcut?: string;
   tooltipSide?: TooltipSide;
   tooltipAlign?: TooltipAlign;
   tooltipSideOffset?: number;
@@ -16,6 +17,7 @@ interface IconButtonProps extends ButtonProps {
 
 function IconButton({
   label,
+  shortcut,
   tooltipSide = "top",
   tooltipAlign = "center",
   tooltipSideOffset = 6,
@@ -34,6 +36,7 @@ function IconButton({
         align={tooltipAlign}
         sideOffset={tooltipSideOffset}
         alignOffset={tooltipAlignOffset}
+        shortcut={shortcut}
       >
         {label}
       </TooltipContent>

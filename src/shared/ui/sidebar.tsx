@@ -691,6 +691,7 @@ type SidebarMenuButtonProps = React.ComponentPropsWithoutRef<"button"> &
     asChild?: boolean;
     isActive?: boolean;
     tooltip?: string | React.ComponentPropsWithoutRef<typeof TooltipContent>;
+    tooltipShortcut?: string;
   };
 
 function SidebarMenuButton({
@@ -699,6 +700,7 @@ function SidebarMenuButton({
   variant = "default",
   size = "default",
   tooltip,
+  tooltipShortcut,
   className,
   ...props
 }: SidebarMenuButtonProps) {
@@ -719,7 +721,9 @@ function SidebarMenuButton({
   if (!tooltip) return button;
 
   const tooltipProps =
-    typeof tooltip === "string" ? { children: tooltip } : tooltip;
+    typeof tooltip === "string"
+      ? { children: tooltip, shortcut: tooltipShortcut }
+      : { ...tooltip, shortcut: tooltipShortcut ?? tooltip.shortcut };
 
   return (
     <Tooltip>

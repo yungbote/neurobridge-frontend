@@ -47,7 +47,7 @@ function markdownComponents({ compact = false }: { compact?: boolean } = {}): Co
   return {
     p({ children }: { children?: React.ReactNode }) {
       if (compact) return <span>{children}</span>;
-      return <p className="leading-relaxed text-foreground/90">{children}</p>;
+      return <p className="text-pretty leading-relaxed text-foreground/90">{children}</p>;
     },
     a({ href, children }: { href?: string; children?: React.ReactNode }) {
       return (
@@ -64,34 +64,34 @@ function markdownComponents({ compact = false }: { compact?: boolean } = {}): Co
     code({ inline, children }: { inline?: boolean; children?: React.ReactNode }) {
       if (inline) {
         return (
-          <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] text-foreground">
+          <code className="rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[0.9em] text-foreground">
             {children}
           </code>
         );
       }
       return (
-        <pre className="overflow-x-auto rounded-lg border border-border bg-muted/30 p-4 text-sm">
+        <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
           <code>{children}</code>
         </pre>
       );
     },
     ul({ children }: { children?: React.ReactNode }) {
-      return <ul className="list-disc pl-5 space-y-1 text-foreground/90">{children}</ul>;
+      return <ul className="list-disc pl-5 space-y-2 text-foreground/90">{children}</ul>;
     },
     ol({ children }: { children?: React.ReactNode }) {
-      return <ol className="list-decimal pl-5 space-y-1 text-foreground/90">{children}</ol>;
+      return <ol className="list-decimal pl-5 space-y-2 text-foreground/90">{children}</ol>;
     },
     li({ children }: { children?: React.ReactNode }) {
       return <li className="leading-relaxed">{children}</li>;
     },
     h1({ children }: { children?: React.ReactNode }) {
-      return <h1 className="text-2xl font-semibold tracking-tight text-foreground">{children}</h1>;
+      return <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground">{children}</h1>;
     },
     h2({ children }: { children?: React.ReactNode }) {
-      return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
+      return <h2 className="text-balance text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
     },
     h3({ children }: { children?: React.ReactNode }) {
-      return <h3 className="text-lg font-semibold tracking-tight text-foreground">{children}</h3>;
+      return <h3 className="text-balance text-lg font-semibold tracking-tight text-foreground">{children}</h3>;
     },
   };
 }
@@ -161,7 +161,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {blocks.map((b, i) => {
         const kind = safeString(b?.kind).toLowerCase();
         const md = safeString(b?.content_md);
@@ -174,7 +174,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
 
         if (kind === "heading") {
           return (
-            <h2 key={i} className="text-xl font-semibold tracking-tight text-foreground">
+            <h2 key={i} className="text-balance text-xl font-semibold tracking-tight text-foreground">
               {md}
             </h2>
           );
@@ -192,7 +192,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
 
         if (kind === "callout") {
           return (
-            <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
+            <div key={i} className="rounded-2xl border border-border/60 bg-muted/20 p-4">
               <div className="text-[15px] leading-relaxed text-foreground/90">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()}>
                   {md}
@@ -239,7 +239,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
                 src={url}
                 alt={md || "Content image"}
                 caption={md}
-                frameClassName="bg-muted/30"
+                frameClassName="bg-muted/20"
               />
             </div>
           );
@@ -252,7 +252,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
           return (
             <div key={i} className="space-y-2">
               {yt ? (
-                <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
+                <div className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20">
                   <div className="aspect-video w-full">
                     <iframe
                       title={md || "Video"}
@@ -264,7 +264,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
                   </div>
                 </div>
               ) : isVideoURL(url) ? (
-                <video className="w-full rounded-xl border border-border" controls src={url} />
+                <video className="w-full rounded-2xl border border-border/60" controls src={url} />
               ) : (
                 <a
                   href={url}
@@ -289,15 +289,15 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
                   src={ref}
                   alt={md || "Diagram"}
                   caption={md}
-                  frameClassName="bg-muted/30"
+                  frameClassName="bg-muted/20"
                 />
               </div>
             );
           }
           return (
             <div key={i} className="space-y-2">
-              <div className="rounded-xl border border-border bg-muted/30 p-4">
-                <div className="text-xs font-medium text-muted-foreground">Diagram</div>
+              <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagram</div>
                 <pre className="mt-2 overflow-x-auto text-sm text-foreground/90">
                   <code>{md}</code>
                 </pre>

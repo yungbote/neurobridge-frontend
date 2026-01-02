@@ -16,6 +16,7 @@ import { useUserDialogs, USER_DIALOG_OPEN_EVENT } from "@/app/providers/UserDial
 import { ColorPicker, AVATAR_COLORS } from "@/features/user/components/ColorPicker";
 import { cn } from "@/shared/lib/utils";
 import type { UserProfile } from "@/shared/types/models";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 function formatDisplayName(user: UserProfile | null | undefined) {
   if (!user) return "User";
@@ -24,6 +25,13 @@ function formatDisplayName(user: UserProfile | null | undefined) {
   const cap = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : "");
   const full = [cap(first), cap(last)].filter(Boolean).join(" ").trim();
   return full || "User";
+}
+
+function formatFirstName(user: UserProfile | null | undefined) {
+  if (!user) return "User";
+  const first = String(user.firstName || "").trim();
+  if (!first) return "User";
+  return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
 type MenuSide = React.ComponentPropsWithoutRef<typeof DropdownMenuContent>["side"];
@@ -88,6 +96,8 @@ export function UserAvatar({
   }, [user]);
 
   const displayName = useMemo(() => formatDisplayName(user), [user]);
+  const firstNameLabel = useMemo(() => formatFirstName(user), [user]);
+  const showTooltip = !showName && Boolean(firstNameLabel);
 
   const onPickColor = useCallback(
     (color: string) => {
@@ -135,37 +145,64 @@ export function UserAvatar({
     </div>
   );
 
-  if (!showMenu) return AvatarNode;
+  if (!showMenu) {
+    if (!showTooltip) return AvatarNode;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{AvatarNode}</TooltipTrigger>
+        <TooltipContent side="top" align="center" shortcut="U">
+          {firstNameLabel}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
 
   const defaultTriggerClasses = showName
     ? "h-10 w-full justify-start px-2"
     : "h-10 w-10 p-0";
 
+  const triggerButton = (
+    <Button
+      variant="ghost"
+      className={cn(defaultTriggerClasses, triggerClassName)}
+    >
+      <div
+        className={cn(
+          "flex items-center",
+          showName ? "gap-2" : "justify-center"
+        )}
+      >
+        {AvatarNode}
+
+        {showName && (
+          <div className="min-w-0 leading-tight">
+            <div className={cn("truncate text-sm font-medium", nameClassName)}>
+              {displayName}
+            </div>
+          </div>
+        )}
+      </div>
+    </Button>
+  );
+
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          className={cn(defaultTriggerClasses, triggerClassName)}
-        >
-          <div
-            className={cn(
-              "flex items-center",
-              showName ? "gap-2" : "justify-center"
-            )}
-          >
-            {AvatarNode}
-
-            {showName && (
-              <div className="min-w-0 leading-tight">
-                <div className={cn("truncate text-sm font-medium", nameClassName)}>
-                  {displayName}
-                </div>
-              </div>
-            )}
-          </div>
-        </Button>
-      </DropdownMenuTrigger>
+      {showTooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              {triggerButton}
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="center" shortcut="U">
+            {firstNameLabel}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <DropdownMenuTrigger asChild>
+          {triggerButton}
+        </DropdownMenuTrigger>
+      )}
 
       <DropdownMenuContent
         className={cn(
@@ -236,7 +273,4 @@ export function UserAvatar({
     </DropdownMenu>
   );
 }
-
-
-
 

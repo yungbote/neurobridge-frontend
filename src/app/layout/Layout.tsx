@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/shared/ui/sidebar";
 import { AppSideBar } from "@/app/navigation/AppSideBar";
 import { AppNavBar } from "@/app/navigation/AppNavBar";
@@ -15,6 +16,8 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  const hideBreadcrumbs = location.pathname.startsWith("/chat");
 
   return (
     <SidebarProvider>
@@ -27,7 +30,7 @@ export default function Layout({ children }: LayoutProps) {
             <div className="flex-1 flex flex-col min-w-0 min-h-0">
               <AppNavBar />
 
-              {isAuthenticated && (
+              {isAuthenticated && !hideBreadcrumbs && (
                 <div>
                   <Container className="py-3">
                     <Breadcrumbs />
@@ -45,7 +48,6 @@ export default function Layout({ children }: LayoutProps) {
     </SidebarProvider>
   );
 }
-
 
 
 

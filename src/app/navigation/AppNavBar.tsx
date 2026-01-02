@@ -229,6 +229,7 @@ export function AppNavBar() {
               variant="ghost"
               size="icon"
               label="More options"
+              shortcut="M"
             >
               <Ellipsis className="size-5" />
             </IconButton>

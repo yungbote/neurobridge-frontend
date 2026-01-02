@@ -8,6 +8,7 @@ import { IconButton } from "@/shared/ui/icon-button";
 import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Separator } from "@/shared/ui/separator";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/shared/ui/accordion";
 import type { ThemePreference, UiTheme } from "@/shared/types/models";
 
 type SettingsTab = "general" | "notifications" | "personalization" | "account";
@@ -50,12 +51,12 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
       <DialogContent
         showCloseButton={false}
         className={[
-          "p-0 gap-0 overflow-hidden",
+          "p-0 gap-0 overflow-hidden grid-rows-[minmax(0,1fr)]",
           "w-[calc(100vw-2rem)] sm:w-full sm:max-w-3xl",
           "h-[calc(100svh-2rem)] sm:h-[600px]",
         ].join(" ")}
       >
-        <div className="flex h-full w-full flex-col sm:flex-row">
+        <div className="flex h-full w-full min-h-0 flex-col sm:flex-row">
           {/* Mobile header */}
           <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4 sm:hidden">
             <h1 className="text-base font-semibold text-foreground">{title}</h1>
@@ -65,6 +66,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               className="rounded-xl hover:bg-muted/60"
               onClick={() => onOpenChange?.(false)}
               label="Close settings"
+              shortcut="Esc"
             >
               <X className="size-5 text-foreground/80" />
             </IconButton>
@@ -102,6 +104,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               className="self-start mb-4 rounded-xl hover:bg-muted/60"
               onClick={() => onOpenChange?.(false)}
               label="Close settings"
+              shortcut="Esc"
             >
               <X className="size-5 text-foreground/80" />
             </IconButton>
@@ -129,14 +132,14 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
           </div>
 
           {/* Main content */}
-          <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
             <div className="hidden px-8 pt-8 pb-6 sm:block">
               <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
             </div>
 
             <Separator className="hidden sm:block bg-border/60" />
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 sm:px-8 sm:py-6">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 sm:px-8 sm:py-6 scrollbar-none">
               {activeTab === "general" && (
                 <GeneralTab
                   currentTheme={currentTheme}
@@ -173,6 +176,12 @@ interface GeneralTabProps {
 }
 
 function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiTheme }: GeneralTabProps) {
+  const [uiThemeOpen, setUiThemeOpen] = useState(false);
+  const currentUiOption = useMemo(
+    () => UI_THEME_OPTIONS.find((option) => option.id === currentUiTheme) ?? UI_THEME_OPTIONS[0],
+    [currentUiTheme]
+  );
+
   return (
     <div className="space-y-6">
       <div className="space-y-5 pb-6 border-b border-border/60">
@@ -193,55 +202,87 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
           </Select>
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm font-medium text-foreground">UI theme</div>
-            <div className="text-xs text-muted-foreground">Choose a palette and surface feel.</div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {UI_THEME_OPTIONS.map((theme) => {
-              const isActive = theme.id === currentUiTheme;
-              return (
-                <button
-                  key={theme.id}
-                  type="button"
-                  aria-pressed={isActive}
-                  onClick={() => onChangeUiTheme(theme.id)}
-                  className={[
-                    "w-full rounded-2xl border px-3 py-3 text-left transition",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    isActive
-                      ? "border-foreground/40 bg-muted/40 shadow-sm"
-                      : "border-border/60 hover:border-foreground/30 hover:bg-muted/30",
-                  ].join(" ")}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-foreground">{theme.label}</div>
-                      <div className="text-xs text-muted-foreground">{theme.description}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5">
-                        {theme.swatches.map((swatch) => (
-                          <span
-                            key={swatch}
-                            className="h-3.5 w-3.5 rounded-full border border-border"
-                            style={{ backgroundColor: swatch }}
-                          />
-                        ))}
+        <Accordion
+          type="single"
+          collapsible
+          value={uiThemeOpen ? "ui-theme" : ""}
+          onValueChange={(value) => setUiThemeOpen(value === "ui-theme")}
+        >
+          <AccordionItem value="ui-theme" className="border-b-0">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-foreground">UI theme</div>
+                <div className="text-xs text-muted-foreground">Choose a palette and surface feel.</div>
+              </div>
+              <AccordionTrigger
+                className={[
+                  "flex-none w-auto items-center justify-center gap-2 rounded-xl border border-border/60",
+                  "bg-muted/30 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/50",
+                  "hover:no-underline",
+                ].join(" ")}
+              >
+                <span className="text-sm font-medium">{currentUiOption.label}</span>
+                <span className="flex items-center gap-1.5">
+                  {currentUiOption.swatches.map((swatch) => (
+                    <span
+                      key={swatch}
+                      className="h-3.5 w-3.5 rounded-full border border-border"
+                      style={{ backgroundColor: swatch }}
+                    />
+                  ))}
+                </span>
+              </AccordionTrigger>
+            </div>
+            <AccordionContent className="pt-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {UI_THEME_OPTIONS.map((theme) => {
+                  const isActive = theme.id === currentUiTheme;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => {
+                        onChangeUiTheme(theme.id);
+                        setUiThemeOpen(false);
+                      }}
+                      className={[
+                        "w-full rounded-2xl border px-3 py-3 text-left transition",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        isActive
+                          ? "border-foreground/40 bg-muted/40 shadow-sm"
+                          : "border-border/60 hover:border-foreground/30 hover:bg-muted/30",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">{theme.label}</div>
+                          <div className="text-xs text-muted-foreground">{theme.description}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {theme.swatches.map((swatch) => (
+                              <span
+                                key={swatch}
+                                className="h-3.5 w-3.5 rounded-full border border-border"
+                                style={{ backgroundColor: swatch }}
+                              />
+                            ))}
+                          </div>
+                          {isActive && (
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background">
+                              <Check className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {isActive && (
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background">
-                          <Check className="h-3 w-3" />
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
 
       <div className="flex items-center justify-between pb-6">

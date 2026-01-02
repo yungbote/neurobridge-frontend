@@ -156,13 +156,13 @@ export function ThemeToggle() {
       size="icon"
       onClick={handleClick}
       label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      shortcut="T"
       className="rounded-3xl"
     >
       {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </IconButton>
   );
 }
-
 
 
 

@@ -2,6 +2,7 @@ import axiosClient from "./AxiosClient";
 import type {
   BackendMaterialAsset,
   BackendMaterialFile,
+  BackendMaterialFileListResponse,
   BackendMaterialListing,
   BackendMaterialUploadResponse,
 } from "@/shared/types/backend";
@@ -83,6 +84,11 @@ export async function listPathMaterials(pathId: string): Promise<MaterialListing
   };
 }
 
+export async function listUserMaterialFiles(): Promise<MaterialFile[]> {
+  const resp = await axiosClient.get<BackendMaterialFileListResponse>("/material-files");
+  const raws = resp.data?.files || [];
+  return raws.map(mapMaterialFile).filter(Boolean) as MaterialFile[];
+}
 
 
 

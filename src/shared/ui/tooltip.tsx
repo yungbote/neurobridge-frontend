@@ -22,10 +22,16 @@ const Tooltip = (props: React.ComponentProps<typeof TooltipPrimitive.Root>) => (
 
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
+type TooltipContentProps = React.ComponentPropsWithoutRef<
+  typeof TooltipPrimitive.Content
+> & {
+  shortcut?: string;
+};
+
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 0, children, ...props }, ref) => (
+  TooltipContentProps
+>(({ className, sideOffset = 0, children, shortcut, ...props }, ref) => (
   <TooltipPrimitive.Portal>
     <TooltipPrimitive.Content
       ref={ref}
@@ -37,7 +43,16 @@ const TooltipContent = React.forwardRef<
       )}
       {...props}
     >
-      {children}
+      {shortcut ? (
+        <span className="inline-flex items-center gap-2">
+          <span>{children}</span>
+          <span className="rounded-sm border border-background/25 bg-background/10 px-1 text-[10px] font-medium uppercase tracking-wide text-background/80">
+            {shortcut}
+          </span>
+        </span>
+      ) : (
+        children
+      )}
       <TooltipPrimitive.Arrow className="bg-foreground fill-foreground z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" />
     </TooltipPrimitive.Content>
   </TooltipPrimitive.Portal>

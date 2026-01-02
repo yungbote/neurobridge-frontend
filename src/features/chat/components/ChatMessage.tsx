@@ -2,6 +2,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import type { ChatRole } from "@/shared/types/models"
 import { cn } from "@/shared/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip"
@@ -135,6 +136,7 @@ interface ActionBarProps {
 
 type ActionButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   children?: React.ReactNode
+  shortcut?: string
 }
 
 interface ChatMessageProps {
@@ -434,13 +436,29 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
   const [isLoaded, setIsLoaded] = React.useState(false)
   const [hasError, setHasError] = React.useState(false)
 
+  React.useEffect(() => {
+    setIsLoaded(false)
+    setHasError(false)
+  }, [src])
+
+  React.useEffect(() => {
+    if (!isExpanded || typeof document === "undefined") return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [isExpanded])
+
   return (
     <>
       <figure className="my-4">
-        <div
+        <button
+          type="button"
+          aria-label="Open image"
           className={cn(
-            "relative overflow-hidden rounded-xl border border-border/60 bg-muted/20 shadow-sm",
-            "cursor-pointer group",
+            "relative w-full overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-sm",
+            "cursor-pointer group text-left",
           )}
           onClick={() => setIsExpanded(true)}
         >
@@ -459,78 +477,91 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
                 height={height}
                 onLoad={() => setIsLoaded(true)}
                 onError={() => setHasError(true)}
-                className={cn("max-w-full h-auto transition-opacity duration-300", isLoaded ? "opacity-100" : "opacity-0")}
+                loading="lazy"
+                decoding="async"
+                className={cn(
+                  "max-w-full h-auto transition-opacity duration-300",
+                  isLoaded ? "opacity-100" : "opacity-0",
+                )}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                 <Maximize2 className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
               </div>
             </>
           )}
-        </div>
+        </button>
         {caption && <figcaption className="mt-2 text-center text-sm text-muted-foreground">{caption}</figcaption>}
       </figure>
 
-      {isExpanded && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setIsExpanded(false)}
-        >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="Close image"
-                className="absolute top-4 right-4 rounded-lg p-2 text-white transition-colors hover:bg-white/10"
-                onClick={() => setIsExpanded(false)}
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Close</TooltipContent>
-          </Tooltip>
-          <img
-            src={src || "/placeholder.svg"}
-            alt={alt || "Image"}
-            className="max-w-full max-h-full object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
+      {isExpanded && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={() => setIsExpanded(false)}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Close image"
+                    className="absolute top-4 right-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
+                    onClick={() => setIsExpanded(false)}
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left" shortcut="Esc">Close</TooltipContent>
+              </Tooltip>
+              <img
+                src={src || "/placeholder.svg"}
+                alt={alt || "Image"}
+                className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 }
 
 function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, muted = true }: VideoBlockProps) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null)
+  const expandedRef = React.useRef<HTMLVideoElement | null>(null)
   const [isPlaying, setIsPlaying] = React.useState(autoPlay)
   const [isMuted, setIsMuted] = React.useState(muted)
   const [progress, setProgress] = React.useState(0)
-  const [isFullscreen, setIsFullscreen] = React.useState(false)
+  const [isExpanded, setIsExpanded] = React.useState(false)
+  const [expandedFrom, setExpandedFrom] = React.useState(0)
+  const [expandedShouldPlay, setExpandedShouldPlay] = React.useState(false)
 
   const togglePlay = () => {
     const v = videoRef.current
     if (!v) return
-    if (isPlaying) v.pause()
-    else v.play()
-    setIsPlaying(!isPlaying)
+    if (v.paused) {
+      v.play().catch(() => {})
+    } else {
+      v.pause()
+    }
   }
 
   const toggleMute = () => {
     const v = videoRef.current
     if (!v) return
     v.muted = !isMuted
-    setIsMuted(!isMuted)
+    setIsMuted(v.muted)
   }
 
-  const toggleFullscreen = () => {
+  const openExpanded = () => {
     const v = videoRef.current
     if (!v) return
-    if (!isFullscreen) {
-      v.requestFullscreen?.()
-    } else {
-      document.exitFullscreen?.()
-    }
-    setIsFullscreen(!isFullscreen)
+    const currentTime = v.currentTime || 0
+    const wasPlaying = !v.paused
+    v.pause()
+    setExpandedFrom(currentTime)
+    setExpandedShouldPlay(wasPlaying)
+    setIsExpanded(true)
   }
 
   const handleTimeUpdate = () => {
@@ -538,6 +569,76 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
     if (!v || !v.duration) return
     setProgress((v.currentTime / v.duration) * 100)
   }
+
+  const handlePlay = () => setIsPlaying(true)
+  const handlePause = () => setIsPlaying(false)
+  const handleVolumeChange = () => {
+    const v = videoRef.current
+    if (!v) return
+    setIsMuted(v.muted || v.volume === 0)
+  }
+
+  const closeExpanded = () => {
+    const expanded = expandedRef.current
+    const currentTime = expanded?.currentTime ?? expandedFrom
+    const wasPlaying = expanded ? !expanded.paused : expandedShouldPlay
+    setIsExpanded(false)
+    const inline = videoRef.current
+    if (inline) {
+      inline.currentTime = currentTime
+      if (wasPlaying) {
+        inline.play().catch(() => {})
+      }
+    }
+  }
+
+  React.useEffect(() => {
+    if (!isExpanded) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeExpanded()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [isExpanded])
+
+  React.useEffect(() => {
+    if (!isExpanded) return
+    const v = expandedRef.current
+    if (!v) return
+    const sync = () => {
+      if (!Number.isFinite(expandedFrom)) return
+      if (expandedFrom > 0 && v.duration) {
+        v.currentTime = Math.min(expandedFrom, v.duration - 0.1)
+      } else {
+        v.currentTime = expandedFrom
+      }
+      if (expandedShouldPlay) {
+        v.play().catch(() => {})
+      }
+    }
+    if (v.readyState >= 1) {
+      sync()
+      return
+    }
+    v.addEventListener("loadedmetadata", sync, { once: true })
+    return () => v.removeEventListener("loadedmetadata", sync)
+  }, [expandedFrom, expandedShouldPlay, isExpanded])
+
+  React.useEffect(() => {
+    if (!isExpanded) return
+    const v = expandedRef.current
+    if (!v) return
+    v.muted = isMuted
+  }, [isExpanded, isMuted])
+
+  React.useEffect(() => {
+    if (!isExpanded || typeof document === "undefined") return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [isExpanded])
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const v = videoRef.current
@@ -548,71 +649,131 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
   }
 
   return (
-    <figure className="my-4">
-      <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card/80 shadow-sm backdrop-blur-sm group">
-        <video
-          ref={videoRef}
-          src={src}
-          poster={poster}
-          autoPlay={autoPlay}
-          loop={loop}
-          muted={muted}
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
-          className="w-full"
-        />
+    <>
+      <figure className="my-4">
+        <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/80 shadow-sm backdrop-blur-sm group">
+          <video
+            ref={videoRef}
+            src={src}
+            poster={poster}
+            autoPlay={autoPlay}
+            loop={loop}
+            muted={isMuted}
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={() => setIsPlaying(false)}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onVolumeChange={handleVolumeChange}
+            className="w-full"
+          />
 
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="h-1 bg-white/30 rounded-full mb-3 cursor-pointer" onClick={handleSeek}>
-            <div className="h-full bg-white rounded-full transition-all" style={{ width: `${progress}%` }} />
-          </div>
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="h-1 bg-white/30 rounded-full mb-3 cursor-pointer" onClick={handleSeek}>
+              <div className="h-full bg-white rounded-full transition-all" style={{ width: `${progress}%` }} />
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={isPlaying ? "Pause video" : "Play video"}
-                  onClick={togglePlay}
-                  className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
-                >
-                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{isPlaying ? "Pause" : "Play"}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={isMuted ? "Unmute video" : "Mute video"}
-                  onClick={toggleMute}
-                  className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
-                >
-                  {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{isMuted ? "Unmute" : "Mute"}</TooltipContent>
-            </Tooltip>
-            <div className="flex-1" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Fullscreen"
-                  onClick={toggleFullscreen}
-                  className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
-                >
-                  <Maximize2 className="h-5 w-5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Fullscreen</TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={isPlaying ? "Pause video" : "Play video"}
+                    onClick={togglePlay}
+                    className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
+                  >
+                    {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" shortcut="Space">
+                  {isPlaying ? "Pause" : "Play"}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={isMuted ? "Unmute video" : "Mute video"}
+                    onClick={toggleMute}
+                    className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
+                  >
+                    {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" shortcut="M">
+                  {isMuted ? "Unmute" : "Mute"}
+                </TooltipContent>
+              </Tooltip>
+              <div className="flex-1" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Fullscreen"
+                    onClick={openExpanded}
+                    className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
+                  >
+                    <Maximize2 className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" shortcut="F">Fullscreen</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </div>
-      </div>
-      {caption && <figcaption className="mt-2 text-center text-sm text-muted-foreground">{caption}</figcaption>}
-    </figure>
+        {caption && <figcaption className="mt-2 text-center text-sm text-muted-foreground">{caption}</figcaption>}
+      </figure>
+
+      {isExpanded && (
+        typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
+                onClick={closeExpanded}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Close video"
+                      className="absolute right-4 top-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
+                      onClick={closeExpanded}
+                    >
+                      <X className="h-6 w-6" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" shortcut="Esc">Close</TooltipContent>
+                </Tooltip>
+                <div
+                  className="w-full max-w-5xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <video
+                    ref={expandedRef}
+                    src={src}
+                    poster={poster}
+                    controls
+                    autoPlay
+                    loop={loop}
+                    muted={isMuted}
+                    className="w-full rounded-2xl shadow-2xl"
+                    onVolumeChange={() => {
+                      const v = expandedRef.current
+                      if (!v) return
+                      setIsMuted(v.muted || v.volume === 0)
+                    }}
+                  />
+                  {caption ? (
+                    <div className="mt-3 text-center text-sm text-white/70">
+                      {caption}
+                    </div>
+                  ) : null}
+                </div>
+              </div>,
+              document.body
+            )
+          : null
+      )}
+    </>
   )
 }
 
@@ -840,29 +1001,29 @@ function ThinkingContent({
 function ActionBar({ onCopy, onLike, onDislike, onShare, onRegenerate }: ActionBarProps) {
   return (
     <div className="mt-3 flex items-center gap-1.5">
-      <ActionButton onClick={onCopy} aria-label="Copy">
+      <ActionButton onClick={onCopy} aria-label="Copy" shortcut="Cmd/Ctrl+C">
         <Copy className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onLike} aria-label="Like">
+      <ActionButton onClick={onLike} aria-label="Like" shortcut="L">
         <ThumbsUp className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onDislike} aria-label="Dislike">
+      <ActionButton onClick={onDislike} aria-label="Dislike" shortcut="D">
         <ThumbsDown className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onShare} aria-label="Share">
+      <ActionButton onClick={onShare} aria-label="Share" shortcut="S">
         <Share className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onRegenerate} aria-label="Regenerate">
+      <ActionButton onClick={onRegenerate} aria-label="Regenerate" shortcut="R">
         <RotateCcw className="h-4 w-4" />
       </ActionButton>
-      <ActionButton aria-label="More options">
+      <ActionButton aria-label="More options" shortcut="M">
         <MoreHorizontal className="h-4 w-4" />
       </ActionButton>
     </div>
   )
 }
 
-function ActionButton({ children, onClick, ...props }: ActionButtonProps) {
+function ActionButton({ children, onClick, shortcut, ...props }: ActionButtonProps) {
   const label = props["aria-label"] ?? props.title
 
   const button = (
@@ -881,7 +1042,7 @@ function ActionButton({ children, onClick, ...props }: ActionButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
+      <TooltipContent side="top" shortcut={shortcut}>{label}</TooltipContent>
     </Tooltip>
   )
 }

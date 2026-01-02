@@ -35,6 +35,10 @@ export interface BackendMaterialListing {
   assets_by_file?: Record<string, BackendMaterialAsset[]>;
 }
 
+export interface BackendMaterialFileListResponse {
+  files?: BackendMaterialFile[];
+}
+
 export interface BackendMaterialUploadResponse {
   job_id?: UUID | string | null;
   material_set_id?: UUID | string | null;

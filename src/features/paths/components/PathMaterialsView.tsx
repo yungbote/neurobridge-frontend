@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   File,
   FileText,
   Maximize2,
@@ -9,10 +10,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { listPathMaterials } from "@/shared/api/MaterialService";
+import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { cn } from "@/shared/lib/utils";
+import { getAccessToken } from "@/shared/services/StorageService";
 import type { MaterialAsset, MaterialFile } from "@/shared/types/models";
 
 type MaterialAssetsByFile = Record<string, MaterialAsset[]>;
@@ -35,7 +38,7 @@ function fileIcon(file: MaterialFile): LucideIcon {
 function normalizePageAssets(assets: MaterialAsset[] | null | undefined): MaterialAsset[] {
   const allowed = new Set(["pdf_page", "ppt_slide", "frame", "image"]);
   const list = (assets || [])
-    .filter((a): a is MaterialAsset => Boolean(a?.url))
+    .filter((a): a is MaterialAsset => Boolean(a?.id && (a?.storageKey || a?.url)))
     .filter((a) => !a.kind || allowed.has(String(a.kind).toLowerCase()));
   const byPage = list.filter((a) => typeof a.page === "number");
   if (byPage.length > 0) {
@@ -63,6 +66,8 @@ interface ViewerLayoutProps {
   disableNext: boolean;
   showFullscreen: boolean;
   onOpenFullscreen?: () => void;
+  openUrl?: string;
+  fullscreen?: boolean;
   className?: string;
 }
 
@@ -81,15 +86,27 @@ function ViewerLayout({
   disableNext,
   showFullscreen,
   onOpenFullscreen,
+  openUrl,
+  fullscreen = false,
   className,
 }: ViewerLayoutProps) {
   return (
-    <div className={cn("grid gap-4 lg:grid-cols-[280px_1fr]", className)}>
-      <aside className="rounded-xl border border-border bg-card p-3">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Materials
+    <div className={cn("grid gap-5 lg:grid-cols-[300px_1fr]", fullscreen && "h-full min-h-0", className)}>
+      <aside
+        className={cn(
+          "rounded-2xl border border-border/60 bg-card/70 p-3 shadow-sm backdrop-blur",
+          fullscreen && "flex h-full min-h-0 flex-col"
+        )}
+      >
+        <div className="flex items-center justify-between gap-2 px-1">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Materials
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            {files.length} file{files.length === 1 ? "" : "s"}
+          </div>
         </div>
-        <div className="mt-3 space-y-2">
+        <div className={cn("mt-3 space-y-2", fullscreen && "min-h-0 flex-1 overflow-y-auto pr-1")}>
           {files.map((f) => {
             const Icon = fileIcon(f);
             const isActive = f.id === selectedFile?.id;
@@ -99,13 +116,18 @@ function ViewerLayout({
                 type="button"
                 onClick={() => onSelectFile(f)}
                 className={cn(
-                  "flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left transition-colors",
+                  "group flex w-full items-start gap-3 rounded-xl border px-3 py-2 text-left transition-colors",
                   isActive
-                    ? "border-foreground/20 bg-muted/40 text-foreground"
-                    : "border-border bg-background hover:bg-muted/30 text-muted-foreground"
+                    ? "border-primary/20 bg-primary/5 text-foreground shadow-sm"
+                    : "border-border/60 bg-background/70 text-muted-foreground hover:bg-muted/40"
                 )}
               >
-                <div className="mt-0.5 rounded-md bg-muted/60 p-2 text-muted-foreground">
+                <div
+                  className={cn(
+                    "mt-0.5 rounded-md p-2 transition-colors",
+                    isActive ? "bg-primary/10 text-foreground" : "bg-muted/50 text-muted-foreground"
+                  )}
+                >
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -123,10 +145,15 @@ function ViewerLayout({
         </div>
       </aside>
 
-      <section className="rounded-xl border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section
+        className={cn(
+          "overflow-hidden rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur",
+          fullscreen && "flex h-full min-h-0 flex-col"
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
           <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Document
             </div>
             <div className="mt-1 text-lg font-semibold text-foreground">
@@ -140,6 +167,19 @@ function ViewerLayout({
                 {pageLabel}
               </div>
             ) : null}
+            {openUrl ? (
+              <IconButton
+                variant="ghost"
+                size="icon"
+                label="Open in new tab"
+                shortcut="O"
+                asChild
+              >
+                <a href={openUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </IconButton>
+            ) : null}
             {showPager ? (
               <>
                 <IconButton
@@ -148,6 +188,7 @@ function ViewerLayout({
                   onClick={onPrevPage}
                   disabled={disablePrev}
                   label="Previous page"
+                  shortcut="Left"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </IconButton>
@@ -157,6 +198,7 @@ function ViewerLayout({
                   onClick={onNextPage}
                   disabled={disableNext}
                   label="Next page"
+                  shortcut="Right"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </IconButton>
@@ -168,6 +210,7 @@ function ViewerLayout({
                 size="icon"
                 onClick={onOpenFullscreen}
                 label="Open fullscreen"
+                shortcut="F"
               >
                 <Maximize2 className="h-4 w-4" />
               </IconButton>
@@ -175,7 +218,7 @@ function ViewerLayout({
           </div>
         </div>
 
-        <div className="mt-4">{viewerNode}</div>
+        <div className={cn("p-4", fullscreen && "flex-1 min-h-0")}>{viewerNode}</div>
       </section>
     </div>
   );
@@ -254,37 +297,66 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
     return normalizePageAssets(assets);
   }, [assetsByFile, selectedFile]);
 
+  const fileName = String(selectedFile?.originalName || "").toLowerCase();
+  const isPdf = Boolean(selectedFile?.mimeType?.includes("pdf")) || fileName.endsWith(".pdf");
+  const isImage =
+    Boolean(selectedFile?.mimeType?.startsWith("image/")) ||
+    /\.(png|jpe?g|gif|webp|svg)$/.test(fileName);
+  const isVideo =
+    Boolean(selectedFile?.mimeType?.startsWith("video/")) ||
+    /\.(mp4|mov|m4v|webm)$/.test(fileName);
+  const isAudio =
+    Boolean(selectedFile?.mimeType?.startsWith("audio/")) ||
+    /\.(mp3|wav|m4a|aac|ogg)$/.test(fileName);
+
   const pageLabel = useMemo(() => {
     if (pageAssets.length > 0) {
       return `Page ${pageIndex + 1} of ${pageAssets.length}`;
     }
-    if (selectedFile?.mimeType?.includes("pdf")) {
+    if (isPdf) {
       return `Page ${pdfPage}`;
     }
     return "";
-  }, [pageAssets.length, pageIndex, pdfPage, selectedFile?.mimeType]);
+  }, [isPdf, pageAssets.length, pageIndex, pdfPage]);
 
   const handlePrevPage = useCallback(() => {
     if (pageAssets.length > 0) {
       setPageIndex((prev) => Math.max(0, prev - 1));
       return;
     }
-    if (selectedFile?.mimeType?.includes("pdf")) {
+    if (isPdf) {
       setPdfPage((prev) => Math.max(1, prev - 1));
     }
-  }, [pageAssets.length, selectedFile?.mimeType]);
+  }, [isPdf, pageAssets.length]);
 
   const handleNextPage = useCallback(() => {
     if (pageAssets.length > 0) {
       setPageIndex((prev) => Math.min(pageAssets.length - 1, prev + 1));
       return;
     }
-    if (selectedFile?.mimeType?.includes("pdf")) {
+    if (isPdf) {
       setPdfPage((prev) => prev + 1);
     }
-  }, [pageAssets.length, selectedFile?.mimeType]);
+  }, [isPdf, pageAssets.length]);
 
-  const viewerHeight = fullscreenOpen ? "h-[72vh]" : "h-[520px]";
+  const viewerHeight = fullscreenOpen ? "h-full min-h-0" : "h-[360px] sm:h-[520px]";
+  const apiBase = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+  const buildFileViewUrl = useCallback(
+    (fileId: string) => {
+      const token = getAccessToken();
+      const baseUrl = `${apiBase}/material-files/${fileId}/view`;
+      return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+    },
+    [apiBase]
+  );
+  const buildAssetViewUrl = useCallback(
+    (assetId: string) => {
+      const token = getAccessToken();
+      const baseUrl = `${apiBase}/material-assets/${assetId}/view`;
+      return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+    },
+    [apiBase]
+  );
 
   const viewerNode = useMemo(() => {
     if (!selectedFile) {
@@ -308,10 +380,16 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
           />
         );
       }
+      const assetSrc = asset.storageKey ? buildAssetViewUrl(asset.id) : asset.url;
       return (
-        <div className={cn("flex items-center justify-center rounded-xl border border-border bg-muted/20", viewerHeight)}>
+        <div
+          className={cn(
+            "flex items-center justify-center rounded-2xl border border-border/60 bg-muted/20",
+            viewerHeight
+          )}
+        >
           <img
-            src={asset.url}
+            src={assetSrc}
             alt={selectedFile.originalName || "Document page"}
             className="max-h-full max-w-full object-contain"
           />
@@ -319,12 +397,51 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
       );
     }
 
-    if (selectedFile.fileUrl) {
-      const isPdf = selectedFile.mimeType?.includes("pdf");
-      const src = isPdf ? `${selectedFile.fileUrl}#page=${pdfPage}&view=FitH` : selectedFile.fileUrl;
+    if (selectedFile.id) {
+      const fileUrl = buildFileViewUrl(selectedFile.id);
+      if (isImage) {
+        return (
+          <div className={cn("flex items-center justify-center rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
+            <img
+              src={fileUrl}
+              alt={selectedFile.originalName || "Image"}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        );
+      }
+      if (isVideo) {
+        return (
+          <div className={cn("overflow-hidden rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
+            <video className="h-full w-full" controls src={fileUrl} />
+          </div>
+        );
+      }
+      if (isAudio) {
+        return (
+          <div className={cn("flex items-center justify-center rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
+            <audio controls src={fileUrl} className="w-full max-w-md" />
+          </div>
+        );
+      }
+      if (isPdf) {
+        const src = `${fileUrl}#page=${pdfPage}&view=FitH`;
+        return (
+          <div className={cn("overflow-hidden rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
+            <iframe title={selectedFile.originalName || "Document"} src={src} className="h-full w-full" />
+          </div>
+        );
+      }
       return (
-        <div className={cn("overflow-hidden rounded-xl border border-border bg-muted/20", viewerHeight)}>
-          <iframe title={selectedFile.originalName || "Document"} src={src} className="h-full w-full" />
+        <div className={cn("flex items-center justify-center rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
+          <div className="space-y-3 text-center">
+            <div className="text-sm text-muted-foreground">Preview not available.</div>
+            <Button asChild size="sm">
+              <a href={fileUrl} target="_blank" rel="noreferrer">
+                Open file
+              </a>
+            </Button>
+          </div>
         </div>
       );
     }
@@ -336,11 +453,23 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
         helperText=""
       />
     );
-  }, [pageAssets, pageIndex, pdfPage, selectedFile, viewerHeight]);
+  }, [
+    buildAssetViewUrl,
+    buildFileViewUrl,
+    isAudio,
+    isImage,
+    isPdf,
+    isVideo,
+    pageAssets,
+    pageIndex,
+    pdfPage,
+    selectedFile,
+    viewerHeight,
+  ]);
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border/60 bg-card/70 p-6 text-sm text-muted-foreground shadow-sm backdrop-blur">
         Loading materials…
       </div>
     );
@@ -348,7 +477,7 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border/60 bg-card/70 p-6 text-sm text-muted-foreground shadow-sm backdrop-blur">
         {error}
       </div>
     );
@@ -374,10 +503,12 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
     onNextPage: handleNextPage,
     pageLabel,
     viewerNode,
-    showPager: pageAssets.length > 0 || Boolean(selectedFile?.mimeType?.includes("pdf")),
+    showPager: pageAssets.length > 0 || isPdf,
     disablePrev: pageAssets.length > 0 ? pageIndex <= 0 : pdfPage <= 1,
     disableNext: pageAssets.length > 0 ? pageIndex >= Math.max(0, pageAssets.length - 1) : false,
     showFullscreen: false,
+    openUrl: selectedFile ? buildFileViewUrl(selectedFile.id) : undefined,
+    fullscreen: false,
   };
 
   return (
@@ -390,11 +521,12 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
 
       <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
         <DialogContent
-          className="h-[90vh] max-w-[96vw] w-[96vw] overflow-hidden p-4"
+          className="h-[92vh] max-w-[96vw] w-[96vw] overflow-hidden p-3 sm:p-4"
         >
           <ViewerLayout
             {...layoutProps}
             showFullscreen={false}
+            fullscreen
             className="h-full"
           />
         </DialogContent>

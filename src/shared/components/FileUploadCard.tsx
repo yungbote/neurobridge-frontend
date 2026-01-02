@@ -131,6 +131,7 @@ export const FileUploadCard = ({ fileName, fileType, onRemove }: FileUploadCardP
             className="h-8 w-8 rounded-full opacity-0 transition-opacity group-hover:opacity-100"
             onClick={onRemove}
             label="Remove file"
+            shortcut="Del"
           >
             <X className="h-4 w-4" />
           </IconButton>
@@ -139,7 +140,6 @@ export const FileUploadCard = ({ fileName, fileType, onRemove }: FileUploadCardP
     </div>
   );
 };
-
 
 
 

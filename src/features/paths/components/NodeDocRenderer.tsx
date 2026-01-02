@@ -89,7 +89,7 @@ function safeString(v: unknown) {
 function markdownComponents(): Components {
   return {
     p({ children }: { children?: React.ReactNode }) {
-      return <p className="leading-relaxed text-foreground/90">{children}</p>;
+      return <p className="text-pretty leading-relaxed text-foreground/90">{children}</p>;
     },
     a({ href, children }: { href?: string; children?: React.ReactNode }) {
       return (
@@ -106,34 +106,34 @@ function markdownComponents(): Components {
     code({ inline, children }: { inline?: boolean; children?: React.ReactNode }) {
       if (inline) {
         return (
-          <code className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[0.9em] text-foreground">
+          <code className="rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[0.9em] text-foreground">
             {children}
           </code>
         );
       }
       return (
-        <pre className="overflow-x-auto rounded-xl border border-border bg-muted/30 p-4 text-sm">
+        <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
           <code>{children}</code>
         </pre>
       );
     },
     ul({ children }: { children?: React.ReactNode }) {
-      return <ul className="list-disc pl-5 space-y-1 text-foreground/90">{children}</ul>;
+      return <ul className="list-disc pl-5 space-y-2 text-foreground/90">{children}</ul>;
     },
     ol({ children }: { children?: React.ReactNode }) {
-      return <ol className="list-decimal pl-5 space-y-1 text-foreground/90">{children}</ol>;
+      return <ol className="list-decimal pl-5 space-y-2 text-foreground/90">{children}</ol>;
     },
     li({ children }: { children?: React.ReactNode }) {
       return <li className="leading-relaxed">{children}</li>;
     },
     h2({ children }: { children?: React.ReactNode }) {
-      return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
+      return <h2 className="text-balance text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
     },
     h3({ children }: { children?: React.ReactNode }) {
-      return <h3 className="text-lg font-semibold tracking-tight text-foreground">{children}</h3>;
+      return <h3 className="text-balance text-lg font-semibold tracking-tight text-foreground">{children}</h3>;
     },
     h4({ children }: { children?: React.ReactNode }) {
-      return <h4 className="text-base font-semibold tracking-tight text-foreground">{children}</h4>;
+      return <h4 className="text-balance text-base font-semibold tracking-tight text-foreground">{children}</h4>;
     },
   };
 }
@@ -194,9 +194,9 @@ function CodeBlock({ language, filename, code }: { language?: string; filename?:
   };
 
   return (
-    <div className="rounded-xl border border-border bg-muted/20">
+    <div className="rounded-2xl border border-border/60 bg-muted/20">
       {hasHeader ? (
-        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
           <div className="min-w-0 text-xs text-muted-foreground">
             <span className="font-medium text-foreground/80">{safeString(filename).trim() || "Code"}</span>
             {safeString(language).trim() ? <span className="ml-2">{safeString(language).trim()}</span> : null}
@@ -215,8 +215,8 @@ function CodeBlock({ language, filename, code }: { language?: string; filename?:
 
 function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-background p-4">
-      <div className="text-xs font-medium text-muted-foreground">Quick check</div>
+    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick check</div>
       <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
           {safeString(promptMd)}
@@ -226,7 +226,7 @@ function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: stri
         <summary className="cursor-pointer text-sm font-medium text-foreground/90">
           Reveal answer
         </summary>
-        <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3 text-[15px] leading-relaxed text-foreground/90">
+        <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 p-3 text-[15px] leading-relaxed text-foreground/90">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
             {safeString(answerMd)}
           </ReactMarkdown>
@@ -238,12 +238,14 @@ function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: stri
 
 function ActionButton({
   label,
+  shortcut,
   active,
   disabled,
   onClick,
   children,
 }: {
   label: string;
+  shortcut?: string;
   active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
@@ -269,7 +271,9 @@ function ActionButton({
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
+      <TooltipContent side="bottom" shortcut={shortcut}>
+        {label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -349,11 +353,11 @@ export function NodeDocRenderer({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {safeString(d?.summary).trim() ? (
-        <div className="rounded-xl border border-border bg-muted/20 p-4">
-          <div className="text-xs font-medium text-muted-foreground">Summary</div>
-          <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
+        <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</div>
+          <div className="mt-3 text-[15px] leading-relaxed text-foreground/90">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
               {safeString(d.summary)}
             </ReactMarkdown>
@@ -375,14 +379,15 @@ export function NodeDocRenderer({
         const actionBar = showActions ? (
           <div
             className={cn(
-              "absolute -top-3 right-0 z-10 flex items-center gap-1 rounded-full border border-border",
-              "bg-background/90 px-1.5 py-1 shadow-sm backdrop-blur",
+              "absolute -top-3 right-0 z-10 flex items-center gap-1 rounded-full border border-border/60",
+              "bg-card/90 px-1.5 py-1 shadow-sm backdrop-blur",
               "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             )}
           >
             {onLike ? (
               <ActionButton
                 label={feedback === "like" ? "Liked" : "Like"}
+                shortcut="L"
                 active={feedback === "like"}
                 onClick={() => onLike?.(b, i)}
               >
@@ -392,6 +397,7 @@ export function NodeDocRenderer({
             {onDislike ? (
               <ActionButton
                 label={feedback === "dislike" ? "Disliked" : "Dislike"}
+                shortcut="D"
                 active={feedback === "dislike"}
                 onClick={() => onDislike?.(b, i)}
               >
@@ -401,6 +407,7 @@ export function NodeDocRenderer({
             {onRegenerate ? (
               <ActionButton
                 label="Regenerate"
+                shortcut="R"
                 disabled={isPending}
                 onClick={() => onRegenerate?.(b, i)}
               >
@@ -408,13 +415,14 @@ export function NodeDocRenderer({
               </ActionButton>
             ) : null}
             {onChat ? (
-              <ActionButton label="Chat" onClick={() => onChat?.(b, i)}>
+              <ActionButton label="Chat" shortcut="C" onClick={() => onChat?.(b, i)}>
                 <MessageSquare className="h-3.5 w-3.5" />
               </ActionButton>
             ) : null}
             {onUndo && undoAllowed ? (
               <ActionButton
                 label={canUndo ? "Undo" : "Undo (unavailable)"}
+                shortcut="Cmd/Ctrl+Z"
                 disabled={!canUndo || isPending}
                 onClick={() => onUndo?.(b, i)}
               >
@@ -428,13 +436,13 @@ export function NodeDocRenderer({
           <div key={blockId} className="group relative">
             {actionBar}
             {isPending ? (
-              <div className="rounded-xl border border-border bg-muted/10 p-4">
-                <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="inline-flex h-2 w-2 rounded-full bg-primary/70 animate-pulse" />
-                  Regenerating this block
-                </div>
-                <BlockSkeleton type={type} />
+            <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex h-2 w-2 rounded-full bg-primary/70 animate-pulse" />
+                Regenerating this block
               </div>
+              <BlockSkeleton type={type} />
+            </div>
             ) : (
               content
             )}
@@ -444,9 +452,9 @@ export function NodeDocRenderer({
         if (type === "heading") {
           const level = Number(b?.level || 2);
           const text = safeString(b?.text);
-          if (level === 3) return wrap(<h3 className="text-lg font-semibold tracking-tight">{text}</h3>);
-          if (level === 4) return wrap(<h4 className="text-base font-semibold tracking-tight">{text}</h4>);
-          return wrap(<h2 className="text-xl font-semibold tracking-tight">{text}</h2>);
+          if (level === 3) return wrap(<h3 className="text-balance text-lg font-semibold tracking-tight">{text}</h3>);
+          if (level === 4) return wrap(<h4 className="text-balance text-base font-semibold tracking-tight">{text}</h4>);
+          return wrap(<h2 className="text-balance text-xl font-semibold tracking-tight">{text}</h2>);
         }
 
         if (type === "paragraph") {
@@ -467,9 +475,9 @@ export function NodeDocRenderer({
               ? "border-warning/40 bg-warning/10"
               : variant === "tip"
               ? "border-success/40 bg-success/10"
-              : "border-border bg-muted/20";
+              : "border-border/60 bg-muted/20";
           return wrap(
-            <div className={cn("rounded-xl border p-4", border)}>
+            <div className={cn("rounded-2xl border border-l-4 p-4", border)}>
               {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
               <div className={cn("text-[15px] leading-relaxed text-foreground/90", title && "mt-2")}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
@@ -512,7 +520,7 @@ export function NodeDocRenderer({
           return wrap(
             <div className="space-y-2">
               {yt ? (
-                <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+                <div className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20">
                   <div className="aspect-video w-full">
                     <iframe
                       title={caption || "Video"}
@@ -524,7 +532,7 @@ export function NodeDocRenderer({
                   </div>
                 </div>
               ) : isVideoURL(url) ? (
-                <video className="w-full rounded-xl border border-border" controls src={url} />
+                <video className="w-full rounded-2xl border border-border/60" controls src={url} />
               ) : (
                 <a
                   href={url}
@@ -556,8 +564,8 @@ export function NodeDocRenderer({
             );
           }
           return wrap(
-            <div className="rounded-xl border border-border bg-muted/20 p-4">
-              <div className="text-xs font-medium text-muted-foreground">Diagram</div>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagram</div>
               <pre className="mt-2 overflow-x-auto text-sm text-foreground/90">
                 <code>{safeString(b?.source)}</code>
               </pre>
@@ -573,7 +581,7 @@ export function NodeDocRenderer({
           if (columns.length === 0 || rows.length === 0) return null;
           return wrap(
             <div className="space-y-2">
-              <div className="overflow-x-auto rounded-xl border border-border">
+              <div className="overflow-x-auto rounded-2xl border border-border/60">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30">
                     <tr>

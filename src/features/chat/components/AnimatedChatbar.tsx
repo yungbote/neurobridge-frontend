@@ -629,6 +629,7 @@ export const AnimatedChatbar = ({
                 size="icon"
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
                 label="Scroll files left"
+                shortcut="Left"
                 onClick={() => scrollFilesBy(-1)}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -643,6 +644,7 @@ export const AnimatedChatbar = ({
                   size="icon"
                   className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
                   label="Scroll files right"
+                  shortcut="Right"
                   onClick={() => scrollFilesBy(1)}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -660,6 +662,7 @@ export const AnimatedChatbar = ({
               size="icon"
               className="h-8 w-8 sm:h-9 rounded-full shrink-0 hover:bg-muted"
               label="Attach file"
+              shortcut="Cmd/Ctrl+O"
               onClick={() => fileInputRef.current?.click()}
             >
               <Plus className="h-5 w-5 sm:h-5 sm:w-5" />
@@ -730,6 +733,7 @@ export const AnimatedChatbar = ({
               size="icon"
               className="h-8 w-8 sm:h-9 rounded-full hover:bg-muted"
               label="Voice input"
+              shortcut="V"
             >
               <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
             </IconButton>
@@ -743,6 +747,7 @@ export const AnimatedChatbar = ({
                 sendDisabled && "text-muted-foreground/40 hover:bg-transparent"
               )}
               label={isCancelMode ? "Cancel generation" : "Send message"}
+              shortcut={isCancelMode ? "Esc" : "Enter"}
             >
               {isGenerating || isCancelMode ? (
                 <Square className="h-4 w-4 sm:h-4 sm:w-4 fill-current" />

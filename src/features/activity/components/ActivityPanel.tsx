@@ -56,6 +56,7 @@ export function ActivityPanel() {
           size="icon"
           className="h-8 w-8 rounded-full"
           label="Close activity"
+          shortcut="Esc"
           onClick={() => setOpen(false)}
         >
           <X className="h-4 w-4" />
@@ -138,7 +139,6 @@ export function ActivityPanel() {
     </div>
   );
 }
-
 
 
 

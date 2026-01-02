@@ -107,6 +107,13 @@ export async function getPath(pathId: string): Promise<Path | null> {
   return mapPath(resp.data?.path ?? null);
 }
 
+export async function generatePathCover(pathId: string, force = false): Promise<Path | null> {
+  if (!pathId) throw new Error("generatePathCover: missing pathId");
+  const payload = force ? { force: true } : {};
+  const resp = await axiosClient.post<BackendPathDetailResponse>(`/paths/${pathId}/cover`, payload);
+  return mapPath(resp.data?.path ?? null);
+}
+
 export async function listNodesForPath(pathId: string): Promise<PathNode[]> {
   if (!pathId) throw new Error("listNodesForPath: missing pathId");
   const resp = await axiosClient.get<BackendPathNodesResponse>(`/paths/${pathId}/nodes`);

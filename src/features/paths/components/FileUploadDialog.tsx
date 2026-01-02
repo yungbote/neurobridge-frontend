@@ -285,6 +285,7 @@ export function FileUploadDialog({
                         size="icon"
                         className="h-8 w-8 opacity-100 transition-opacity flex-shrink-0 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                         label={`Remove ${file.name}`}
+                        shortcut="Del"
                       >
                         <X className="h-4 w-4" />
                       </IconButton>
@@ -329,7 +330,6 @@ export function FileUploadDialog({
     </Dialog>
   );
 }
-
 
 
 

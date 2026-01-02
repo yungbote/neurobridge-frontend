@@ -763,82 +763,88 @@ export default function PathNodePage() {
   return (
     <div className="page-surface">
       <Container size="2xl" className="page-pad">
-        <div className="mb-8 space-y-3">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}>
-              Back
-            </Button>
-            {path?.title ? (
-              <div className="text-xs text-muted-foreground truncate">{path.title}</div>
+        <div className="mx-auto max-w-3xl">
+          <div className="mb-8 space-y-3">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}>
+                Back
+              </Button>
+              {path?.title ? (
+                <div className="text-xs text-muted-foreground truncate">{path.title}</div>
+              ) : null}
+            </div>
+
+            <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground">
+              {node?.title || (loading ? "Loading node…" : "Node")}
+            </h1>
+
+            {conceptKeys.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {conceptKeys.slice(0, 18).map((k) => (
+                  <span
+                    key={k}
+                    className="rounded-full border border-border/60 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground"
+                  >
+                    {k}
+                  </span>
+                ))}
+              </div>
             ) : null}
           </div>
 
-          <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground">
-            {node?.title || (loading ? "Loading node…" : "Node")}
-          </h1>
-
-          {conceptKeys.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {conceptKeys.slice(0, 18).map((k) => (
-                <span
-                  key={k}
-                  className="rounded-full border border-border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground"
-                >
-                  {k}
-                </span>
-              ))}
+          {err ? (
+            <div className="mb-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+              Failed to load node.
             </div>
           ) : null}
-        </div>
 
-        {err ? (
-          <div className="mb-6 rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-            Failed to load node.
-          </div>
-        ) : null}
-
-        {drills.length > 0 ? (
-          <div className="mb-8 rounded-xl border border-border bg-muted/20 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-foreground">Recommended drills</div>
-                <div className="text-xs text-muted-foreground">Launch practice tools inline.</div>
+          {drills.length > 0 ? (
+            <div className="mb-8 rounded-2xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Recommended drills</div>
+                  <div className="text-xs text-muted-foreground">Launch practice tools inline.</div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {drills.map((d) => (
+                  <Button
+                    key={d.kind}
+                    variant="secondary"
+                    onClick={() => openDrill(d.kind, d.label)}
+                  >
+                    {d.label || d.kind}
+                  </Button>
+                ))}
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {drills.map((d) => (
-                <Button
-                  key={d.kind}
-                  variant="secondary"
-                  onClick={() => openDrill(d.kind, d.label)}
-                >
-                  {d.label || d.kind}
-                </Button>
-              ))}
+          ) : null}
+
+          <div className="rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
+            <div className="px-6 py-8 sm:px-8 sm:py-10">
+              {doc ? (
+                <NodeDocRenderer
+                  doc={doc}
+                  pendingBlocks={pendingBlocks}
+                  blockFeedback={blockFeedback}
+                  undoableBlocks={undoableBlocks}
+                  onLike={handleLike}
+                  onDislike={handleDislike}
+                  onRegenerate={(block: DocBlock) => openRegenDialog(block)}
+                  onChat={(block: DocBlock) => openChatDialog(block)}
+                  onUndo={(block: DocBlock) => handleUndo(block)}
+                />
+              ) : (
+                <NodeContentRenderer contentJson={node?.contentJson} />
+              )}
             </div>
           </div>
-        ) : null}
 
-        {doc ? (
-          <NodeDocRenderer
-            doc={doc}
-            pendingBlocks={pendingBlocks}
-            blockFeedback={blockFeedback}
-            undoableBlocks={undoableBlocks}
-            onLike={handleLike}
-            onDislike={handleDislike}
-            onRegenerate={(block: DocBlock) => openRegenDialog(block)}
-            onChat={(block: DocBlock) => openChatDialog(block)}
-            onUndo={(block: DocBlock) => handleUndo(block)}
-          />
-        ) : (
-          <NodeContentRenderer contentJson={node?.contentJson} />
-        )}
+          <Separator className="my-10" />
 
-        <Separator className="my-10" />
-
-        <div className="text-xs text-muted-foreground">
-          Drills are generated on-demand and grounded in your uploaded materials.
+          <div className="text-xs text-muted-foreground">
+            Drills are generated on-demand and grounded in your uploaded materials.
+          </div>
         </div>
       </Container>
 

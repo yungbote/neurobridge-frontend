@@ -36,6 +36,36 @@ export const UI_THEME_OPTIONS: Array<{
     description: "Deep teal with fresh highlights.",
     swatches: ["#0c2f3b", "#cbe9f0", "#f1fbfd"],
   },
+  {
+    id: "ink",
+    label: "Ink",
+    description: "Inky blues with confident contrast.",
+    swatches: ["#0b1324", "#d1d9e6", "#f7f9fc"],
+  },
+  {
+    id: "linen",
+    label: "Linen",
+    description: "Soft ivory and warm graphite.",
+    swatches: ["#3a2f25", "#e8ddc9", "#fbf6ee"],
+  },
+  {
+    id: "ember",
+    label: "Ember",
+    description: "Smoky neutrals with amber glow.",
+    swatches: ["#2b1b15", "#e9c9a6", "#fdf7f0"],
+  },
+  {
+    id: "harbor",
+    label: "Harbor",
+    description: "Deep sea blues with cool mist.",
+    swatches: ["#0b2736", "#cfe1ee", "#f2f7fb"],
+  },
+  {
+    id: "moss",
+    label: "Moss",
+    description: "Olive greens with quiet depth.",
+    swatches: ["#203325", "#d7e3cf", "#f4f8f2"],
+  },
 ];
 
 export const UI_THEME_IDS = UI_THEME_OPTIONS.map((theme) => theme.id);
