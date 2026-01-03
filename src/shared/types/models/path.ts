@@ -13,7 +13,10 @@ export interface Path {
   jobProgress?: number | null;
   jobMessage?: string | null;
   avatarUrl?: string | null;
+  avatarSquareUrl?: string | null;
   avatarAssetId?: string | null;
+  viewCount?: number | null;
+  lastViewedAt?: string | null;
   metadata: JsonInput;
   materialSetId?: string | null;
   createdAt: string | null;
@@ -28,6 +31,7 @@ export interface PathNode {
   parentNodeId: string | null;
   gating: JsonInput;
   avatarUrl?: string | null;
+  avatarSquareUrl?: string | null;
   avatarAssetId?: string | null;
   metadata: JsonInput;
   contentJson: JsonInput;

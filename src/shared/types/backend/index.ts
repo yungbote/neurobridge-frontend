@@ -2,6 +2,7 @@ export * from "./common";
 export * from "./auth";
 export * from "./user";
 export * from "./paths";
+export * from "./library";
 export * from "./activities";
 export * from "./materials";
 export * from "./chat";

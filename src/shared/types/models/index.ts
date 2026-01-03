@@ -1,6 +1,7 @@
 export * from "./common";
 export * from "./user";
 export * from "./path";
+export * from "./library";
 export * from "./activity";
 export * from "./chat";
 export * from "./materials";

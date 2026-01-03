@@ -134,6 +134,7 @@ function createPathSkeleton(input: Partial<Path> & Pick<Path, "id" | "title" | "
     jobProgress: input.jobProgress ?? null,
     jobMessage: input.jobMessage ?? null,
     avatarUrl: input.avatarUrl ?? null,
+    avatarSquareUrl: input.avatarSquareUrl ?? null,
     avatarAssetId: input.avatarAssetId ?? null,
     metadata: input.metadata ?? null,
     materialSetId: input.materialSetId ?? null,
@@ -592,4 +593,3 @@ export function PathProvider({ children }: PathProviderProps) {
 export function usePaths() {
   return useContext(PathContext);
 }
-

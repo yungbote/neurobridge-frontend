@@ -100,6 +100,9 @@ function getPathAvatarUrl(path: Path | null | undefined): string | null {
   if (typeof path.avatarUrl === "string" && path.avatarUrl.trim()) {
     return path.avatarUrl.trim();
   }
+  if (typeof path.avatarSquareUrl === "string" && path.avatarSquareUrl.trim()) {
+    return path.avatarSquareUrl.trim();
+  }
   return getCoverImageUrlFromMeta(getMeta(path));
 }
 

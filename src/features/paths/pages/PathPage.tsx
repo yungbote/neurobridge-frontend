@@ -1,14 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/shared/ui/button";
 import { ChevronRight, Headphones } from "lucide-react";
 
 import { usePaths } from "@/app/providers/PathProvider";
-import { getPath, listNodesForPath } from "@/shared/api/PathService";
+import { getPath, listNodesForPath, recordPathView } from "@/shared/api/PathService";
 import { ConceptGraphView } from "@/features/paths/components/ConceptGraphView";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { PathMaterialsView } from "@/features/paths/components/PathMaterialsView";
 import { Container } from "@/shared/layout/Container";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 import type { Path, PathNode } from "@/shared/types/models";
 
 export default function PathPage() {
@@ -23,6 +24,7 @@ export default function PathPage() {
   const [nodes, setNodes] = useState<PathNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<unknown | null>(null);
+  const viewRecordedForRef = useRef<string | null>(null);
   const viewParam = useMemo(() => {
     return String(searchParams.get("view") || "").toLowerCase();
   }, [searchParams]);
@@ -56,6 +58,40 @@ export default function PathPage() {
   useEffect(() => {
     if (path?.id) setActivePath(path);
   }, [path, setActivePath]);
+
+  useEffect(() => {
+    if (!pathId) return;
+    if (!path?.id || path.id !== pathId) return;
+
+    const showGen =
+      path?.jobId ||
+      path?.jobStatus ||
+      path?.jobStage ||
+      typeof path?.jobProgress === "number" ||
+      path?.jobMessage;
+    if (showGen) return;
+
+    if (viewRecordedForRef.current === pathId) return;
+    viewRecordedForRef.current = pathId;
+
+    recordPathView(pathId)
+      .then((updated) => {
+        if (updated?.id && updated.id === pathId) {
+          setPath((prev) => (prev ? { ...prev, ...updated } : updated));
+        }
+      })
+      .catch((e) => {
+        console.warn("[PathPage] Failed to record path view:", e);
+      });
+  }, [
+    pathId,
+    path?.id,
+    path?.jobId,
+    path?.jobStatus,
+    path?.jobStage,
+    path?.jobProgress,
+    path?.jobMessage,
+  ]);
 
   useEffect(() => {
     const showGen =
@@ -192,6 +228,10 @@ export default function PathPage() {
                     .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
                     .map((node, nodeIndex) => {
                       const hasContent = Boolean(node?.contentJson);
+                      const avatarUrl =
+                        typeof node?.avatarUrl === "string" && node.avatarUrl.trim()
+                          ? node.avatarUrl.trim()
+                          : null;
                       return (
                         <button
                           key={node.id}
@@ -200,9 +240,14 @@ export default function PathPage() {
                           className="w-full rounded-xl border border-border bg-background px-4 py-4 text-left transition-colors hover:bg-muted/30"
                         >
                           <div className="flex items-start gap-3">
-                            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
-                              {nodeIndex + 1}
-                            </span>
+                            <Avatar className="mt-0.5 h-6 w-6 shrink-0">
+                              {avatarUrl ? (
+                                <AvatarImage src={avatarUrl} alt={`${node.title} avatar`} />
+                              ) : null}
+                              <AvatarFallback className="text-xs font-medium text-muted-foreground">
+                                {nodeIndex + 1}
+                              </AvatarFallback>
+                            </Avatar>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start justify-between gap-3">
                                 <h3 className="text-base font-medium text-foreground truncate">

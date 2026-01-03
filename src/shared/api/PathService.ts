@@ -36,7 +36,15 @@ export function mapPath(raw: BackendPath | Path | null | undefined): Path | null
           : null,
     jobMessage: (row.job_message ?? row.jobMessage ?? null) as string | null,
     avatarUrl: (row.avatar_url ?? row.avatarUrl ?? null) as string | null,
+    avatarSquareUrl: (row.avatar_square_url ?? row.avatarSquareUrl ?? null) as string | null,
     avatarAssetId: (row.avatar_asset_id ?? row.avatarAssetId ?? null) as string | null,
+    viewCount:
+      typeof row.view_count === "number"
+        ? row.view_count
+        : typeof row.viewCount === "number"
+          ? row.viewCount
+          : 0,
+    lastViewedAt: (row.last_viewed_at ?? row.lastViewedAt ?? null) as string | null,
     metadata: (row.metadata ?? null) as Path["metadata"],
     createdAt: (row.created_at ?? row.createdAt ?? null) as string | null,
     updatedAt: (row.updated_at ?? row.updatedAt ?? null) as string | null,
@@ -54,6 +62,7 @@ export function mapPathNode(raw: BackendPathNode | PathNode | null | undefined):
     parentNodeId: (row.parent_node_id ?? row.parentNodeId ?? null) as string | null,
     gating: (row.gating ?? null) as PathNode["gating"],
     avatarUrl: (row.avatar_url ?? row.avatarUrl ?? null) as string | null,
+    avatarSquareUrl: (row.avatar_square_url ?? row.avatarSquareUrl ?? null) as string | null,
     avatarAssetId: (row.avatar_asset_id ?? row.avatarAssetId ?? null) as string | null,
     metadata: (row.metadata ?? null) as PathNode["metadata"],
     contentJson: (row.content_json ?? row.contentJson ?? null) as PathNode["contentJson"],
@@ -108,6 +117,12 @@ export async function listPaths(): Promise<Path[]> {
 export async function getPath(pathId: string): Promise<Path | null> {
   if (!pathId) throw new Error("getPath: missing pathId");
   const resp = await axiosClient.get<BackendPathDetailResponse>(`/paths/${pathId}`);
+  return mapPath(resp.data?.path ?? null);
+}
+
+export async function recordPathView(pathId: string): Promise<Path | null> {
+  if (!pathId) throw new Error("recordPathView: missing pathId");
+  const resp = await axiosClient.post<BackendPathDetailResponse>(`/paths/${pathId}/view`, {});
   return mapPath(resp.data?.path ?? null);
 }
 

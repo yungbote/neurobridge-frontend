@@ -12,7 +12,10 @@ export interface BackendPath {
   job_progress?: number | null;
   job_message?: string | null;
   avatar_url?: string | null;
+  avatar_square_url?: string | null;
   avatar_asset_id?: UUID | string | null;
+  view_count?: number | null;
+  last_viewed_at?: ISODateTimeString | null;
   metadata?: JsonValue | string | null;
   created_at?: ISODateTimeString | null;
   updated_at?: ISODateTimeString | null;
@@ -26,6 +29,7 @@ export interface BackendPathNode {
   parent_node_id?: UUID | string | null;
   gating?: JsonValue | string | null;
   avatar_url?: string | null;
+  avatar_square_url?: string | null;
   avatar_asset_id?: UUID | string | null;
   metadata?: JsonValue | string | null;
   content_json?: JsonValue | string | null;

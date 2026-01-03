@@ -41,10 +41,17 @@ function getCoverImageUrlFromMeta(meta: JsonRecord | null): string | null {
 
 function getPathAvatarUrl(path: Path | null | undefined, meta: JsonRecord | null): string | null {
   if (!path) return null;
+  if (typeof path.avatarSquareUrl === "string" && path.avatarSquareUrl.trim()) {
+    return path.avatarSquareUrl.trim();
+  }
+  const metaCoverUrl = getCoverImageUrlFromMeta(meta);
+  if (typeof metaCoverUrl === "string" && metaCoverUrl.trim()) {
+    return metaCoverUrl.trim();
+  }
   if (typeof path.avatarUrl === "string" && path.avatarUrl.trim()) {
     return path.avatarUrl.trim();
   }
-  return getCoverImageUrlFromMeta(meta);
+  return null;
 }
 
 export function PathCardLarge({ path }: PathCardLargeProps) {
@@ -64,12 +71,12 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     path.jobMessage;
 
   const isFailed = showGen && jobStatus === "failed";
+  const isDone =
+    showGen &&
+    (jobStatus === "succeeded" || jobStatus === "success" || stageLabel(jobStage) === "Done");
+  const showProgress = showGen && !isFailed && !isDone;
 
-  const progressPercentage = showGen
-    ? jobProgress
-    : String(path.status || "").toLowerCase() === "ready"
-      ? 100
-      : 0;
+  const progressPercentage = showProgress ? jobProgress : 0;
 
   const titleText = showGen
     ? isFailed
@@ -93,10 +100,10 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   const card = (
     <Card className="group transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
       <CardHeader>
-        <div className="space-y-4">
-          <div className="flex min-h-[120px] items-start justify-between gap-4">
+        <div className="space-y-3">
+          <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
-              <CardTitle className="line-clamp-2 text-balance text-xl leading-tight">
+              <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">
                 {titleText}
               </CardTitle>
 
@@ -109,46 +116,48 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
               )}
             </div>
 
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center sm:h-[100px] sm:w-[100px]">
-              <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  className="text-muted"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                  className="text-primary transition-all duration-300"
-                />
-                <text
-                  x="50"
-                  y="50"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  className="fill-foreground text-sm font-bold sm:text-base"
-                  style={{ transform: "rotate(90deg)", transformOrigin: "center" }}
-                >
-                  {progressPercentage}%
-                </text>
-              </svg>
-            </div>
+            {showProgress && (
+              <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center sm:h-[92px] sm:w-[92px]">
+                <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    className="text-muted"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeDashoffset}
+                    strokeLinecap="round"
+                    className="text-primary transition-all duration-300"
+                  />
+                  <text
+                    x="50"
+                    y="50"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    className="fill-foreground text-sm font-bold sm:text-base"
+                    style={{ transform: "rotate(90deg)", transformOrigin: "center" }}
+                  >
+                    {progressPercentage}%
+                  </text>
+                </svg>
+              </div>
+            )}
           </div>
 
           {showCover && coverUrl && (
             <div className="flex justify-center">
-              <div className="w-full max-w-[360px] overflow-hidden rounded-2xl border border-border/60 bg-muted/30 shadow-sm">
+              <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/30 shadow-sm">
                 <div className="aspect-[16/9]">
                   <img
                     src={coverUrl}
@@ -184,6 +193,3 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     </Link>
   );
 }
-
-
-

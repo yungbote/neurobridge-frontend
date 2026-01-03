@@ -1,21 +1,101 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { NavigationTabs } from "@/features/home/components/NavigationTabs";
 import { HomeTabContent } from "@/features/home/components/HomeTabContent";
 import { AnimatedChatbar } from "@/features/chat/components/AnimatedChatbar";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useSSEContext } from "@/app/providers/SSEProvider";
 import { Clock, Bookmark, CheckCircle2, History } from "lucide-react";
 import { Container } from "@/shared/layout/Container";
+import { getLibraryTaxonomySnapshot } from "@/shared/api/LibraryService";
 import type { HomeTabKey } from "@/features/home/components/HomeTabContent";
+import type { JobEventPayload, LibraryTaxonomySnapshotV1, SseMessage } from "@/shared/types/models";
+
+function asJobPayload(value: SseMessage["data"]): JobEventPayload | null {
+  if (!value || typeof value !== "object") return null;
+  return value as JobEventPayload;
+}
 
 export default function HomePage() {
   const { isAuthenticated } = useAuth();
   const { user, loading: userLoading } = useUser();
 
   const { paths, loading: pathsLoading } = usePaths();
+  const { lastMessage } = useSSEContext();
+  const [taxonomySnapshot, setTaxonomySnapshot] = useState<LibraryTaxonomySnapshotV1 | null>(null);
+  const [taxonomyLoading, setTaxonomyLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<HomeTabKey>("home");
+
+  const taxonomyReloadKey = useMemo(() => {
+    const list = Array.isArray(paths) ? paths : [];
+    // Re-fetch taxonomy after path list changes (e.g., new path generated / avatar updated).
+    return list
+      .filter((p) => String(p?.status || "").toLowerCase() === "ready")
+      .map((p) => `${p.id}:${p.updatedAt || p.createdAt || ""}`)
+      .join("|");
+  }, [paths]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setTaxonomySnapshot(null);
+      setTaxonomyLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setTaxonomyLoading(true);
+      try {
+        const snap = await getLibraryTaxonomySnapshot();
+        if (!cancelled) setTaxonomySnapshot(snap);
+      } catch (err) {
+        console.error("[HomePage] Failed to load library taxonomy:", err);
+        if (!cancelled) setTaxonomySnapshot(null);
+      } finally {
+        if (!cancelled) setTaxonomyLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, taxonomyReloadKey]);
+
+  // Taxonomy updates are produced by async jobs; refresh the snapshot on taxonomy job completion.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!user?.id) return;
+    if (!lastMessage) return;
+    if (lastMessage.channel !== user.id) return;
+
+    const event = String(lastMessage.event || "").toLowerCase();
+    if (event !== "jobdone") return;
+
+    const payload = asJobPayload(lastMessage.data);
+    if (!payload) return;
+    const job = payload.job as { job_type?: string; jobType?: string } | undefined;
+    const jobType = String(payload.job_type ?? job?.job_type ?? job?.jobType ?? "").toLowerCase();
+    if (jobType !== "library_taxonomy_route" && jobType !== "library_taxonomy_refine") return;
+
+    let cancelled = false;
+    const reload = async () => {
+      setTaxonomyLoading(true);
+      try {
+        const snap = await getLibraryTaxonomySnapshot();
+        if (!cancelled) setTaxonomySnapshot(snap);
+      } catch (err) {
+        console.error("[HomePage] Failed to refresh library taxonomy:", err);
+      } finally {
+        if (!cancelled) setTaxonomyLoading(false);
+      }
+    };
+    reload();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, lastMessage, user?.id]);
 
   if (!isAuthenticated || userLoading || !user) {
     return null;
@@ -63,15 +143,13 @@ export default function HomePage() {
           activeTab={activeTab}
           paths={paths || []}
           loading={pathsLoading}
+          taxonomySnapshot={taxonomySnapshot}
+          taxonomyLoading={taxonomyLoading}
         />
       </Container>
     </div>
   );
 }
-
-
-
-
 
 
 
