@@ -27,7 +27,7 @@ function safeParseMetadata(value: Path["metadata"]): JsonRecord | null {
   return null;
 }
 
-function getCoverImageUrl(meta: JsonRecord | null): string | null {
+function getCoverImageUrlFromMeta(meta: JsonRecord | null): string | null {
   if (!meta) return null;
   const cover = meta["cover_image"];
   if (isRecord(cover)) {
@@ -37,6 +37,14 @@ function getCoverImageUrl(meta: JsonRecord | null): string | null {
   const flatUrl = meta["cover_image_url"];
   if (typeof flatUrl === "string" && flatUrl.trim()) return flatUrl.trim();
   return null;
+}
+
+function getPathAvatarUrl(path: Path | null | undefined, meta: JsonRecord | null): string | null {
+  if (!path) return null;
+  if (typeof path.avatarUrl === "string" && path.avatarUrl.trim()) {
+    return path.avatarUrl.trim();
+  }
+  return getCoverImageUrlFromMeta(meta);
 }
 
 export function PathCardLarge({ path }: PathCardLargeProps) {
@@ -74,7 +82,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     : path.description || null;
 
   const meta = safeParseMetadata(path.metadata);
-  const coverUrl = getCoverImageUrl(meta);
+  const coverUrl = getPathAvatarUrl(path, meta);
   const isReady = String(path.status || "").toLowerCase() === "ready";
   const showCover = !showGen && isReady && Boolean(coverUrl);
 
@@ -176,7 +184,6 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     </Link>
   );
 }
-
 
 
 

@@ -11,6 +11,8 @@ export interface BackendPath {
   job_stage?: string | null;
   job_progress?: number | null;
   job_message?: string | null;
+  avatar_url?: string | null;
+  avatar_asset_id?: UUID | string | null;
   metadata?: JsonValue | string | null;
   created_at?: ISODateTimeString | null;
   updated_at?: ISODateTimeString | null;
@@ -23,6 +25,8 @@ export interface BackendPathNode {
   title?: string;
   parent_node_id?: UUID | string | null;
   gating?: JsonValue | string | null;
+  avatar_url?: string | null;
+  avatar_asset_id?: UUID | string | null;
   metadata?: JsonValue | string | null;
   content_json?: JsonValue | string | null;
   created_at?: ISODateTimeString | null;

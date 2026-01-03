@@ -46,6 +46,8 @@ export function stageLabel(stage: string | null | undefined): string | null {
   if (s === "user_profile_refresh") return "Refreshing profile";
   if (s === "teaching_patterns_seed") return "Seeding teaching patterns";
   if (s === "path_plan_build") return "Planning path";
+  if (s === "path_cover_render") return "Generating path avatar";
+  if (s === "node_avatar_render") return "Generating unit avatars";
   if (s === "node_figures_plan_build") return "Planning figures";
   if (s === "node_figures_render") return "Rendering figures";
   if (s === "node_videos_plan_build") return "Planning videos";
@@ -71,6 +73,8 @@ export const learningBuildStageOrder = [
   "user_profile_refresh",
   "teaching_patterns_seed",
   "path_plan_build",
+  "path_cover_render",
+  "node_avatar_render",
   "node_figures_plan_build",
   "node_figures_render",
   "node_videos_plan_build",

@@ -35,6 +35,8 @@ export function mapPath(raw: BackendPath | Path | null | undefined): Path | null
           ? row.jobProgress
           : null,
     jobMessage: (row.job_message ?? row.jobMessage ?? null) as string | null,
+    avatarUrl: (row.avatar_url ?? row.avatarUrl ?? null) as string | null,
+    avatarAssetId: (row.avatar_asset_id ?? row.avatarAssetId ?? null) as string | null,
     metadata: (row.metadata ?? null) as Path["metadata"],
     createdAt: (row.created_at ?? row.createdAt ?? null) as string | null,
     updatedAt: (row.updated_at ?? row.updatedAt ?? null) as string | null,
@@ -51,6 +53,8 @@ export function mapPathNode(raw: BackendPathNode | PathNode | null | undefined):
     title: row.title ?? "",
     parentNodeId: (row.parent_node_id ?? row.parentNodeId ?? null) as string | null,
     gating: (row.gating ?? null) as PathNode["gating"],
+    avatarUrl: (row.avatar_url ?? row.avatarUrl ?? null) as string | null,
+    avatarAssetId: (row.avatar_asset_id ?? row.avatarAssetId ?? null) as string | null,
     metadata: (row.metadata ?? null) as PathNode["metadata"],
     contentJson: (row.content_json ?? row.contentJson ?? null) as PathNode["contentJson"],
     createdAt: (row.created_at ?? row.createdAt ?? null) as string | null,

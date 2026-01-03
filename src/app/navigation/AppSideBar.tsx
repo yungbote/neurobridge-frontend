@@ -81,7 +81,7 @@ function pathLabel(path: Path | null | undefined) {
   return label || path?.title || "Path";
 }
 
-function getCoverImageUrl(meta: JsonRecord | null | undefined): string | null {
+function getCoverImageUrlFromMeta(meta: JsonRecord | null | undefined): string | null {
   if (!meta) return null;
   const cover = meta["cover_image"];
   if (isRecord(cover)) {
@@ -93,6 +93,14 @@ function getCoverImageUrl(meta: JsonRecord | null | undefined): string | null {
   const camelUrl = meta["coverImageUrl"];
   if (typeof camelUrl === "string" && camelUrl.trim()) return camelUrl.trim();
   return null;
+}
+
+function getPathAvatarUrl(path: Path | null | undefined): string | null {
+  if (!path) return null;
+  if (typeof path.avatarUrl === "string" && path.avatarUrl.trim()) {
+    return path.avatarUrl.trim();
+  }
+  return getCoverImageUrlFromMeta(getMeta(path));
 }
 
 function pickPathColor(seed: string): string {
@@ -350,8 +358,7 @@ export function AppSideBar() {
                   </SidebarMenuSubItem>
                 ) : (
                   realPaths.slice(0, 12).map((p) => {
-                    const meta = getMeta(p);
-                    const coverUrl = getCoverImageUrl(meta);
+                    const coverUrl = getPathAvatarUrl(p);
                     const fallbackColor = pickPathColor(String(p?.id || p?.title || ""));
                     const isGenerating = coverLoadingId === p.id;
                     const isActionHover = actionHoverId === p.id;

@@ -12,6 +12,8 @@ export interface Path {
   jobStage?: string | null;
   jobProgress?: number | null;
   jobMessage?: string | null;
+  avatarUrl?: string | null;
+  avatarAssetId?: string | null;
   metadata: JsonInput;
   materialSetId?: string | null;
   createdAt: string | null;
@@ -25,6 +27,8 @@ export interface PathNode {
   title: string;
   parentNodeId: string | null;
   gating: JsonInput;
+  avatarUrl?: string | null;
+  avatarAssetId?: string | null;
   metadata: JsonInput;
   contentJson: JsonInput;
   createdAt: string | null;
