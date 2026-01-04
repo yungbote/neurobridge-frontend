@@ -30,6 +30,7 @@ import { FileUploadDialog } from "@/features/paths/components/FileUploadDialog";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
 import { Container } from "@/shared/layout/Container";
 import { useSidebar } from "@/shared/ui/sidebar";
 import { cn } from "@/shared/lib/utils";
@@ -49,6 +50,7 @@ export function AppNavBar() {
   const { isAuthenticated } = useAuth();
   const { user, loading: userLoading } = useUser();
   const { activePathId, clearActivePath } = usePaths();
+  const { docked: homeChatbarDocked } = useHomeChatbarDock();
   const [authDialog, setAuthDialog] = useState<"login" | "signup" | null>(null);
   const { state, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -89,6 +91,8 @@ export function AppNavBar() {
   }, [activePathId, clearActivePath, isPathContext]);
 
   const showPathTabs = isAuthenticated && isPathContext && (activePathId || pathIdFromRoute);
+  const isHome = location.pathname === "/";
+  const showHomeChatbarDock = isAuthenticated && isHome && homeChatbarDocked && !showPathTabs;
 
   const handlePathTabClick = (tabId: PathNavTabId) => {
     const targetPathId = pathIdFromRoute || activePathId;
@@ -110,10 +114,13 @@ export function AppNavBar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <nav
+      id="app-navbar"
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+    >
       <Container
         as="div"
-        className="flex h-14 items-center gap-3"
+        className="relative flex h-14 items-center gap-3"
       >
         {/* LEFT: Sidebar Trigger + Logo */}
         <div className="flex items-center gap-2">
@@ -130,6 +137,25 @@ export function AppNavBar() {
         {!isAuthenticated && (
           <div className="hidden md:flex flex-1 justify-center">
             <MarketingNav />
+          </div>
+        )}
+
+        {isAuthenticated && isHome && !showPathTabs && (
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 flex items-center justify-center transition-all duration-200 ease-out transform-gpu",
+              showHomeChatbarDock ? "opacity-100 scale-100" : "opacity-0 scale-[0.98]"
+            )}
+            aria-hidden={!showHomeChatbarDock}
+          >
+            <div
+              className={cn(
+                "pointer-events-auto w-full max-w-2xl min-w-0",
+                showHomeChatbarDock ? "pointer-events-auto" : "pointer-events-none"
+              )}
+            >
+              <div id="home-chatbar-navbar-slot" />
+            </div>
           </div>
         )}
 
@@ -269,6 +295,10 @@ export function AppNavBar() {
           </div>
         )}
       </Container>
+
+      {isAuthenticated && isHome && (
+        <div id="home-tabs-navbar-slot" />
+      )}
     </nav>
   );
 }

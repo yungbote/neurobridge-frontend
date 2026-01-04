@@ -45,6 +45,7 @@ export function mapPath(raw: BackendPath | Path | null | undefined): Path | null
           ? row.viewCount
           : 0,
     lastViewedAt: (row.last_viewed_at ?? row.lastViewedAt ?? null) as string | null,
+    readyAt: (row.ready_at ?? row.readyAt ?? null) as string | null,
     metadata: (row.metadata ?? null) as Path["metadata"],
     createdAt: (row.created_at ?? row.createdAt ?? null) as string | null,
     updatedAt: (row.updated_at ?? row.updatedAt ?? null) as string | null,

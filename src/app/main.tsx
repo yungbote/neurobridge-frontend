@@ -4,6 +4,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ViewportProvider } from "@/app/providers/ViewportProvider";
 import { ThemeProvider, ThemeSync } from "@/app/providers/ThemeProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
+import { HomeChatbarDockProvider } from "@/app/providers/HomeChatbarDockProvider";
 import { SSEGate } from "@/app/providers/SSEProvider";
 import { UserProvider } from "@/app/providers/UserProvider";
 import { PathProvider } from "@/app/providers/PathProvider";
@@ -26,7 +27,9 @@ createRoot(rootElement).render(
             <UserProvider>
               <ThemeSync />
               <PathProvider>
-                <App />
+                <HomeChatbarDockProvider>
+                  <App />
+                </HomeChatbarDockProvider>
               </PathProvider>
             </UserProvider>
           </SSEGate>
@@ -36,7 +39,6 @@ createRoot(rootElement).render(
     <ReactQueryDevtools initialIsOpen={false} />
   </QueryClientProvider>
 );
-
 
 
 

@@ -17,6 +17,7 @@ export interface Path {
   avatarAssetId?: string | null;
   viewCount?: number | null;
   lastViewedAt?: string | null;
+  readyAt?: string | null;
   metadata: JsonInput;
   materialSetId?: string | null;
   createdAt: string | null;

@@ -489,6 +489,7 @@ export function PathProvider({ children }: PathProviderProps) {
     if (!nextId) return;
     setActivePathIdState(nextId);
     setActivePathOverride(path);
+    setPaths((prev) => upsertById(prev || [], path));
   }, []);
 
   const clearActivePath = useCallback(() => {

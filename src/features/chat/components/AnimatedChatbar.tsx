@@ -67,6 +67,7 @@ interface AnimatedChatbarProps {
   disableUploads?: boolean;
   respectReducedMotion?: boolean;
   submitMode?: "send" | "cancel";
+  variant?: "default" | "navbar";
 }
 
 export const AnimatedChatbar = ({
@@ -77,6 +78,7 @@ export const AnimatedChatbar = ({
   disableUploads = false,
   respectReducedMotion = true,
   submitMode = "send", // "send" | "cancel"
+  variant = "default",
 }: AnimatedChatbarProps) => {
   const navigate = useNavigate();
   const { uploadMaterialSet } = usePaths();
@@ -109,6 +111,9 @@ export const AnimatedChatbar = ({
   const isCancelMode = String(submitMode || "").toLowerCase() === "cancel";
   const canSend = isCancelMode || value.trim().length > 0 || (!disableUploads && files.length > 0);
   const sendDisabled = !canSend || isGenerating;
+  const isNavbar = String(variant || "").toLowerCase() === "navbar";
+  const showFilesStrip = !isNavbar && !disableUploads && files.length > 0;
+  const showFilesPill = isNavbar && !disableUploads && files.length > 0;
 
   const updateFilesScroll = useCallback(() => {
     const el = filesStripRef.current;
@@ -554,7 +559,10 @@ export const AnimatedChatbar = ({
     <form
       ref={rootRef}
       onSubmit={handleSubmit}
-      className={cn("w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8", className)}
+      className={cn(
+        isNavbar ? "w-full" : "w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8",
+        className
+      )}
     >
       <style>{`
         @keyframes nbCaretBlink {
@@ -578,7 +586,11 @@ export const AnimatedChatbar = ({
       )}
       <div
         className={cn(
-          `
+          isNavbar
+            ? `
+          relative bg-background/70 border border-border/60 rounded-full px-2 py-1.5
+          shadow-sm transition-shadow hover:shadow-md focus-within:shadow-md`
+            : `
           relative bg-background border border-border rounded-3xl px-3
           sm:px-4 sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow
           hover:shadow-md focus-within:shadow-md`,
@@ -589,7 +601,7 @@ export const AnimatedChatbar = ({
         onDragOver={disableUploads ? undefined : handleDragOver}
         onDrop={disableUploads ? undefined : handleDrop}
       >
-        {!disableUploads && files.length > 0 && (
+        {showFilesStrip && (
           <div className="relative mb-2 -mx-1 px-1">
             <div
               ref={filesStripRef}
@@ -654,13 +666,16 @@ export const AnimatedChatbar = ({
             )}
           </div>
         )}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className={cn("flex items-center", isNavbar ? "gap-2" : "gap-2 sm:gap-3")}>
           {!disableUploads && (
             <IconButton
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 sm:h-9 rounded-full shrink-0 hover:bg-muted"
+              className={cn(
+                "rounded-full shrink-0 hover:bg-muted",
+                isNavbar ? "h-8 w-8" : "h-8 w-8 sm:h-9"
+              )}
               label="Attach file"
               shortcut="Cmd/Ctrl+O"
               onClick={() => fileInputRef.current?.click()}
@@ -668,11 +683,25 @@ export const AnimatedChatbar = ({
               <Plus className="h-5 w-5 sm:h-5 sm:w-5" />
             </IconButton>
           )}
+          {showFilesPill && (
+            <button
+              type="button"
+              onClick={() => setFiles([])}
+              className="inline-flex shrink-0 items-center rounded-full border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+              aria-label={`Clear ${files.length} attached file${files.length === 1 ? "" : "s"}`}
+              title="Clear attached files"
+            >
+              {files.length} file{files.length === 1 ? "" : "s"}
+            </button>
+          )}
           <div className="relative flex-1 min-w-0">
             <div
               aria-hidden="true"
               className={cn(
-                "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center px-3 transition-all duration-200 ease-out transform-gpu",
+                cn(
+                  "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center transition-all duration-200 ease-out transform-gpu",
+                  isNavbar ? "px-2" : "px-3"
+                ),
                 ghostClass
               )}
             >
@@ -720,30 +749,36 @@ export const AnimatedChatbar = ({
                 "[--tw-ring-color:transparent] [--tw-ring-offset-color:transparent]",
                 "autofill:shadow-[inset_0_0_0px_1000px_transparent]",
                 "autofill:text-fill-foreground",
-                showGhost && "placeholder:opacity-0"
+                showGhost && "placeholder:opacity-0",
+                isNavbar && "h-8 text-sm"
               )}
             />
           </div>
           <div
             className="flex items-center gap-1 sm:gap-2 shrink-0"
           >
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 sm:h-9 rounded-full hover:bg-muted"
-              label="Voice input"
-              shortcut="V"
-            >
-              <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
-            </IconButton>
+            {!isNavbar && (
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 sm:h-9 rounded-full hover:bg-muted"
+                label="Voice input"
+                shortcut="V"
+              >
+                <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
+              </IconButton>
+            )}
             <IconButton
               type="submit"
               variant="ghost"
               size="icon"
               disabled={sendDisabled}
               className={cn(
-                "h-8 w-8 sm:h-9 sm:w-9 rounded-full hover:bg-muted",
+                cn(
+                  "rounded-full hover:bg-muted",
+                  isNavbar ? "h-8 w-8" : "h-8 w-8 sm:h-9 sm:w-9"
+                ),
                 sendDisabled && "text-muted-foreground/40 hover:bg-transparent"
               )}
               label={isCancelMode ? "Cancel generation" : "Send message"}

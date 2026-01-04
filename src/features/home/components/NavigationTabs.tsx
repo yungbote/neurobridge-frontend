@@ -1,6 +1,7 @@
 import { Container } from "@/shared/layout/Container";
 import type { ReactNode } from "react";
 import type { HomeTabKey } from "@/features/home/components/HomeTabContent";
+import { cn } from "@/shared/lib/utils";
 
 interface NavigationTab {
   id: HomeTabKey;
@@ -13,11 +14,24 @@ interface NavigationTabsProps {
   activeTab: HomeTabKey;
   onTabChange: (tab: HomeTabKey) => void;
   className?: string;
+  variant?: "page" | "navbar";
 }
 
-export function NavigationTabs({ tabs, activeTab, onTabChange, className = "" }: NavigationTabsProps) {
+export function NavigationTabs({
+  tabs,
+  activeTab,
+  onTabChange,
+  className = "",
+  variant = "page",
+}: NavigationTabsProps) {
+  const isNavbar = String(variant || "").toLowerCase() === "navbar";
+
   return (
-    <header className={`w-full border-b border-border bg-background ${className}`}>
+    <header className={cn(
+      "w-full",
+      isNavbar ? "bg-transparent border-b-0" : "border-b border-border bg-background",
+      className
+    )}>
       <Container as="nav">
         <div className="flex h-14 items-stretch justify-start gap-4 sm:gap-8 overflow-x-auto scrollbar-none">
           {tabs.map((tab) => (
@@ -42,9 +56,6 @@ export function NavigationTabs({ tabs, activeTab, onTabChange, className = "" }:
     </header>
   );
 }
-
-
-
 
 
 

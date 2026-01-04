@@ -16,6 +16,7 @@ export interface BackendPath {
   avatar_asset_id?: UUID | string | null;
   view_count?: number | null;
   last_viewed_at?: ISODateTimeString | null;
+  ready_at?: ISODateTimeString | null;
   metadata?: JsonValue | string | null;
   created_at?: ISODateTimeString | null;
   updated_at?: ISODateTimeString | null;

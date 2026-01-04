@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { NavigationTabs } from "@/features/home/components/NavigationTabs";
 import { HomeTabContent } from "@/features/home/components/HomeTabContent";
 import { AnimatedChatbar } from "@/features/chat/components/AnimatedChatbar";
@@ -6,6 +7,7 @@ import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
 import { useSSEContext } from "@/app/providers/SSEProvider";
+import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
 import { Clock, Bookmark, CheckCircle2, History } from "lucide-react";
 import { Container } from "@/shared/layout/Container";
 import { getLibraryTaxonomySnapshot } from "@/shared/api/LibraryService";
@@ -23,10 +25,28 @@ export default function HomePage() {
 
   const { paths, loading: pathsLoading } = usePaths();
   const { lastMessage } = useSSEContext();
+  const { docked: chatbarDocked, setDocked: setChatbarDocked } = useHomeChatbarDock();
+  const [navbarTabsSlotEl, setNavbarTabsSlotEl] = useState<HTMLElement | null>(() => {
+    if (typeof document === "undefined") return null;
+    return document.getElementById("home-tabs-navbar-slot");
+  });
   const [taxonomySnapshot, setTaxonomySnapshot] = useState<LibraryTaxonomySnapshotV1 | null>(null);
   const [taxonomyLoading, setTaxonomyLoading] = useState(false);
+  const [homeChatbarSlotEl, setHomeChatbarSlotEl] = useState<HTMLDivElement | null>(null);
+  const [homeTabsSlotEl, setHomeTabsSlotEl] = useState<HTMLDivElement | null>(null);
+  const [navbarChatbarSlotEl, setNavbarChatbarSlotEl] = useState<HTMLElement | null>(null);
+  const [chatbarPortalEl, setChatbarPortalEl] = useState<HTMLDivElement | null>(null);
+  const [tabsPortalEl, setTabsPortalEl] = useState<HTMLDivElement | null>(null);
+  const [homeChatbarHeight, setHomeChatbarHeight] = useState<number>(0);
+  const [tabsDocked, setTabsDocked] = useState(false);
 
   const [activeTab, setActiveTab] = useState<HomeTabKey>("home");
+  const setHomeChatbarSlotRef = useCallback((el: HTMLDivElement | null) => {
+    setHomeChatbarSlotEl(el);
+  }, []);
+  const setHomeTabsSlotRef = useCallback((el: HTMLDivElement | null) => {
+    setHomeTabsSlotEl(el);
+  }, []);
 
   const taxonomyReloadKey = useMemo(() => {
     const list = Array.isArray(paths) ? paths : [];
@@ -97,6 +117,151 @@ export default function HomePage() {
     };
   }, [isAuthenticated, lastMessage, user?.id]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const el = document.getElementById("home-chatbar-navbar-slot");
+    setNavbarChatbarSlotEl(el);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (typeof document === "undefined") return;
+    const el = document.getElementById("home-tabs-navbar-slot");
+    if (el) setNavbarTabsSlotEl(el);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const el = document.createElement("div");
+    el.setAttribute("data-home-chatbar-portal", "true");
+    setChatbarPortalEl(el);
+    return () => {
+      try {
+        el.remove();
+      } catch (err) {
+        void err;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const el = document.createElement("div");
+    el.setAttribute("data-home-tabs-portal", "true");
+    setTabsPortalEl(el);
+    return () => {
+      try {
+        el.remove();
+      } catch (err) {
+        void err;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const target = chatbarDocked ? navbarChatbarSlotEl : homeChatbarSlotEl;
+    if (!chatbarPortalEl || !target) return;
+    if (chatbarPortalEl.parentElement === target) return;
+    target.appendChild(chatbarPortalEl);
+  }, [chatbarDocked, chatbarPortalEl, homeChatbarSlotEl, navbarChatbarSlotEl]);
+
+  useEffect(() => {
+    const target = tabsDocked ? navbarTabsSlotEl : homeTabsSlotEl;
+    if (!tabsPortalEl || !target) return;
+    if (tabsPortalEl.parentElement === target) return;
+    target.appendChild(tabsPortalEl);
+  }, [homeTabsSlotEl, navbarTabsSlotEl, tabsDocked, tabsPortalEl]);
+
+  useEffect(() => {
+    if (!homeChatbarSlotEl) return;
+    if (typeof ResizeObserver === "undefined") return;
+    if (chatbarDocked) return;
+
+    const ro = new ResizeObserver(() => {
+      const h = homeChatbarSlotEl.getBoundingClientRect().height;
+      if (Number.isFinite(h) && h > 0) setHomeChatbarHeight(h);
+    });
+    ro.observe(homeChatbarSlotEl);
+    return () => ro.disconnect();
+  }, [chatbarDocked, homeChatbarSlotEl]);
+
+  useEffect(() => {
+    if (!homeChatbarSlotEl) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    let raf: number | null = null;
+    const hysteresisPx = 10;
+
+    const compute = () => {
+      raf = null;
+      const nav = document.getElementById("app-navbar");
+      const navH = nav?.getBoundingClientRect().height ?? 56;
+      const rect = homeChatbarSlotEl.getBoundingClientRect();
+      const shouldDock = (() => {
+        if (!chatbarDocked) return rect.top <= navH - hysteresisPx;
+        return rect.top <= navH + hysteresisPx;
+      })();
+      if (shouldDock !== chatbarDocked) setChatbarDocked(shouldDock);
+    };
+
+    const onScroll = () => {
+      if (raf != null) return;
+      raf = window.requestAnimationFrame(compute);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    compute();
+
+    return () => {
+      if (raf != null) window.cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [chatbarDocked, homeChatbarSlotEl, setChatbarDocked]);
+
+  useEffect(() => {
+    if (!homeTabsSlotEl) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    let raf: number | null = null;
+    const hysteresisPx = 10;
+
+    const compute = () => {
+      raf = null;
+      if (!navbarTabsSlotEl) {
+        if (tabsDocked) setTabsDocked(false);
+        return;
+      }
+      const nav = document.getElementById("app-navbar");
+      const navH = nav?.getBoundingClientRect().height ?? 56;
+      const rect = homeTabsSlotEl.getBoundingClientRect();
+      const shouldDock = (() => {
+        if (!tabsDocked) return rect.top <= navH - hysteresisPx;
+        return rect.top <= navH + hysteresisPx;
+      })();
+      if (shouldDock !== tabsDocked) setTabsDocked(shouldDock);
+    };
+
+    const onScroll = () => {
+      if (raf != null) return;
+      raf = window.requestAnimationFrame(compute);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    compute();
+
+    return () => {
+      if (raf != null) window.cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [homeTabsSlotEl, navbarTabsSlotEl, tabsDocked]);
+
+  useEffect(() => {
+    return () => setChatbarDocked(false);
+  }, [setChatbarDocked]);
+
   if (!isAuthenticated || userLoading || !user) {
     return null;
   }
@@ -133,10 +298,38 @@ export default function HomePage() {
       </Container>
 
       <div className="page-pad-compact">
-        <AnimatedChatbar onSubmit={handleSubmit} respectReducedMotion={false} />
+        <div
+          ref={setHomeChatbarSlotRef}
+          style={
+            chatbarDocked && homeChatbarHeight > 0
+              ? { minHeight: `${homeChatbarHeight}px` }
+              : undefined
+          }
+        />
+        {chatbarPortalEl
+          ? createPortal(
+              <AnimatedChatbar
+                onSubmit={handleSubmit}
+                respectReducedMotion={false}
+                variant={chatbarDocked ? "navbar" : "default"}
+              />,
+              chatbarPortalEl
+            )
+          : null}
       </div>
 
-      <NavigationTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+      <div ref={setHomeTabsSlotRef} />
+      {tabsPortalEl
+        ? createPortal(
+            <NavigationTabs
+              tabs={tabs}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              variant={tabsDocked ? "navbar" : "page"}
+            />,
+            tabsPortalEl
+          )
+        : null}
 
       <Container className="page-pad">
         <HomeTabContent
@@ -150,6 +343,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-
-

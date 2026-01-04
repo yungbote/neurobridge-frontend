@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { Button } from "@/shared/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/shared/ui/dialog";
 import { cn } from "@/shared/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Path } from "@/shared/types/models";
@@ -134,15 +141,6 @@ type HomeRailSection = {
   paths: Path[];
 };
 
-function buildPathIndex(paths: Path[]) {
-  const map = new Map<string, Path>();
-  for (const p of paths || []) {
-    if (!p?.id) continue;
-    map.set(String(p.id), p);
-  }
-  return map;
-}
-
 const TOPIC_ANCHOR_KEY_ORDER = [
   "anchor_physics",
   "anchor_biology",
@@ -179,10 +177,36 @@ export function HomeTabContent({
       .slice()
       .sort(byUpdatedDesc)
       .slice(0, 12);
-    const newest = list
-      .filter((p) => !isBuildingPath(p))
+    const maxNewAgeDays = (() => {
+      const raw = String(import.meta.env.VITE_HOME_NEW_MAX_AGE_DAYS || "7");
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed) || parsed < 0) return 7;
+      return Math.min(parsed, 365);
+    })();
+    const maxNewAgeMs = maxNewAgeDays === 0 ? null : maxNewAgeDays * 24 * 60 * 60 * 1000;
+
+    const nowMs = Date.now();
+    const isUnseen = (p: Path) => {
+      const count = typeof p?.viewCount === "number" ? p.viewCount : 0;
+      return !p?.lastViewedAt && count <= 0;
+    };
+    const readyMsFor = (p: Path) => {
+      const t = p?.readyAt || p?.updatedAt || p?.createdAt || null;
+      const ms = t ? new Date(t).getTime() : 0;
+      return Number.isFinite(ms) ? ms : 0;
+    };
+    const isNewPath = (p: Path) => {
+      if (isBuildingPath(p)) return false;
+      if (!isUnseen(p)) return false;
+      if (maxNewAgeMs == null) return true;
+      const readyMs = readyMsFor(p);
+      if (!readyMs) return false;
+      return readyMs >= nowMs - maxNewAgeMs;
+    };
+    const newPaths = list
+      .filter((p) => isNewPath(p))
       .slice()
-      .sort(byUpdatedDesc)
+      .sort((a, b) => readyMsFor(b) - readyMsFor(a))
       .slice(0, 12);
 
     const sections: HomeRailSection[] = [];
@@ -196,7 +220,7 @@ export function HomeTabContent({
     sections.push({
       id: "new",
       title: "New",
-      paths: newest,
+      paths: newPaths,
     });
 
     const snapshot = taxonomySnapshot ?? null;
@@ -205,12 +229,10 @@ export function HomeTabContent({
 
     const nodes = topic.nodes || [];
     const memberships = topic.memberships || [];
-    const pathsById = buildPathIndex(list);
     const membershipByNodeId = new Map(memberships.map((m) => [m.node_id, m]));
 
-    const anchors = nodes
+    const anchorNodes = nodes
       .filter((n) => n?.kind === "anchor")
-      .filter((n) => (n?.member_count ?? 0) > 0)
       .slice()
       .sort((a, b) => {
         const ai = TOPIC_ANCHOR_KEY_ORDER.indexOf(a.key as (typeof TOPIC_ANCHOR_KEY_ORDER)[number]);
@@ -219,20 +241,81 @@ export function HomeTabContent({
         return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
       });
 
-    for (const node of anchors) {
-      const rows = membershipByNodeId.get(node.id)?.paths || [];
-      const sectionPaths = rows
-        .map((r) => pathsById.get(String(r.path_id)))
-        .filter(Boolean) as Path[];
+    // Home grouping uses a single "primary" anchor per path so a path card appears at most once
+    // across seeded topic rails. Secondary anchors can still exist in the taxonomy DAG.
+    const primaryAnchorByPathId = new Map<
+      string,
+      { anchorId: string; weight: number; anchorKey: string }
+    >();
+    for (const anchor of anchorNodes) {
+      const anchorId = String(anchor?.id || "");
+      if (!anchorId) continue;
+      const rows = membershipByNodeId.get(anchorId)?.paths || [];
+      for (const r of rows) {
+        const pathId = String(r?.path_id || "");
+        if (!pathId) continue;
+        const weight = typeof r?.weight === "number" ? r.weight : Number(r?.weight || 0);
+        const existing = primaryAnchorByPathId.get(pathId);
+        if (!existing || weight > existing.weight) {
+          primaryAnchorByPathId.set(pathId, {
+            anchorId,
+            weight,
+            anchorKey: String(anchor.key || ""),
+          });
+        }
+      }
+    }
+
+    const readyList = list.filter((p) => !isBuildingPath(p));
+    const readyByPrimaryAnchorId = new Map<string, Path[]>();
+    for (const p of readyList) {
+      const pid = String(p?.id || "");
+      if (!pid) continue;
+      const primary = primaryAnchorByPathId.get(pid)?.anchorId;
+      if (!primary) continue;
+      const arr = readyByPrimaryAnchorId.get(primary) ?? [];
+      arr.push(p);
+      readyByPrimaryAnchorId.set(primary, arr);
+    }
+
+    const minTopicAnchorPaths = (() => {
+      const raw = String(import.meta.env.VITE_HOME_TOPIC_ANCHOR_MIN_PATHS || "2");
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed) || parsed < 1) return 2;
+      return parsed;
+    })();
+
+    const anchorOrderIndex = new Map(
+      anchorNodes
+        .map((n, idx) => [String(n?.id || ""), idx] as const)
+        .filter(([id]) => Boolean(id))
+    );
+
+    const topicSections: HomeRailSection[] = [];
+    for (const node of anchorNodes) {
+      const nodeId = String(node?.id || "");
+      if (!nodeId) continue;
+
+      const sectionPaths = readyByPrimaryAnchorId.get(nodeId) ?? [];
 
       const ordered = sectionPaths.slice().sort(byUpdatedDesc);
-      if (ordered.length === 0) continue;
-      sections.push({
+      if (ordered.length < minTopicAnchorPaths) continue;
+      topicSections.push({
         id: node.id,
         title: node.name || "Untitled",
         paths: ordered,
       });
     }
+
+    topicSections.sort((a, b) => {
+      const count = (b.paths?.length ?? 0) - (a.paths?.length ?? 0);
+      if (count !== 0) return count;
+      const ai = anchorOrderIndex.get(String(a.id || "")) ?? 999;
+      const bi = anchorOrderIndex.get(String(b.id || "")) ?? 999;
+      return ai - bi;
+    });
+
+    sections.push(...topicSections);
 
     return sections;
   }, [isHome, paths, taxonomySnapshot]);
@@ -304,6 +387,7 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [hasOverflow, setHasOverflow] = useState(false);
 
   const updateScrollState = () => {
     const el = railRef.current;
@@ -311,6 +395,7 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
     const maxScrollLeft = el.scrollWidth - el.clientWidth;
     setCanScrollLeft(el.scrollLeft > 4);
     setCanScrollRight(el.scrollLeft < maxScrollLeft - 4);
+    setHasOverflow(maxScrollLeft > 4);
   };
 
   useEffect(() => {
@@ -342,6 +427,33 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
         <h2 className="font-brand text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {title}
         </h2>
+        {hasOverflow && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
+                aria-label={`View all ${title}`}
+              >
+                View all
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-brand text-2xl sm:text-3xl">
+                  {title}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {paths.map((path) => (
+                  <PathCardLarge key={path.id} path={path} />
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="relative -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -407,4 +519,3 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
     </section>
   );
 }
-
