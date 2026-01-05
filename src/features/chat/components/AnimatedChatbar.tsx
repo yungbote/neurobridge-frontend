@@ -101,6 +101,8 @@ export const AnimatedChatbar = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const placeholderStepRef = useRef<((ts: number) => void) | null>(null);
+  const placeholderLastFrameAtRef = useRef<number>(0);
   const activeRef = useRef(false);
   const filesStripRef = useRef<HTMLDivElement | null>(null);
   const dragFilesRef = useRef<DragState>({ active: false, startX: 0, scrollLeft: 0, pointerId: null });
@@ -219,11 +221,14 @@ export const AnimatedChatbar = ({
 
   const showGhost = !disablePlaceholderAnimation && !isFocused && value.length === 0;
   const shouldReduceMotion = respectReducedMotion && reducedMotion;
+  const visibleForPlaceholderAnim = isNavbar || inView;
 
   const stopAnim = useCallback(() => {
     activeRef.current = false;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+    placeholderStepRef.current = null;
+    placeholderLastFrameAtRef.current = 0;
   }, []);
 
   useEffect(() => {
@@ -325,7 +330,7 @@ export const AnimatedChatbar = ({
       return;
     }
 
-    if (!pageVisible || !inView) {
+    if (!pageVisible || !visibleForPlaceholderAnim) {
       stopAnim();
       return;
     }
@@ -352,84 +357,157 @@ export const AnimatedChatbar = ({
     };
 
     const step = (ts: number) => {
-      if (!activeRef.current) return;
+      if (!activeRef.current) {
+        rafRef.current = null;
+        return;
+      }
 
-      const now = ts;
-      const m = machineRef.current;
+      placeholderLastFrameAtRef.current = ts;
 
-      if (m.nextAt === 0) m.nextAt = now;
+      try {
+        const now = ts;
+        const m = machineRef.current;
 
-      if (now >= m.nextAt) {
-        const prompt = examplePrompts[m.promptIndex] || "";
+        if (m.nextAt === 0) m.nextAt = now;
 
-        if (m.phase === "typing") {
-          if (m.charIndex < prompt.length) {
-            const nextChar = prompt[m.charIndex];
+        if (now >= m.nextAt) {
+          const prompt = examplePrompts[m.promptIndex] || "";
 
-            m.placeholder = m.placeholder + nextChar;
-            m.charIndex = m.charIndex + 1;
+          if (m.phase === "typing") {
+            if (m.charIndex < prompt.length) {
+              const nextChar = prompt[m.charIndex];
 
-            setPlaceholder(m.placeholder);
-            setCharIndex(m.charIndex);
+              m.placeholder = m.placeholder + nextChar;
+              m.charIndex = m.charIndex + 1;
 
-            m.nextAt = now + jitter(TYPE_BASE, TYPE_JITTER) + extraDelayForChar(nextChar);
-          } else {
-            m.phase = "pause";
-            setPhase("pause");
-            m.nextAt = now + PAUSE_AFTER_TYPED;
-          }
-        } else if (m.phase === "pause") {
-          m.phase = "deleting";
-          setPhase("deleting");
-          m.nextAt = now + PAUSE_TO_DELETE_MS;
-        } else if (m.phase === "deleting") {
-          if (m.charIndex > 0) {
-            m.placeholder = m.placeholder.slice(0, -1);
-            m.charIndex = m.charIndex - 1;
+              setPlaceholder(m.placeholder);
+              setCharIndex(m.charIndex);
 
-            setPlaceholder(m.placeholder);
-            setCharIndex(m.charIndex);
-
-            m.nextAt = now + jitter(DELETE_BASE, DELETE_JITTER);
-          } else {
-            if (!m.swapFade) {
-              m.swapFade = true;
-              setSwapFade(true);
-              m.placeholder = "";
-              setPlaceholder("");
-              m.phase = "swap";
-              setPhase("swap");
-              m.nextAt = now + SWAP_FADE_MS;
+              m.nextAt =
+                now +
+                jitter(TYPE_BASE, TYPE_JITTER) +
+                extraDelayForChar(nextChar);
+            } else {
+              m.phase = "pause";
+              setPhase("pause");
+              m.nextAt = now + PAUSE_AFTER_TYPED;
             }
+          } else if (m.phase === "pause") {
+            m.phase = "deleting";
+            setPhase("deleting");
+            m.nextAt = now + PAUSE_TO_DELETE_MS;
+          } else if (m.phase === "deleting") {
+            if (m.charIndex > 0) {
+              m.placeholder = m.placeholder.slice(0, -1);
+              m.charIndex = m.charIndex - 1;
+
+              setPlaceholder(m.placeholder);
+              setCharIndex(m.charIndex);
+
+              m.nextAt = now + jitter(DELETE_BASE, DELETE_JITTER);
+            } else {
+              if (!m.swapFade) {
+                m.swapFade = true;
+                setSwapFade(true);
+                m.placeholder = "";
+                setPlaceholder("");
+                m.phase = "swap";
+                setPhase("swap");
+                m.nextAt = now + SWAP_FADE_MS;
+              }
+            }
+          } else if (m.phase === "swap") {
+            m.swapFade = false;
+            setSwapFade(false);
+
+            m.promptIndex = (m.promptIndex + 1) % examplePrompts.length;
+            setCurrentPromptIndex(m.promptIndex);
+
+            m.charIndex = 0;
+            setCharIndex(0);
+
+            m.placeholder = "";
+            setPlaceholder("");
+
+            m.phase = "typing";
+            setPhase("typing");
+
+            m.nextAt = now + AFTER_SWAP_DELAY;
           }
-        } else if (m.phase === "swap") {
-          m.swapFade = false;
-          setSwapFade(false);
-
-          m.promptIndex = (m.promptIndex + 1) % examplePrompts.length;
-          setCurrentPromptIndex(m.promptIndex);
-
-          m.charIndex = 0;
-          setCharIndex(0);
-
-          m.placeholder = "";
-          setPlaceholder("");
-
-          m.phase = "typing";
-          setPhase("typing");
-
-          m.nextAt = now + AFTER_SWAP_DELAY;
         }
+      } catch (err) {
+        console.warn("[AnimatedChatbar] Placeholder animation tick failed; restarting", err);
+        const m = machineRef.current;
+        m.charIndex = 0;
+        m.phase = "typing";
+        m.placeholder = "";
+        m.swapFade = false;
+        m.nextAt = 0;
+
+        setCharIndex(0);
+        setPhase("typing");
+        setPlaceholder("");
+        setSwapFade(false);
+      }
+
+      if (!activeRef.current) {
+        rafRef.current = null;
+        return;
       }
 
       rafRef.current = requestAnimationFrame(step);
     };
 
+    placeholderStepRef.current = step;
     rafRef.current = requestAnimationFrame(step);
 
     return () => stopAnim();
 
-  }, [showGhost, shouldReduceMotion, pageVisible, inView, stopAnim]);
+  }, [
+    showGhost,
+    shouldReduceMotion,
+    pageVisible,
+    visibleForPlaceholderAnim,
+    stopAnim,
+  ]);
+
+  useEffect(() => {
+    if (!showGhost) return;
+    if (shouldReduceMotion) return;
+    if (!pageVisible) return;
+    if (!visibleForPlaceholderAnim) return;
+
+    if (typeof window === "undefined") return;
+
+    const STALL_MS = 4000;
+
+    const intervalId = window.setInterval(() => {
+      if (!activeRef.current) return;
+      const step = placeholderStepRef.current;
+      if (!step) return;
+
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      const last = placeholderLastFrameAtRef.current;
+      const stalled = last > 0 && now - last > STALL_MS;
+
+      if (!stalled) return;
+
+      console.warn("[AnimatedChatbar] Placeholder animation stalled; restarting");
+      const m = machineRef.current;
+      m.nextAt = 0;
+
+      if (rafRef.current != null) {
+        try {
+          cancelAnimationFrame(rafRef.current);
+        } catch (err) {
+          void err;
+        }
+      }
+      rafRef.current = requestAnimationFrame(step);
+    }, 1500);
+
+    return () => window.clearInterval(intervalId);
+  }, [showGhost, shouldReduceMotion, pageVisible, visibleForPlaceholderAnim]);
 
   const handleFocus = () => {
     setIsFocused(true);
@@ -588,7 +666,7 @@ export const AnimatedChatbar = ({
         className={cn(
           isNavbar
             ? `
-          relative bg-background/70 border border-border/60 rounded-full px-2 py-1.5
+          relative bg-background/70 border border-border/60 dark:border-border rounded-full px-2 py-1.5
           shadow-sm transition-shadow hover:shadow-md focus-within:shadow-md`
             : `
           relative bg-background border border-border rounded-3xl px-3

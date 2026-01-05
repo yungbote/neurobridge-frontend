@@ -26,6 +26,7 @@ export function mapPath(raw: BackendPath | Path | null | undefined): Path | null
     description: row.description ?? "",
     status: row.status ?? "",
     jobId: (row.job_id ?? row.jobId ?? null) as string | null,
+    materialSetId: (row.material_set_id ?? row.materialSetId ?? null) as string | null,
     jobStatus: (row.job_status ?? row.jobStatus ?? null) as string | null,
     jobStage: (row.job_stage ?? row.jobStage ?? null) as string | null,
     jobProgress:

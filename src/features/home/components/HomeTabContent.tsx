@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
+import { MaterialCardLarge } from "@/features/files/components/MaterialCardLarge";
 import { EmptyContent } from "@/shared/components/EmptyContent";
+import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -9,10 +11,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/shared/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import { cn } from "@/shared/lib/utils";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { Path } from "@/shared/types/models";
-import type { LibraryTaxonomySnapshotV1 } from "@/shared/types/models";
+import { ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import type { LibraryTaxonomySnapshotV1, MaterialFile, Path } from "@/shared/types/models";
 
 export type HomeTabKey = "home" | "in-progress" | "saved" | "completed" | "recently-viewed";
 
@@ -43,13 +54,28 @@ function getPathMetadata(path: Path): Record<string, unknown> | null {
 function byUpdatedDesc(a: Path, b: Path) {
   const aLegacy = a as Path & LegacyTimestampPath;
   const bLegacy = b as Path & LegacyTimestampPath;
-  const ad = new Date(
-    a.updatedAt || aLegacy.updated_at || a.createdAt || aLegacy.created_at || 0
-  ).getTime();
-  const bd = new Date(
-    b.updatedAt || bLegacy.updated_at || b.createdAt || bLegacy.created_at || 0
-  ).getTime();
+  const ad = new Date(a.updatedAt || aLegacy.updated_at || a.createdAt || aLegacy.created_at || 0).getTime();
+  const bd = new Date(b.updatedAt || bLegacy.updated_at || b.createdAt || bLegacy.created_at || 0).getTime();
   return bd - ad;
+}
+
+function pathUpdatedMs(path: Path) {
+  const legacy = path as Path & LegacyTimestampPath;
+  const ms = new Date(path.updatedAt || legacy.updated_at || path.createdAt || legacy.created_at || 0).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function materialUpdatedMs(file: MaterialFile) {
+  const ms = new Date(file?.updatedAt || file?.createdAt || 0).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function itemUpdatedMs(item: HomeCardItem) {
+  return item.kind === "material" ? materialUpdatedMs(item.file) : pathUpdatedMs(item.path);
+}
+
+function byItemUpdatedDesc(a: HomeCardItem, b: HomeCardItem) {
+  return itemUpdatedMs(b) - itemUpdatedMs(a);
 }
 
 function getPathStatus(path: Path) {
@@ -130,16 +156,24 @@ function emptyCopy(activeTab: HomeTabKey) {
 interface HomeTabContentProps {
   activeTab: HomeTabKey;
   paths: Path[];
+  materialFiles?: MaterialFile[];
   loading: boolean;
+  materialsLoading?: boolean;
   taxonomySnapshot?: LibraryTaxonomySnapshotV1 | null;
   taxonomyLoading?: boolean;
 }
 
+type HomeCardItem =
+  | { kind: "path"; id: string; path: Path }
+  | { kind: "material"; id: string; file: MaterialFile };
+
 type HomeRailSection = {
   id: string;
   title: string;
-  paths: Path[];
+  items: HomeCardItem[];
 };
+
+type HomeRailFilterValue = "all" | "paths" | "files";
 
 const TOPIC_ANCHOR_KEY_ORDER = [
   "anchor_physics",
@@ -157,11 +191,30 @@ const TOPIC_ANCHOR_KEY_ORDER = [
 export function HomeTabContent({
   activeTab,
   paths,
+  materialFiles,
   loading,
+  materialsLoading,
   taxonomySnapshot,
   taxonomyLoading,
 }: HomeTabContentProps) {
   const isHome = activeTab === "home";
+  const materialList = materialFiles ?? [];
+
+  const filesByMaterialSetId = useMemo(() => {
+    const out = new Map<string, MaterialFile[]>();
+    const list = Array.isArray(materialList) ? materialList : [];
+    for (const f of list) {
+      const setId = String(f?.materialSetId || "");
+      if (!setId) continue;
+      const arr = out.get(setId) ?? [];
+      arr.push(f);
+      out.set(setId, arr);
+    }
+    for (const arr of out.values()) {
+      arr.sort((a, b) => materialUpdatedMs(b) - materialUpdatedMs(a));
+    }
+    return out;
+  }, [materialList]);
 
   const filtered = useMemo(
     () => filterPathsByTab(paths, activeTab),
@@ -170,6 +223,37 @@ export function HomeTabContent({
 
   const homeSections = useMemo<HomeRailSection[]>(() => {
     if (!isHome) return [];
+
+    const buildItems = (sectionPaths: Path[]): HomeCardItem[] => {
+      const out: HomeCardItem[] = [];
+      const seen = new Set<string>();
+
+      for (const p of sectionPaths || []) {
+        const id = String(p?.id || "");
+        if (!id) continue;
+        const key = `path:${id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ kind: "path", id, path: p });
+      }
+
+      for (const p of sectionPaths || []) {
+        const setId = String(p?.materialSetId || "");
+        if (!setId) continue;
+        const rows = filesByMaterialSetId.get(setId) ?? [];
+        for (const f of rows) {
+          const id = String(f?.id || "");
+          if (!id) continue;
+          const key = `material:${id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ kind: "material", id, file: f });
+        }
+      }
+
+      out.sort(byItemUpdatedDesc);
+      return out;
+    };
 
     const list = Array.isArray(paths) ? paths : [];
     const generating = list
@@ -214,13 +298,13 @@ export function HomeTabContent({
       sections.push({
         id: "generating",
         title: "Generating",
-        paths: generating,
+        items: buildItems(generating),
       });
     }
     sections.push({
       id: "new",
       title: "New",
-      paths: newPaths,
+      items: buildItems(newPaths),
     });
 
     const snapshot = taxonomySnapshot ?? null;
@@ -303,12 +387,14 @@ export function HomeTabContent({
       topicSections.push({
         id: node.id,
         title: node.name || "Untitled",
-        paths: ordered,
+        items: buildItems(ordered),
       });
     }
 
     topicSections.sort((a, b) => {
-      const count = (b.paths?.length ?? 0) - (a.paths?.length ?? 0);
+      const count =
+        (b.items?.filter((i) => i.kind === "path").length ?? 0) -
+        (a.items?.filter((i) => i.kind === "path").length ?? 0);
       if (count !== 0) return count;
       const ai = anchorOrderIndex.get(String(a.id || "")) ?? 999;
       const bi = anchorOrderIndex.get(String(b.id || "")) ?? 999;
@@ -318,9 +404,9 @@ export function HomeTabContent({
     sections.push(...topicSections);
 
     return sections;
-  }, [isHome, paths, taxonomySnapshot]);
+  }, [filesByMaterialSetId, isHome, paths, taxonomySnapshot]);
 
-  if (isHome && (loading || taxonomyLoading)) {
+  if (isHome && (loading || taxonomyLoading || (materialsLoading && materialList.length === 0))) {
     return (
       <div className="w-full">
         <div className="space-y-12">
@@ -345,7 +431,7 @@ export function HomeTabContent({
   }
 
   if (isHome) {
-    if (!paths || paths.length === 0) {
+    if ((!paths || paths.length === 0) && materialList.length === 0) {
       const copy = emptyCopy(activeTab);
       return (
         <div className="w-full">
@@ -357,7 +443,7 @@ export function HomeTabContent({
     return (
       <div className="w-full space-y-12">
         {homeSections.map((section) => (
-          <HomeRail key={section.id} title={section.title} paths={section.paths} />
+          <HomeRail key={section.id} title={section.title} items={section.items} />
         ))}
       </div>
     );
@@ -383,11 +469,29 @@ export function HomeTabContent({
   );
 }
 
-function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
+function HomeRail({ title, items }: { title: string; items: HomeCardItem[] }) {
   const railRef = useRef<HTMLDivElement | null>(null);
+  const [filter, setFilter] = useState<HomeRailFilterValue>("all");
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
+
+  const counts = useMemo(() => {
+    let paths = 0;
+    let files = 0;
+    for (const item of items || []) {
+      if (item.kind === "path") paths++;
+      if (item.kind === "material") files++;
+    }
+    return { paths, files, total: paths + files };
+  }, [items]);
+
+  const visibleItems = useMemo(() => {
+    const list = items || [];
+    if (filter === "paths") return list.filter((i) => i.kind === "path");
+    if (filter === "files") return list.filter((i) => i.kind === "material");
+    return list;
+  }, [filter, items]);
 
   const updateScrollState = () => {
     const el = railRef.current;
@@ -419,14 +523,97 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
     el.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
-  if (!paths || paths.length === 0) return null;
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el) return;
+    el.scrollTo({ left: 0, behavior: "auto" });
+    updateScrollState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  useEffect(() => {
+    updateScrollState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleItems]);
+
+  if (!items || items.length === 0) return null;
 
   return (
     <section className="space-y-4">
       <div className="flex items-end justify-between gap-4">
-        <h2 className="font-brand text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          {title}
-        </h2>
+        <div className="flex items-end gap-2">
+          <h2 className="font-brand text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            {title}
+          </h2>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "group ml-1 inline-flex h-9 items-center justify-center transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
+                  filter === "all"
+                    ? "w-9 rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted/40 hover:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
+                    : "rounded-full p-0 text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
+                )}
+                aria-label={
+                  filter === "paths"
+                    ? "Filter: paths"
+                    : filter === "files"
+                      ? "Filter: files"
+                      : "Filter cards"
+                }
+                title={filter === "all" ? "Filter" : filter === "paths" ? "Showing paths" : "Showing files"}
+              >
+                {filter === "paths" ? (
+                  <Badge
+                    className={cn(
+                      "pointer-events-none transition-colors",
+                      "group-hover:bg-muted/40 group-hover:text-foreground",
+                      "group-data-[state=open]:bg-muted/50 group-data-[state=open]:text-foreground"
+                    )}
+                  >
+                    Path
+                  </Badge>
+                ) : filter === "files" ? (
+                  <Badge
+                    className={cn(
+                      "pointer-events-none transition-colors",
+                      "group-hover:bg-muted/40 group-hover:text-foreground",
+                      "group-data-[state=open]:bg-muted/50 group-data-[state=open]:text-foreground"
+                    )}
+                  >
+                    File
+                  </Badge>
+                ) : (
+                  <Filter className="h-4 w-4" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={8} className="w-48">
+              <DropdownMenuLabel>Show</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={filter}
+                onValueChange={(v) => setFilter((v as HomeRailFilterValue) || "all")}
+              >
+                <DropdownMenuRadioItem value="all">
+                  All
+                  <DropdownMenuShortcut>{counts.total}</DropdownMenuShortcut>
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="paths" disabled={counts.paths === 0}>
+                  Paths
+                  <DropdownMenuShortcut>{counts.paths}</DropdownMenuShortcut>
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="files" disabled={counts.files === 0}>
+                  Files
+                  <DropdownMenuShortcut>{counts.files}</DropdownMenuShortcut>
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         {hasOverflow && (
           <Dialog>
             <DialogTrigger asChild>
@@ -447,9 +634,13 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
                 </DialogTitle>
               </DialogHeader>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {paths.map((path) => (
-                  <PathCardLarge key={path.id} path={path} />
-                ))}
+                {visibleItems.map((item) =>
+                  item.kind === "material" ? (
+                    <MaterialCardLarge key={`material:${item.id}`} file={item.file} />
+                  ) : (
+                    <PathCardLarge key={`path:${item.id}`} path={item.path} />
+                  )
+                )}
               </div>
             </DialogContent>
           </Dialog>
@@ -470,9 +661,16 @@ function HomeRail({ title, paths }: { title: string; paths: Path[] }) {
           }}
           onScroll={updateScrollState}
         >
-          {paths.map((path) => (
-            <div key={path.id} className="shrink-0 snap-start w-[320px] sm:w-[360px] lg:w-[420px]">
-              <PathCardLarge path={path} />
+          {visibleItems.map((item) => (
+            <div
+              key={`${item.kind}:${item.id}`}
+              className="shrink-0 snap-start w-[320px] sm:w-[360px] lg:w-[420px]"
+            >
+              {item.kind === "material" ? (
+                <MaterialCardLarge file={item.file} />
+              ) : (
+                <PathCardLarge path={item.path} />
+              )}
             </div>
           ))}
         </div>

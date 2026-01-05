@@ -7,6 +7,7 @@ export interface BackendPath {
   description?: string;
   status?: string;
   job_id?: UUID | string | null;
+  material_set_id?: UUID | string | null;
   job_status?: string | null;
   job_stage?: string | null;
   job_progress?: number | null;

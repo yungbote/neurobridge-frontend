@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/shared/ui/button";
-import { ChevronRight, Headphones } from "lucide-react";
+import { BookOpen, ChevronRight, Headphones } from "lucide-react";
 
 import { usePaths } from "@/app/providers/PathProvider";
-import { getPath, listNodesForPath, recordPathView } from "@/shared/api/PathService";
+import { useLessons } from "@/app/providers/LessonProvider";
+import { listNodesForPath, recordPathView } from "@/shared/api/PathService";
 import { ConceptGraphView } from "@/features/paths/components/ConceptGraphView";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { PathMaterialsView } from "@/features/paths/components/PathMaterialsView";
@@ -15,9 +16,10 @@ import type { Path, PathNode } from "@/shared/types/models";
 export default function PathPage() {
   const { id: pathId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
-  const { getById, setActivePathId, setActivePath } = usePaths();
+  const { getById, activatePath, setActivePath } = usePaths();
+  const { clearActiveLesson } = useLessons();
   const cached = pathId ? getById(pathId) : null;
 
   const [path, setPath] = useState<Path | null>(cached);
@@ -34,30 +36,14 @@ export default function PathPage() {
   const isMindmapView = view === "graph";
   const isUnitView = !isMindmapView && !isMaterialsView && !isAudioView;
 
-  const setView = useCallback(
-    (next: "graph" | "outline") => {
-      const params = new URLSearchParams(searchParams);
-      if (next === "graph") {
-        params.set("view", "mindmap");
-      } else {
-        params.delete("view");
-      }
-      setSearchParams(params, { replace: true });
-    },
-    [searchParams, setSearchParams]
-  );
-
   useEffect(() => {
     setPath(cached || null);
   }, [cached]);
 
   useEffect(() => {
-    if (pathId) setActivePathId(pathId);
-  }, [pathId, setActivePathId]);
-
-  useEffect(() => {
-    if (path?.id) setActivePath(path);
-  }, [path, setActivePath]);
+    // Viewing the path overview (not a lesson) => clear active lesson.
+    clearActiveLesson();
+  }, [pathId, clearActiveLesson]);
 
   useEffect(() => {
     if (!pathId) return;
@@ -78,6 +64,7 @@ export default function PathPage() {
       .then((updated) => {
         if (updated?.id && updated.id === pathId) {
           setPath((prev) => (prev ? { ...prev, ...updated } : updated));
+          setActivePath(updated);
         }
       })
       .catch((e) => {
@@ -91,20 +78,8 @@ export default function PathPage() {
     path?.jobStage,
     path?.jobProgress,
     path?.jobMessage,
+    setActivePath,
   ]);
-
-  useEffect(() => {
-    const showGen =
-      cached?.jobId ||
-      cached?.jobStatus ||
-      cached?.jobStage ||
-      typeof cached?.jobProgress === "number" ||
-      cached?.jobMessage;
-
-    if (showGen && cached?.jobId) {
-      navigate(`/paths/build/${cached.jobId}`, { replace: true });
-    }
-  }, [cached, navigate]);
 
   useEffect(() => {
     let mounted = true;
@@ -115,24 +90,22 @@ export default function PathPage() {
         setLoading(true);
         setErr(null);
 
-        if (!cached) {
-          const p = await getPath(pathId);
-          if (!mounted) return;
+        const p = await activatePath(pathId);
+        if (!mounted) return;
 
-          const showGen =
-            p?.jobId ||
-            p?.jobStatus ||
-            p?.jobStage ||
-            typeof p?.jobProgress === "number" ||
-            p?.jobMessage;
+        const showGen =
+          p?.jobId ||
+          p?.jobStatus ||
+          p?.jobStage ||
+          typeof p?.jobProgress === "number" ||
+          p?.jobMessage;
 
-          if (showGen && p?.jobId) {
-            navigate(`/paths/build/${p.jobId}`, { replace: true });
-            return;
-          }
-
-          setPath(p);
+        if (showGen && p?.jobId) {
+          navigate(`/paths/build/${p.jobId}`, { replace: true });
+          return;
         }
+
+        setPath(p);
 
         const ns = await listNodesForPath(pathId);
         if (!mounted) return;
@@ -149,7 +122,7 @@ export default function PathPage() {
     return () => {
       mounted = false;
     };
-  }, [pathId, cached, navigate]);
+  }, [pathId, activatePath, navigate]);
 
   const firstNode = useMemo(() => {
     const sortedNodes = (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
@@ -184,23 +157,6 @@ export default function PathPage() {
           )}
         </div>
 
-        {(isUnitView || isMindmapView) && (
-          <div className="mb-10 flex flex-wrap items-center gap-2">
-            <Button
-              variant={isUnitView ? "default" : "outline"}
-              onClick={() => setView("outline")}
-            >
-              Outline
-            </Button>
-            <Button
-              variant={isMindmapView ? "default" : "outline"}
-              onClick={() => setView("graph")}
-            >
-              Concept Graph
-            </Button>
-          </div>
-        )}
-
         {isMindmapView ? (
           <ConceptGraphView pathId={pathId} />
         ) : isMaterialsView ? (
@@ -221,6 +177,18 @@ export default function PathPage() {
 
               {loading && nodes.length === 0 ? (
                 <div className="text-sm text-muted-foreground">Loading nodes…</div>
+              ) : nodes.length === 0 ? (
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-8 text-center">
+                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-background/60 text-muted-foreground shadow-sm">
+                    <BookOpen className="h-6 w-6" />
+                  </div>
+                  <div className="text-base font-medium text-foreground">No lessons yet</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {path?.jobId
+                      ? "We’re still building your path. Check back in a moment."
+                      : "This path doesn’t have any lessons yet."}
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {(nodes || [])

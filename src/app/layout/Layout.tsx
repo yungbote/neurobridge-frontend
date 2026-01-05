@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLayoutEffect, type ReactNode } from "react";
+import { matchPath, useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/shared/ui/sidebar";
 import { AppSideBar } from "@/app/navigation/AppSideBar";
 import { AppNavBar } from "@/app/navigation/AppNavBar";
 import { useAuth } from "@/app/providers/AuthProvider";
+import { usePaths } from "@/app/providers/PathProvider";
 import { Breadcrumbs } from "@/app/components/Breadcrumbs";
 import { Container } from "@/shared/layout/Container";
 import { UserDialogsProvider } from "@/app/providers/UserDialogProvider";
@@ -16,8 +17,25 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated } = useAuth();
+  const { activePathId } = usePaths();
   const location = useLocation();
-  const hideBreadcrumbs = location.pathname.startsWith("/chat");
+  const isPathContext = Boolean(
+    matchPath({ path: "/paths/:id", end: false }, location.pathname) ||
+      matchPath({ path: "/path-nodes/:id", end: false }, location.pathname) ||
+      matchPath({ path: "/activities/:id", end: false }, location.pathname)
+  );
+  const hideBreadcrumbs = location.pathname.startsWith("/chat") || isPathContext || Boolean(activePathId);
+
+  useLayoutEffect(() => {
+    if (!isAuthenticated) return;
+    if (!isPathContext) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+
+    const main = document.querySelector("main");
+    if (main instanceof HTMLElement) {
+      main.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
+  }, [isAuthenticated, isPathContext, location.key]);
 
   return (
     <SidebarProvider>
@@ -48,9 +66,6 @@ export default function Layout({ children }: LayoutProps) {
     </SidebarProvider>
   );
 }
-
-
-
 
 
 

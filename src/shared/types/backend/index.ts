@@ -9,3 +9,4 @@ export * from "./chat";
 export * from "./jobs";
 export * from "./events";
 export * from "./sse";
+export * from "./session";

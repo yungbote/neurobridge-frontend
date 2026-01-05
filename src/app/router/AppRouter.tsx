@@ -5,6 +5,8 @@ import AboutPage from "@/features/marketing/pages/AboutPage";
 import FeaturesPage from "@/features/marketing/pages/FeaturesPage";
 import PricingPage from "@/features/marketing/pages/PricingPage";
 import HomePage from "@/features/home/pages/HomePage";
+import FilesPage from "@/features/files/pages/FilesPage";
+import PathsPage from "@/features/paths/pages/PathsPage";
 import PathPage from "@/features/paths/pages/PathPage";
 import PathNodePage from "@/features/paths/pages/PathNodePage";
 import ActivityPage from "@/features/activity/pages/ActivityPage";
@@ -27,6 +29,8 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/paths" element={<PathsPage />} />
+      <Route path="/files" element={<FilesPage />} />
       <Route path="/paths/build/:jobId" element={<PathBuildPage />} />
       <Route path="/chat/threads/:id" element={<ChatThreadPage />} />
       <Route path="/paths/:id" element={<PathPage />} />
@@ -36,7 +40,6 @@ export function AppRouter() {
     </Routes>
   );
 }
-
 
 
 

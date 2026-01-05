@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -12,6 +13,7 @@ import { useUser } from "@/app/providers/UserProvider";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { uploadMaterialSet as apiUploadMaterialSet } from "@/shared/api/MaterialService";
 import { getPath as apiGetPath, listPaths as apiListPaths } from "@/shared/api/PathService";
+import { getSessionState, patchSessionState } from "@/shared/api/SessionService";
 import type { BackendJob, BackendMaterialUploadResponse } from "@/shared/types/backend";
 import type { JobEventPayload, Path, SseMessage } from "@/shared/types/models";
 
@@ -24,6 +26,7 @@ interface PathContextValue {
   setActivePathId: (id: string | null) => void;
   setActivePath: (path: Path | null) => void;
   clearActivePath: () => void;
+  activatePath: (id: string | null) => Promise<Path | null>;
   reload: () => Promise<void>;
   getById: (id: string) => Path | null;
   uploadMaterialSet: (files: File[]) => Promise<BackendMaterialUploadResponse>;
@@ -38,6 +41,7 @@ const PathContext = createContext<PathContextValue>({
   setActivePathId: () => {},
   setActivePath: () => {},
   clearActivePath: () => {},
+  activatePath: async () => null,
   reload: async () => {},
   getById: () => null,
   uploadMaterialSet: async () => ({}),
@@ -190,6 +194,12 @@ export function PathProvider({ children }: PathProviderProps) {
   const [error, setError] = useState<unknown | null>(null);
   const [activePathId, setActivePathIdState] = useState<string | null>(null);
   const [activePathOverride, setActivePathOverride] = useState<Path | null>(null);
+  const activateSeq = useRef(0);
+  const pathsRef = useRef<Path[]>([]);
+
+  useEffect(() => {
+    pathsRef.current = paths;
+  }, [paths]);
 
   const loadPaths = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -233,6 +243,32 @@ export function PathProvider({ children }: PathProviderProps) {
     }
     loadPaths();
   }, [isAuthenticated, loadPaths]);
+
+  // Restore active path for this session (best-effort; doesn't navigate).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const state = await getSessionState();
+        if (!mounted) return;
+        const pathId = state?.activePathId ? String(state.activePathId) : null;
+        if (!pathId) return;
+        setActivePathIdState(pathId);
+        const fresh = await apiGetPath(pathId);
+        if (!mounted) return;
+        if (fresh?.id) {
+          setActivePathOverride(fresh);
+          setPaths((prev) => upsertById(prev || [], stripJobFields(fresh), { replace: true }));
+        }
+      } catch {
+        // ignore restore errors
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [isAuthenticated]);
 
   // Converge from a durable snapshot when SSE reconnects (SSE has no replay).
   useEffect(() => {
@@ -477,14 +513,24 @@ export function PathProvider({ children }: PathProviderProps) {
       if (!next || String(activePathOverride?.id || "") !== next) {
         setActivePathOverride(null);
       }
+      if (isAuthenticated) {
+        void patchSessionState({ active_path_id: next }).catch((err) => {
+          console.warn("[PathProvider] Failed to patch session state:", err);
+        });
+      }
     },
-    [activePathOverride]
+    [activePathOverride, isAuthenticated]
   );
 
   const setActivePath = useCallback((path: Path | null) => {
     if (!path) {
       setActivePathIdState(null);
       setActivePathOverride(null);
+      if (isAuthenticated) {
+        void patchSessionState({ active_path_id: null }).catch((err) => {
+          console.warn("[PathProvider] Failed to patch session state:", err);
+        });
+      }
       return;
     }
     const nextId = path?.id ? String(path.id) : null;
@@ -492,12 +538,60 @@ export function PathProvider({ children }: PathProviderProps) {
     setActivePathIdState(nextId);
     setActivePathOverride(path);
     setPaths((prev) => upsertById(prev || [], path));
-  }, []);
+    if (isAuthenticated) {
+      void patchSessionState({ active_path_id: nextId }).catch((err) => {
+        console.warn("[PathProvider] Failed to patch session state:", err);
+      });
+    }
+  }, [isAuthenticated]);
 
   const clearActivePath = useCallback(() => {
     setActivePathIdState(null);
     setActivePathOverride(null);
-  }, []);
+    if (isAuthenticated) {
+      void patchSessionState({ active_path_id: null }).catch((err) => {
+        console.warn("[PathProvider] Failed to patch session state:", err);
+      });
+    }
+  }, [isAuthenticated]);
+
+  const activatePath = useCallback(
+    async (id: string | null): Promise<Path | null> => {
+      const seq = ++activateSeq.current;
+      const nextId = id ? String(id) : null;
+
+      setActivePathIdState(nextId);
+      if (!nextId) {
+        setActivePathOverride(null);
+        if (isAuthenticated) {
+          void patchSessionState({ active_path_id: null }).catch((err) => {
+            console.warn("[PathProvider] Failed to patch session state:", err);
+          });
+        }
+        return null;
+      }
+
+      const cached =
+        (pathsRef.current || []).find((p) => String(p?.id || "") === String(nextId)) ?? null;
+      if (cached) setActivePathOverride(cached);
+
+      if (isAuthenticated) {
+        void patchSessionState({ active_path_id: nextId }).catch((err) => {
+          console.warn("[PathProvider] Failed to patch session state:", err);
+        });
+      }
+
+      const fresh = await apiGetPath(nextId);
+      if (activateSeq.current !== seq) return fresh;
+
+      if (fresh?.id) {
+        setActivePathOverride(fresh);
+        setPaths((prev) => upsertById(prev || [], stripJobFields(fresh), { replace: true }));
+      }
+      return fresh;
+    },
+    [isAuthenticated]
+  );
 
   const uploadMaterialSet = useCallback(
     async (files: File[]) => {
@@ -571,6 +665,7 @@ export function PathProvider({ children }: PathProviderProps) {
       setActivePathId,
       setActivePath,
       clearActivePath,
+      activatePath,
       reload: loadPaths,
       getById,
       uploadMaterialSet,
@@ -584,6 +679,7 @@ export function PathProvider({ children }: PathProviderProps) {
       setActivePathId,
       setActivePath,
       clearActivePath,
+      activatePath,
       loadPaths,
       getById,
       uploadMaterialSet,

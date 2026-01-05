@@ -9,9 +9,10 @@ import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Separator } from "@/shared/ui/separator";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/shared/ui/accordion";
+import { PersonalizationTab } from "@/features/user/components/PersonalizationTab";
 import type { ThemePreference, UiTheme } from "@/shared/types/models";
 
-type SettingsTab = "general" | "notifications" | "personalization" | "account";
+export type SettingsTab = "general" | "notifications" | "personalization" | "account";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -158,7 +159,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 />
               )}
               {activeTab === "notifications" && <PlaceholderTab label="Notifications" />}
-              {activeTab === "personalization" && <PlaceholderTab label="Personalization" />}
+              {activeTab === "personalization" && <PersonalizationTab />}
               {activeTab === "account" && <PlaceholderTab label="Account" />}
             </div>
           </div>

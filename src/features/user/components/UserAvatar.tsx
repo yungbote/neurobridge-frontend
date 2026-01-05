@@ -235,7 +235,14 @@ export function UserAvatar({
         <DropdownMenuSeparator className="my-2" />
 
         <DropdownMenuGroup>
-          <DropdownMenuItem className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 focus:bg-muted/70">
+          <DropdownMenuItem
+            className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 focus:bg-muted/70"
+            onSelect={(e) => {
+              e.preventDefault();
+              setMenuOpen(false);
+              openSettings("personalization");
+            }}
+          >
             <Ampersand className="size-4 text-muted-foreground group-hover:text-foreground" />
             <span className="text-sm font-medium">Personalization</span>
           </DropdownMenuItem>
@@ -273,4 +280,3 @@ export function UserAvatar({
     </DropdownMenu>
   );
 }
-

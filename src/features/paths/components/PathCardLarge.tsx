@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
+import { Badge } from "@/shared/ui/badge";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import type { Path } from "@/shared/types/models";
 
@@ -103,6 +104,9 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
         <div className="space-y-3">
           <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
+              <div className="flex items-center justify-end gap-2">
+                <Badge>Path</Badge>
+              </div>
               <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">
                 {titleText}
               </CardTitle>

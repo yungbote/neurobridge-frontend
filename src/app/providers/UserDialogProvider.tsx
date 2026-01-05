@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 import { UserNameDialog } from "@/features/user/components/UserNameDialog";
-import { SettingsDialog } from "@/features/user/components/SettingsDialog";
+import { SettingsDialog, type SettingsTab } from "@/features/user/components/SettingsDialog";
 import { LogoutDialog } from "@/features/auth/components/LogoutDialog";
 import { useSidebar } from "@/shared/ui/sidebar";
 
@@ -16,7 +16,7 @@ type UserDialogKind = "profile" | "settings" | "logout";
 
 interface UserDialogsContextValue {
   openProfile: () => void;
-  openSettings: () => void;
+  openSettings: (tab?: SettingsTab) => void;
   openLogout: () => void;
 }
 
@@ -51,6 +51,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [logoutOpen, setLogoutOpen] = useState(false);
 
   const anyOpen = profileOpen || settingsOpen || logoutOpen;
@@ -219,7 +220,10 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
   const value = useMemo(
     () => ({
       openProfile: () => openDialog("profile"),
-      openSettings: () => openDialog("settings"),
+      openSettings: (tab?: SettingsTab) => {
+        setSettingsTab(tab ?? "general");
+        openDialog("settings");
+      },
       openLogout: () => openDialog("logout"),
     }),
     [openDialog]
@@ -230,12 +234,11 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
       {children}
 
       <UserNameDialog open={profileOpen} onOpenChange={setProfileOpen} />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialTab={settingsTab} />
       <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
     </UserDialogsContext.Provider>
   );
 }
-
 
 
 

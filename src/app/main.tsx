@@ -8,6 +8,8 @@ import { HomeChatbarDockProvider } from "@/app/providers/HomeChatbarDockProvider
 import { SSEGate } from "@/app/providers/SSEProvider";
 import { UserProvider } from "@/app/providers/UserProvider";
 import { PathProvider } from "@/app/providers/PathProvider";
+import { MaterialProvider } from "@/app/providers/MaterialProvider";
+import { LessonProvider } from "@/app/providers/LessonProvider";
 import App from "./App";
 import "@/styles/index.css";
 
@@ -27,9 +29,13 @@ createRoot(rootElement).render(
             <UserProvider>
               <ThemeSync />
               <PathProvider>
-                <HomeChatbarDockProvider>
-                  <App />
-                </HomeChatbarDockProvider>
+                <MaterialProvider>
+                  <LessonProvider>
+                    <HomeChatbarDockProvider>
+                      <App />
+                    </HomeChatbarDockProvider>
+                  </LessonProvider>
+                </MaterialProvider>
               </PathProvider>
             </UserProvider>
           </SSEGate>
@@ -39,8 +45,6 @@ createRoot(rootElement).render(
     <ReactQueryDevtools initialIsOpen={false} />
   </QueryClientProvider>
 );
-
-
 
 
 

@@ -12,11 +12,9 @@ import { cn } from "@/shared/lib/utils";
 
 import { createChatThread, sendChatMessage } from "@/shared/api/ChatService";
 import { ingestEvents } from "@/shared/api/EventService";
-import { getPath } from "@/shared/api/PathService";
 import {
   enqueuePathNodeDocPatch,
   generateDrillForNode,
-  getPathNodeContent,
   getPathNodeDoc,
   listDrillsForNode,
   listPathNodeDocRevisions,
@@ -27,6 +25,7 @@ import { Container } from "@/shared/layout/Container";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useLessons } from "@/app/providers/LessonProvider";
 import type { DrillPayloadV1 } from "@/shared/types/drillPayloadV1";
 import type { BackendJob } from "@/shared/types/backend";
 import type {
@@ -279,7 +278,8 @@ export default function PathNodePage() {
   const navigate = useNavigate();
   const { lastMessage, connected } = useSSEContext();
   const { user } = useUser();
-  const { setActivePathId, setActivePath } = usePaths();
+  const { activatePath } = usePaths();
+  const { activateLesson } = useLessons();
 
   const [loading, setLoading] = useState(false);
   const [node, setNode] = useState<PathNode | null>(null);
@@ -344,12 +344,12 @@ export default function PathNodePage() {
 
     (async () => {
       try {
-        const n = await getPathNodeContent(nodeId);
+        const n = await activateLesson(nodeId);
         if (cancelled) return;
         setNode(n);
 
         if (n?.pathId) {
-          const p = await getPath(n.pathId);
+          const p = await activatePath(n.pathId);
           if (!cancelled) setPath(p);
         }
 
@@ -368,15 +368,7 @@ export default function PathNodePage() {
     return () => {
       cancelled = true;
     };
-  }, [nodeId, loadDoc]);
-
-  useEffect(() => {
-    if (node?.pathId) setActivePathId(node.pathId);
-  }, [node?.pathId, setActivePathId]);
-
-  useEffect(() => {
-    if (path?.id) setActivePath(path);
-  }, [path, setActivePath]);
+  }, [nodeId, activateLesson, activatePath, loadDoc]);
 
   const conceptKeys = useMemo(() => extractConceptKeys(node), [node]);
 

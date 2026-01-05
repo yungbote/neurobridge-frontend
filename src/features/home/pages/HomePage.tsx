@@ -6,6 +6,7 @@ import { AnimatedChatbar } from "@/features/chat/components/AnimatedChatbar";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useMaterials } from "@/app/providers/MaterialProvider";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
 import { Clock, Bookmark, CheckCircle2, History } from "lucide-react";
@@ -24,6 +25,7 @@ export default function HomePage() {
   const { user, loading: userLoading } = useUser();
 
   const { paths, loading: pathsLoading } = usePaths();
+  const { files: materialFiles, loading: materialsLoading } = useMaterials();
   const { lastMessage } = useSSEContext();
   const { docked: chatbarDocked, setDocked: setChatbarDocked } = useHomeChatbarDock();
   const [navbarTabsSlotEl, setNavbarTabsSlotEl] = useState<HTMLElement | null>(() => {
@@ -437,7 +439,9 @@ export default function HomePage() {
         <HomeTabContent
           activeTab={activeTab}
           paths={paths || []}
+          materialFiles={materialFiles || []}
           loading={pathsLoading}
+          materialsLoading={materialsLoading}
           taxonomySnapshot={taxonomySnapshot}
           taxonomyLoading={taxonomyLoading}
         />
