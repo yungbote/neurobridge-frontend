@@ -63,6 +63,8 @@ function upsertById<T extends { id?: string | null }>(
   const idx = list.findIndex((p) => p?.id === next.id);
   if (idx === -1) return [next, ...list];
 
+  if (list[idx] === next) return list;
+
   const out = list.slice();
   out[idx] = replace ? next : { ...out[idx], ...next };
   return out;

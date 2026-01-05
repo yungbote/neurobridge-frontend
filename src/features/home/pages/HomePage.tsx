@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NavigationTabs } from "@/features/home/components/NavigationTabs";
 import { HomeTabContent } from "@/features/home/components/HomeTabContent";
@@ -38,15 +38,89 @@ export default function HomePage() {
   const [chatbarPortalEl, setChatbarPortalEl] = useState<HTMLDivElement | null>(null);
   const [tabsPortalEl, setTabsPortalEl] = useState<HTMLDivElement | null>(null);
   const [homeChatbarHeight, setHomeChatbarHeight] = useState<number>(0);
+  const [homeTabsHeight, setHomeTabsHeight] = useState<number>(0);
   const [tabsDocked, setTabsDocked] = useState(false);
 
   const [activeTab, setActiveTab] = useState<HomeTabKey>("home");
+
+  // Track dock state to preserve across tab changes
+  const keepDockedRef = useRef<{ chatbar: boolean; tabs: boolean } | null>(null);
+  // Lock to prevent scroll effect from overriding dock state during tab transition
+  const transitionLockRef = useRef(false);
+
   const setHomeChatbarSlotRef = useCallback((el: HTMLDivElement | null) => {
     setHomeChatbarSlotEl(el);
   }, []);
   const setHomeTabsSlotRef = useCallback((el: HTMLDivElement | null) => {
     setHomeTabsSlotEl(el);
   }, []);
+
+  const handleTabChange = useCallback(
+    (nextTab: HomeTabKey) => {
+      if (nextTab === activeTab) return;
+
+      // Store current dock state to restore after tab content renders
+      if (chatbarDocked || tabsDocked) {
+        keepDockedRef.current = { chatbar: chatbarDocked, tabs: tabsDocked };
+        transitionLockRef.current = true;
+      } else {
+        keepDockedRef.current = null;
+      }
+
+      setActiveTab(nextTab);
+    },
+    [activeTab, chatbarDocked, tabsDocked]
+  );
+
+  // After tab change, restore dock state (runs synchronously before paint)
+  useLayoutEffect(() => {
+    const keepDocked = keepDockedRef.current;
+    if (!keepDocked) return;
+
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    // Restore dock states immediately
+    if (keepDocked.chatbar) setChatbarDocked(true);
+    if (keepDocked.tabs) setTabsDocked(true);
+  }, [activeTab, setChatbarDocked]);
+
+  // After tab change AND dock states applied, scroll content to navbar
+  useEffect(() => {
+    const keepDocked = keepDockedRef.current;
+
+    if (!keepDocked) {
+      // Nothing was docked, scroll to top
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      }
+      return;
+    }
+    keepDockedRef.current = null;
+
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    // Wait for React to apply dock state updates, then scroll content under navbar
+    setTimeout(() => {
+      const nav = document.getElementById("app-navbar");
+      const navH = nav?.getBoundingClientRect().height ?? 56;
+
+      // Use the tabs slot as the reference point - scroll so its bottom aligns with navbar bottom
+      // This hides the welcome message, chatbar slot, and tabs slot placeholder
+      const tabsSlot = homeTabsSlotEl;
+      if (tabsSlot) {
+        const tabsSlotRect = tabsSlot.getBoundingClientRect();
+        const tabsSlotBottom = tabsSlotRect.bottom + window.scrollY;
+        const targetScroll = Math.max(0, tabsSlotBottom - navH);
+
+        window.scrollTo({ top: targetScroll, behavior: "auto" });
+      }
+
+      // Clear the lock
+      requestAnimationFrame(() => {
+        transitionLockRef.current = false;
+      });
+    }, 100);
+  }, [activeTab, homeTabsSlotEl]);
 
   const taxonomyReloadKey = useMemo(() => {
     const list = Array.isArray(paths) ? paths : [];
@@ -157,14 +231,14 @@ export default function HomePage() {
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const target = chatbarDocked ? navbarChatbarSlotEl : homeChatbarSlotEl;
     if (!chatbarPortalEl || !target) return;
     if (chatbarPortalEl.parentElement === target) return;
     target.appendChild(chatbarPortalEl);
   }, [chatbarDocked, chatbarPortalEl, homeChatbarSlotEl, navbarChatbarSlotEl]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const target = tabsDocked ? navbarTabsSlotEl : homeTabsSlotEl;
     if (!tabsPortalEl || !target) return;
     if (tabsPortalEl.parentElement === target) return;
@@ -185,61 +259,66 @@ export default function HomePage() {
   }, [chatbarDocked, homeChatbarSlotEl]);
 
   useEffect(() => {
-    if (!homeChatbarSlotEl) return;
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-
-    let raf: number | null = null;
-    const hysteresisPx = 10;
-
-    const compute = () => {
-      raf = null;
-      const nav = document.getElementById("app-navbar");
-      const navH = nav?.getBoundingClientRect().height ?? 56;
-      const rect = homeChatbarSlotEl.getBoundingClientRect();
-      const shouldDock = (() => {
-        if (!chatbarDocked) return rect.top <= navH - hysteresisPx;
-        return rect.top <= navH + hysteresisPx;
-      })();
-      if (shouldDock !== chatbarDocked) setChatbarDocked(shouldDock);
-    };
-
-    const onScroll = () => {
-      if (raf != null) return;
-      raf = window.requestAnimationFrame(compute);
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    compute();
-
-    return () => {
-      if (raf != null) window.cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [chatbarDocked, homeChatbarSlotEl, setChatbarDocked]);
-
-  useEffect(() => {
     if (!homeTabsSlotEl) return;
+    if (typeof ResizeObserver === "undefined") return;
+    if (tabsDocked) return;
+
+    const ro = new ResizeObserver(() => {
+      const h = homeTabsSlotEl.getBoundingClientRect().height;
+      if (Number.isFinite(h) && h > 0) setHomeTabsHeight(h);
+    });
+    ro.observe(homeTabsSlotEl);
+    return () => ro.disconnect();
+  }, [homeTabsSlotEl, tabsDocked]);
+
+  // Unified scroll effect for consistent dock/undock of both chatbar and tabs
+  useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (!homeChatbarSlotEl && !homeTabsSlotEl) return;
 
     let raf: number | null = null;
     const hysteresisPx = 10;
 
     const compute = () => {
       raf = null;
-      if (!navbarTabsSlotEl) {
-        if (tabsDocked) setTabsDocked(false);
-        return;
-      }
+
+      // Skip during tab transitions to preserve dock state
+      if (transitionLockRef.current) return;
+
       const nav = document.getElementById("app-navbar");
       const navH = nav?.getBoundingClientRect().height ?? 56;
-      const rect = homeTabsSlotEl.getBoundingClientRect();
-      const shouldDock = (() => {
-        if (!tabsDocked) return rect.top <= navH - hysteresisPx;
-        return rect.top <= navH + hysteresisPx;
-      })();
-      if (shouldDock !== tabsDocked) setTabsDocked(shouldDock);
+
+      // Compute chatbar dock state
+      if (homeChatbarSlotEl) {
+        const chatbarRect = homeChatbarSlotEl.getBoundingClientRect();
+        const shouldDockChatbar = (() => {
+          if (!chatbarDocked) return chatbarRect.top <= navH - hysteresisPx;
+          return chatbarRect.top <= navH + hysteresisPx;
+        })();
+        if (!chatbarDocked && shouldDockChatbar && homeChatbarHeight <= 0) {
+          const h = chatbarRect.height;
+          if (Number.isFinite(h) && h > 0) setHomeChatbarHeight(h);
+        }
+        if (shouldDockChatbar !== chatbarDocked) setChatbarDocked(shouldDockChatbar);
+      }
+
+      // Compute tabs dock state
+      if (homeTabsSlotEl) {
+        if (!navbarTabsSlotEl) {
+          if (tabsDocked) setTabsDocked(false);
+        } else {
+          const tabsRect = homeTabsSlotEl.getBoundingClientRect();
+          const shouldDockTabs = (() => {
+            if (!tabsDocked) return tabsRect.top <= navH - hysteresisPx;
+            return tabsRect.top <= navH + hysteresisPx;
+          })();
+          if (!tabsDocked && shouldDockTabs && homeTabsHeight <= 0) {
+            const h = tabsRect.height;
+            if (Number.isFinite(h) && h > 0) setHomeTabsHeight(h);
+          }
+          if (shouldDockTabs !== tabsDocked) setTabsDocked(shouldDockTabs);
+        }
+      }
     };
 
     const onScroll = () => {
@@ -256,7 +335,16 @@ export default function HomePage() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [homeTabsSlotEl, navbarTabsSlotEl, tabsDocked]);
+  }, [
+    chatbarDocked,
+    homeChatbarHeight,
+    homeChatbarSlotEl,
+    homeTabsHeight,
+    homeTabsSlotEl,
+    navbarTabsSlotEl,
+    setChatbarDocked,
+    tabsDocked,
+  ]);
 
   useEffect(() => {
     return () => setChatbarDocked(false);
@@ -318,20 +406,34 @@ export default function HomePage() {
           : null}
       </div>
 
-      <div ref={setHomeTabsSlotRef} />
+      <div
+        ref={setHomeTabsSlotRef}
+        style={
+          tabsDocked && homeTabsHeight > 0
+            ? { minHeight: `${homeTabsHeight}px` }
+            : undefined
+        }
+      />
       {tabsPortalEl
         ? createPortal(
             <NavigationTabs
               tabs={tabs}
               activeTab={activeTab}
-              onTabChange={setActiveTab}
+              onTabChange={handleTabChange}
               variant={tabsDocked ? "navbar" : "page"}
             />,
             tabsPortalEl
           )
         : null}
 
-      <Container className="page-pad">
+      <Container
+        className="page-pad"
+        style={
+          tabsDocked
+            ? { minHeight: "calc(100vh - 56px)" }
+            : undefined
+        }
+      >
         <HomeTabContent
           activeTab={activeTab}
           paths={paths || []}

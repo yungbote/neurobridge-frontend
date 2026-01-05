@@ -37,6 +37,7 @@ export function NavigationTabs({
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => onTabChange(tab.id)}
               aria-current={activeTab === tab.id ? "page" : undefined}
               className={`
@@ -56,7 +57,6 @@ export function NavigationTabs({
     </header>
   );
 }
-
 
 
 
