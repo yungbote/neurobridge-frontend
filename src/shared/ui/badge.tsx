@@ -15,6 +15,8 @@ const badgeVariants = cva(
         default: "border-border/60 bg-background/60 text-muted-foreground",
         subtle: "border-border/60 bg-muted/30 text-muted-foreground",
         outline: "border-border/60 bg-transparent text-muted-foreground shadow-none backdrop-blur-0",
+        destructive:
+          "border-destructive/20 bg-destructive/10 text-destructive shadow-sm backdrop-blur-sm",
       },
     },
     defaultVariants: {
@@ -30,4 +32,3 @@ export interface BadgeProps
 export function Badge({ className, variant, ...props }: BadgeProps) {
   return <span data-slot="badge" className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
-

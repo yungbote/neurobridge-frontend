@@ -32,12 +32,13 @@ import {
   Video,
 } from "lucide-react";
 import { useAuth } from "@/app/providers/AuthProvider";
+import { useMaterials } from "@/app/providers/MaterialProvider";
 import { usePaths } from "@/app/providers/PathProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
 import type { MaterialFile, Path, PathNode } from "@/shared/types/models";
 import { cn } from "@/shared/lib/utils";
+import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { UserAvatar } from "@/features/user/components/UserAvatar";
-import { listUserMaterialFiles } from "@/shared/api/MaterialService";
 import { generatePathCover, listNodesForPath } from "@/shared/api/PathService";
 import { AVATAR_COLORS } from "@/features/user/components/ColorPicker";
 import {
@@ -129,6 +130,23 @@ function getLessonAvatarUrl(node: PathNode | null | undefined): string | null {
   return null;
 }
 
+function buildProgressState(path: Path | null | undefined) {
+  const jobStatus = String(path?.jobStatus || "").toLowerCase();
+  const jobStage = String(path?.jobStage || "");
+  const showGen = Boolean(
+    path?.jobId ||
+      path?.jobStatus ||
+      path?.jobStage ||
+      typeof path?.jobProgress === "number" ||
+      path?.jobMessage
+  );
+  const isFailed = showGen && jobStatus === "failed";
+  const isDone =
+    showGen && (jobStatus === "succeeded" || jobStatus === "success" || stageLabel(jobStage) === "Done");
+  const showProgress = showGen && !isFailed && !isDone;
+  return { showProgress, progressPct: showProgress ? clampPct(path?.jobProgress) : 0 };
+}
+
 function fileLabel(file: MaterialFile | null | undefined) {
   return file?.originalName || "Untitled file";
 }
@@ -149,6 +167,55 @@ function fileIcon(file: MaterialFile | null | undefined) {
   return FileIcon;
 }
 
+function ProgressRing({
+  progress,
+  size,
+  strokeWidth = 3,
+  className,
+}: {
+  progress: number | string | null | undefined;
+  size: number;
+  strokeWidth?: number;
+  className?: string;
+}) {
+  const pct = clampPct(progress);
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (pct / 100) * circumference;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className={cn("-rotate-90", className)}
+      aria-hidden="true"
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="text-muted"
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={strokeDashoffset}
+        strokeLinecap="round"
+        className="text-primary transition-all duration-300"
+      />
+    </svg>
+  );
+}
+
 export function AppSideBar() {
   const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -156,6 +223,7 @@ export function AppSideBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { files: materialFiles, loading: materialFilesLoading } = useMaterials();
   const {
     paths,
     reload,
@@ -167,8 +235,7 @@ export function AppSideBar() {
   const { activateLesson, clearActiveLesson } = useLessons();
   const [coverLoadingId, setCoverLoadingId] = useState<string | null>(null);
   const [actionHoverId, setActionHoverId] = useState<string | null>(null);
-  const [files, setFiles] = useState<MaterialFile[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
+  const [fileThumbErrors, setFileThumbErrors] = useState<Record<string, boolean>>({});
   const [lessons, setLessons] = useState<PathNode[]>([]);
   const [lessonsLoading, setLessonsLoading] = useState(false);
   const lastNormalRouteRef = useRef<string>("/");
@@ -187,6 +254,13 @@ export function AppSideBar() {
     const token = getAccessToken();
     const baseUrl = `${apiBase}/material-files/${fileId}/view`;
     return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+  };
+
+  const buildFileThumbnailUrl = (fileId: string, version?: string | null) => {
+    const token = getAccessToken();
+    const baseUrl = `${apiBase}/material-files/${fileId}/thumbnail`;
+    const url = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+    return version ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}` : url;
   };
 
   const activeTab = useMemo(() => {
@@ -238,6 +312,8 @@ export function AppSideBar() {
     }
     return realPaths.find((p) => String(p?.id || "") === String(pathContextPathId)) ?? null;
   }, [activePathFromProvider, pathContextPathId, realPaths]);
+
+  const activeBuild = useMemo(() => buildProgressState(activePath), [activePath]);
 
   useEffect(() => {
     // Track last "normal" nav tab so the path switcher can return to it.
@@ -294,40 +370,7 @@ export function AppSideBar() {
     });
   }, [activePathId, activatePath, isAuthenticated, pathIdFromRoute]);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setFiles([]);
-      setFilesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const loadFiles = async () => {
-      setFilesLoading(true);
-      try {
-        const loaded = await listUserMaterialFiles();
-        if (cancelled) return;
-        const sorted = (loaded || []).slice().sort((a, b) => {
-          const ad = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
-          const bd = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
-          return bd - ad;
-        });
-        setFiles(sorted);
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[AppSideBar] Failed to load material files:", err);
-          setFiles([]);
-        }
-      } finally {
-        if (!cancelled) setFilesLoading(false);
-      }
-    };
-    loadFiles();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
-
-  const visibleFiles = useMemo(() => files.slice(0, 12), [files]);
+  const visibleFiles = useMemo(() => (materialFiles || []).slice(0, 12), [materialFiles]);
 
   const handleGenerateCover = async (path: Path, force: boolean) => {
     if (!path?.id) return;
@@ -361,15 +404,20 @@ export function AppSideBar() {
                         onClick={() => toggleSidebar()}
                       >
                         <span
-                          className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
+                          className={cn(
+                            "flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full",
+                            activeBuild.showProgress ? "" : "border border-border/60 bg-muted/40"
+                          )}
                           style={
-                            getPathAvatarUrl(activePath)
+                            activeBuild.showProgress || getPathAvatarUrl(activePath)
                               ? undefined
                               : { backgroundColor: pickPathColor(String(activePath?.id || pathContextPathId || "")) }
                           }
                           aria-hidden="true"
                         >
-                          {getPathAvatarUrl(activePath) ? (
+                          {activeBuild.showProgress ? (
+                            <ProgressRing size={28} progress={activeBuild.progressPct} strokeWidth={3} />
+                          ) : getPathAvatarUrl(activePath) ? (
                             <img
                               src={getPathAvatarUrl(activePath) as string}
                               alt=""
@@ -442,15 +490,20 @@ export function AppSideBar() {
                   >
                     <div className="flex items-center justify-center" style={{ cursor: "pointer" }}>
                       <span
-                        className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
+                        className={cn(
+                          "flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full",
+                          activeBuild.showProgress ? "" : "border border-border/60 bg-muted/40"
+                        )}
                         style={
-                          getPathAvatarUrl(activePath)
+                          activeBuild.showProgress || getPathAvatarUrl(activePath)
                             ? undefined
                             : { backgroundColor: pickPathColor(String(activePath?.id || pathContextPathId || "")) }
                         }
                         aria-hidden="true"
                       >
-                        {getPathAvatarUrl(activePath) ? (
+                        {activeBuild.showProgress ? (
+                          <ProgressRing size={28} progress={activeBuild.progressPct} strokeWidth={3} />
+                        ) : getPathAvatarUrl(activePath) ? (
                           <img
                             src={getPathAvatarUrl(activePath) as string}
                             alt=""
@@ -691,6 +744,7 @@ export function AppSideBar() {
                       realPaths.slice(0, 12).map((p) => {
                         const coverUrl = getPathAvatarUrl(p);
                         const fallbackColor = pickPathColor(String(p?.id || p?.title || ""));
+                        const build = buildProgressState(p);
                         const isGenerating = coverLoadingId === p.id;
                         const isActionHover = actionHoverId === p.id;
                         const actionLabel = coverUrl ? "Regenerate avatar" : "Generate avatar";
@@ -714,11 +768,18 @@ export function AppSideBar() {
                               >
                                 <Link to={`/paths/${p.id}`} aria-label={`Open ${pathLabel(p)}`}>
                                   <span
-                                    className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
-                                    style={coverUrl ? undefined : { backgroundColor: fallbackColor }}
+                                    className={cn(
+                                      "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full",
+                                      build.showProgress ? "" : "border border-border/60 bg-muted/40"
+                                    )}
+                                    style={
+                                      build.showProgress || coverUrl ? undefined : { backgroundColor: fallbackColor }
+                                    }
                                     aria-hidden="true"
                                   >
-                                    {coverUrl ? (
+                                    {build.showProgress ? (
+                                      <ProgressRing size={20} progress={build.progressPct} strokeWidth={3} />
+                                    ) : coverUrl ? (
                                       <img
                                         src={coverUrl}
                                         alt=""
@@ -783,7 +844,7 @@ export function AppSideBar() {
                 <SidebarGroup className="px-0">
                   <SidebarGroupLabel>Your files</SidebarGroupLabel>
                   <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
-                    {filesLoading && visibleFiles.length === 0 ? (
+                    {materialFilesLoading && visibleFiles.length === 0 ? (
                       <SidebarMenuSubItem>
                         <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
                           Loading files...
@@ -799,6 +860,10 @@ export function AppSideBar() {
                       visibleFiles.map((file) => {
                         const Icon = fileIcon(file);
                         const label = fileLabel(file);
+                        const thumbVersion = String(file?.updatedAt || file?.createdAt || "");
+                        const thumbUrl = buildFileThumbnailUrl(file.id, thumbVersion);
+                        const thumbKey = `${file.id}:${thumbVersion}`;
+                        const showThumb = Boolean(thumbUrl) && !fileThumbErrors[thumbKey];
                         return (
                           <SidebarMenuSubItem key={file.id}>
                             <div className="flex w-full items-center gap-1 rounded-xl transition-colors hover:bg-sidebar-accent/70">
@@ -813,7 +878,20 @@ export function AppSideBar() {
                                   aria-label={`Open ${label}`}
                                 >
                                   <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
-                                    <Icon className="h-4 w-4" />
+                                    {showThumb ? (
+                                      <img
+                                        src={thumbUrl}
+                                        alt=""
+                                        loading="lazy"
+                                        decoding="async"
+                                        className="h-full w-full object-cover"
+                                        onError={() => {
+                                          setFileThumbErrors((prev) => ({ ...prev, [thumbKey]: true }));
+                                        }}
+                                      />
+                                    ) : (
+                                      <Icon className="h-4 w-4" />
+                                    )}
                                   </span>
                                   <span className="truncate">{label}</span>
                                 </a>

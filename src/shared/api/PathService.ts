@@ -122,6 +122,12 @@ export async function getPath(pathId: string): Promise<Path | null> {
   return mapPath(resp.data?.path ?? null);
 }
 
+export async function deletePath(pathId: string): Promise<boolean> {
+  if (!pathId) throw new Error("deletePath: missing pathId");
+  await axiosClient.delete(`/paths/${pathId}`);
+  return true;
+}
+
 export async function recordPathView(pathId: string): Promise<Path | null> {
   if (!pathId) throw new Error("recordPathView: missing pathId");
   const resp = await axiosClient.post<BackendPathDetailResponse>(`/paths/${pathId}/view`, {});

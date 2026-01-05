@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { File as FileIcon, FileText, Image as ImageIcon, Video } from "lucide-react";
+import { Ellipsis, File as FileIcon, FileText, Image as ImageIcon, Video } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import type { MaterialFile } from "@/shared/types/models";
 import { getAccessToken } from "@/shared/services/StorageService";
 import { cn } from "@/shared/lib/utils";
@@ -121,12 +127,35 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
   const showThumb = Boolean(thumbUrl) && !thumbError;
 
   const card = (
-    <Card className="group transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
+    <Card className="group relative transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
+      <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+              aria-label="File options"
+              title="Options"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <Ellipsis className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={10} className="w-44">
+            <DropdownMenuItem disabled onSelect={(e) => e.preventDefault()}>
+              More actions soon
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       <CardHeader>
         <div className="space-y-3">
           <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-start gap-2">
                 <Badge>File</Badge>
                 <Badge variant="subtle">{typeBadgeText}</Badge>
               </div>

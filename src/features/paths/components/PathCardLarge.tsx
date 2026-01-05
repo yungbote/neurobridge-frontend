@@ -1,6 +1,19 @@
+import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
+import { Ellipsis, RotateCcw, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
+import { restartJob } from "@/shared/api/JobService";
+import { deletePath } from "@/shared/api/PathService";
+import { useMaterials } from "@/app/providers/MaterialProvider";
+import { usePaths } from "@/app/providers/PathProvider";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import type { Path } from "@/shared/types/models";
 
@@ -58,6 +71,10 @@ function getPathAvatarUrl(path: Path | null | undefined, meta: JsonRecord | null
 export function PathCardLarge({ path }: PathCardLargeProps) {
   if (!path) return null;
 
+  const { activePathId, clearActivePath, reload } = usePaths();
+  const { reload: reloadMaterials } = useMaterials();
+  const [action, setAction] = useState<"retry" | "trash" | null>(null);
+
   const isPlaceholder = String(path.id || "").startsWith("job:");
 
   const jobStatus = String(path.jobStatus || "").toLowerCase();
@@ -98,14 +115,103 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   const strokeDashoffset =
     circumference - (progressPercentage / 100) * circumference;
 
+  const canRetry = Boolean(path.jobId) && isFailed;
+  const canTrash = isFailed && !isPlaceholder;
+  const showFailedActions = canRetry || canTrash;
+
+  const handleRetry = useCallback(async () => {
+    const jobId = path.jobId ? String(path.jobId) : "";
+    if (!jobId) return;
+    setAction("retry");
+    try {
+      await restartJob(jobId);
+      await reload();
+    } catch (err) {
+      console.error("[PathCardLarge] Retry failed:", err);
+    } finally {
+      setAction(null);
+    }
+  }, [path.jobId, reload]);
+
+  const handleTrash = useCallback(async () => {
+    const pathId = String(path.id || "");
+    if (!pathId || pathId.startsWith("job:")) return;
+    setAction("trash");
+    try {
+      await deletePath(pathId);
+      if (activePathId && String(activePathId) === pathId) {
+        clearActivePath();
+      }
+      await Promise.all([reload(), reloadMaterials()]);
+    } catch (err) {
+      console.error("[PathCardLarge] Trash failed:", err);
+    } finally {
+      setAction(null);
+    }
+  }, [activePathId, clearActivePath, path.id, reload, reloadMaterials]);
+
   const card = (
-    <Card className="group transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
+    <Card className="group relative transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
+      <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+              aria-label="Path options"
+              title="Options"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <Ellipsis className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={10} className="w-44">
+            {showFailedActions ? (
+              <>
+                <DropdownMenuItem
+                  disabled={!canRetry || action !== null}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    void handleRetry();
+                  }}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retry
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={!canTrash || action !== null}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    void handleTrash();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Trash
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <DropdownMenuItem
+                disabled
+                onSelect={(e) => e.preventDefault()}
+              >
+                More actions soon
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       <CardHeader>
         <div className="space-y-3">
           <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-start gap-2">
                 <Badge>Path</Badge>
+                {isFailed && <Badge variant="destructive">Failed</Badge>}
               </div>
               <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">
                 {titleText}

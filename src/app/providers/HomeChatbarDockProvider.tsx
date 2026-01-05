@@ -31,4 +31,3 @@ export function HomeChatbarDockProvider({ children }: { children: React.ReactNod
 export function useHomeChatbarDock() {
   return useContext(HomeChatbarDockContext);
 }
-

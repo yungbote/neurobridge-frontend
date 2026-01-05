@@ -22,7 +22,24 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { cn } from "@/shared/lib/utils";
-import { ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import {
+  Atom,
+  Brain,
+  ChevronLeft,
+  ChevronRight,
+  CircleDashed,
+  Cpu,
+  Filter,
+  FlaskConical,
+  HeartPulse,
+  Landmark,
+  Leaf,
+  ScrollText,
+  Sigma,
+  Sparkles,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
 import type { LibraryTaxonomySnapshotV1, MaterialFile, Path } from "@/shared/types/models";
 
 export type HomeTabKey = "home" | "in-progress" | "saved" | "completed" | "recently-viewed";
@@ -170,6 +187,7 @@ type HomeCardItem =
 type HomeRailSection = {
   id: string;
   title: string;
+  iconKey?: string;
   items: HomeCardItem[];
 };
 
@@ -187,6 +205,70 @@ const TOPIC_ANCHOR_KEY_ORDER = [
   "anchor_history",
   "anchor_philosophy",
 ] as const;
+
+type HomeSectionIconConfig = {
+  icon: LucideIcon;
+};
+
+const HOME_SECTION_ICONS: Record<string, HomeSectionIconConfig> = {
+  generating: {
+    icon: CircleDashed,
+  },
+  new: {
+    icon: Sparkles,
+  },
+  anchor_physics: {
+    icon: Atom,
+  },
+  anchor_biology: {
+    icon: Leaf,
+  },
+  anchor_chemistry: {
+    icon: FlaskConical,
+  },
+  anchor_mathematics: {
+    icon: Sigma,
+  },
+  anchor_computer_science: {
+    icon: Cpu,
+  },
+  anchor_medicine_health: {
+    icon: HeartPulse,
+  },
+  anchor_psychology_neuroscience: {
+    icon: Brain,
+  },
+  anchor_economics_business: {
+    icon: TrendingUp,
+  },
+  anchor_history: {
+    icon: Landmark,
+  },
+  anchor_philosophy: {
+    icon: ScrollText,
+  },
+};
+
+function HomeSectionIcon({ iconKey, title }: { iconKey?: string; title: string }) {
+  const key = String(iconKey || "").trim();
+  const cfg = (key && HOME_SECTION_ICONS[key]) || null;
+  if (!cfg) return null;
+  const Icon = cfg.icon;
+
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60",
+        "bg-gradient-to-br from-background/80 via-background/60 to-muted/30 shadow-sm backdrop-blur-sm",
+        "ring-1 ring-inset ring-white/10 dark:ring-white/5",
+        "shadow-[0_1px_0_rgba(255,255,255,0.10)_inset]"
+      )}
+    >
+      <Icon className="h-4 w-4 text-muted-foreground" />
+    </div>
+  );
+}
 
 export function HomeTabContent({
   activeTab,
@@ -224,7 +306,8 @@ export function HomeTabContent({
   const homeSections = useMemo<HomeRailSection[]>(() => {
     if (!isHome) return [];
 
-    const buildItems = (sectionPaths: Path[]): HomeCardItem[] => {
+    const buildItems = (sectionPaths: Path[], opts: { includeMaterials?: boolean } = {}): HomeCardItem[] => {
+      const includeMaterials = opts.includeMaterials !== false;
       const out: HomeCardItem[] = [];
       const seen = new Set<string>();
 
@@ -237,17 +320,19 @@ export function HomeTabContent({
         out.push({ kind: "path", id, path: p });
       }
 
-      for (const p of sectionPaths || []) {
-        const setId = String(p?.materialSetId || "");
-        if (!setId) continue;
-        const rows = filesByMaterialSetId.get(setId) ?? [];
-        for (const f of rows) {
-          const id = String(f?.id || "");
-          if (!id) continue;
-          const key = `material:${id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push({ kind: "material", id, file: f });
+      if (includeMaterials) {
+        for (const p of sectionPaths || []) {
+          const setId = String(p?.materialSetId || "");
+          if (!setId) continue;
+          const rows = filesByMaterialSetId.get(setId) ?? [];
+          for (const f of rows) {
+            const id = String(f?.id || "");
+            if (!id) continue;
+            const key = `material:${id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ kind: "material", id, file: f });
+          }
         }
       }
 
@@ -298,12 +383,14 @@ export function HomeTabContent({
       sections.push({
         id: "generating",
         title: "Generating",
-        items: buildItems(generating),
+        iconKey: "generating",
+        items: buildItems(generating, { includeMaterials: false }),
       });
     }
     sections.push({
       id: "new",
       title: "New",
+      iconKey: "new",
       items: buildItems(newPaths),
     });
 
@@ -387,6 +474,7 @@ export function HomeTabContent({
       topicSections.push({
         id: node.id,
         title: node.name || "Untitled",
+        iconKey: String(node.key || ""),
         items: buildItems(ordered),
       });
     }
@@ -443,7 +531,12 @@ export function HomeTabContent({
     return (
       <div className="w-full space-y-12">
         {homeSections.map((section) => (
-          <HomeRail key={section.id} title={section.title} items={section.items} />
+          <HomeRail
+            key={section.id}
+            title={section.title}
+            iconKey={section.iconKey}
+            items={section.items}
+          />
         ))}
       </div>
     );
@@ -469,7 +562,7 @@ export function HomeTabContent({
   );
 }
 
-function HomeRail({ title, items }: { title: string; items: HomeCardItem[] }) {
+function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; items: HomeCardItem[] }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const [filter, setFilter] = useState<HomeRailFilterValue>("all");
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -541,7 +634,8 @@ function HomeRail({ title, items }: { title: string; items: HomeCardItem[] }) {
   return (
     <section className="space-y-4">
       <div className="flex items-end justify-between gap-4">
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-3">
+          <HomeSectionIcon iconKey={iconKey} title={title} />
           <h2 className="font-brand text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             {title}
           </h2>
@@ -551,10 +645,10 @@ function HomeRail({ title, items }: { title: string; items: HomeCardItem[] }) {
               <button
                 type="button"
                 className={cn(
-                  "group ml-1 inline-flex h-9 items-center justify-center transition-colors",
+                  "group ml-1 inline-flex h-8 items-center justify-center transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
                   filter === "all"
-                    ? "w-9 rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted/40 hover:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
+                    ? "w-8 rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted/40 hover:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
                     : "rounded-full p-0 text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
                 )}
                 aria-label={
