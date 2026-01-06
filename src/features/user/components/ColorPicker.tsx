@@ -140,7 +140,7 @@ export function ColorPicker({
               }}
               className={cn(
                 "absolute rounded-full flex items-center justify-center",
-                "transition-all ease-[cubic-bezier(0.4,0,0.2,1)]",
+                "transition nb-ease-out motion-reduce:transition-none",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               )}
               style={{
@@ -153,14 +153,14 @@ export function ColorPicker({
                   : "translate(-50%, -50%)",
                 opacity: isExpanded ? 1 : 0,
                 transitionDelay: isExpanded ? `${index * 18}ms` : "0ms",
-                transitionDuration: "150ms",
+                transitionDuration: "var(--nb-dur-micro)",
               }}
               aria-label={`Select color ${color}`}
               aria-pressed={isSelected}
             >
               <div
                 className={cn(
-                  "h-full w-full rounded-full shadow-md ring-1 ring-black/10 transition-transform",
+                  "h-full w-full rounded-full shadow-md ring-1 ring-black/10 transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
                   "hover:scale-125",
                   isSelected && "ring-2 ring-white shadow-lg scale-110"
                 )}
@@ -179,7 +179,6 @@ export function ColorPicker({
     </div>
   );
 }
-
 
 
 

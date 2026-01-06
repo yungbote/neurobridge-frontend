@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { m } from "framer-motion";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { MaterialCardLarge } from "@/features/files/components/MaterialCardLarge";
 import { EmptyContent } from "@/shared/components/EmptyContent";
@@ -23,6 +24,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/lib/utils";
+import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 import {
   Atom,
   Brain,
@@ -968,8 +970,12 @@ function HomeRail({
               </DialogHeader>
               <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
                 {visibleItems.slice(0, Math.max(0, viewAllRenderCount || 0)).map((item) => (
-                  <div
+                  <m.div
                     key={`${item.kind}:${item.id}`}
+                    initial="initial"
+                    animate="animate"
+                    variants={nbFadeUp}
+                    transition={nbTransitions.micro}
                     style={{ contentVisibility: "auto", containIntrinsicSize: "280px" }}
                   >
                     {item.kind === "material" ? (
@@ -977,7 +983,7 @@ function HomeRail({
                     ) : (
                       <PathCardLarge path={item.path} />
                     )}
-                  </div>
+                  </m.div>
                 ))}
                 {(loadingMore || viewAllRenderCount < visibleItems.length) &&
                   Array.from({ length: 6 }).map((_, i) => (

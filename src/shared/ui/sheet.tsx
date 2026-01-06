@@ -44,7 +44,7 @@ function SheetOverlay({
   const motion =
     animation === "none"
       ? "transition-none duration-0"
-      : "transition-opacity data-[state=open]:duration-200 data-[state=closed]:duration-150"
+      : "transition-opacity ease-[var(--nb-ease-out)] data-[state=open]:duration-[var(--nb-dur)] data-[state=closed]:duration-[var(--nb-dur-micro)]"
 
   return (
     <SheetPrimitive.Overlay
@@ -100,8 +100,8 @@ function SheetContent({
     animation === "none"
       ? "transform-gpu transition-none duration-0"
       : animation === "fade"
-        ? "transform-gpu transition-opacity data-[state=open]:duration-150 data-[state=closed]:duration-150"
-        : "transform-gpu transition-transform ease-in-out data-[state=open]:duration-500 data-[state=closed]:duration-300"
+        ? "transform-gpu transition-opacity ease-[var(--nb-ease-out)] duration-[var(--nb-dur)]"
+        : "transform-gpu transition-transform ease-[var(--nb-ease-out)] data-[state=open]:duration-[var(--nb-dur-panel)] data-[state=closed]:duration-[var(--nb-dur)]"
 
   const transform =
     animation === "fade" ? "" : cn(closedTransform, openTransform)
@@ -183,7 +183,6 @@ export {
   SheetTitle,
   SheetDescription,
 };
-
 
 
 

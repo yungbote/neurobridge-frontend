@@ -27,6 +27,8 @@ import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { Container } from "@/shared/layout/Container";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { m } from "framer-motion";
+import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 import type { ChatMessage as ChatMessageModel, ChatThread, JsonInput, Path, PathNode } from "@/shared/types/models";
 
 type DeltaState = { attempt: number; deltaSeq: number };
@@ -325,6 +327,7 @@ export default function ChatThreadPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasOlder, setHasOlder] = useState(true);
   const [sendError, setSendError] = useState("");
+  const [enableMessageEntryMotion, setEnableMessageEntryMotion] = useState(false);
 
   const [blockNode, setBlockNode] = useState<PathNode | null>(null);
   const [blockDoc, setBlockDoc] = useState<JsonInput>(null);
@@ -343,10 +346,33 @@ export default function ChatThreadPage() {
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const loadingOlderRef = useRef(false);
+  const seenMessageIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     pathCacheRef.current = pathCache;
   }, [pathCache]);
+
+  useEffect(() => {
+    seenMessageIdsRef.current = new Set();
+    setEnableMessageEntryMotion(false);
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!threadId) return;
+    if (!enableMessageEntryMotion) {
+      if (messages.length === 0) return;
+      const seen = seenMessageIdsRef.current;
+      for (const msg of messages) {
+        if (msg?.id) seen.add(String(msg.id));
+      }
+      setEnableMessageEntryMotion(true);
+      return;
+    }
+    const seen = seenMessageIdsRef.current;
+    for (const msg of messages) {
+      if (msg?.id) seen.add(String(msg.id));
+    }
+  }, [enableMessageEntryMotion, messages, threadId]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef(true);
@@ -1119,10 +1145,12 @@ export default function ChatThreadPage() {
                 ) : null}
               </div>
             </div>
-            {(messages || []).map((m) => {
-              const role = String(m?.role || "").toLowerCase();
+            {(messages || []).map((msg) => {
+              const role = String(msg?.role || "").toLowerCase();
               const variant = role === "user" ? "user" : "assistant";
-              const kind = messageKindFromMetadata(m?.metadata);
+              const kind = messageKindFromMetadata(msg?.metadata);
+              const shouldAnimate =
+                enableMessageEntryMotion && !loadingOlder && !seenMessageIdsRef.current.has(String(msg.id || ""));
 
               if (kind === "path_generation") {
                 const statusLabel =
@@ -1137,8 +1165,12 @@ export default function ChatThreadPage() {
                 const defaultExpanded = learningBuildActive || learningBuildCanceled;
 
                 return (
-                  <div
-                    key={m.id}
+                  <m.div
+                    key={msg.id}
+                    initial={shouldAnimate ? "initial" : false}
+                    animate="animate"
+                    variants={nbFadeUp}
+                    transition={nbTransitions.micro}
                     style={{ contentVisibility: "auto", containIntrinsicSize: "180px" }}
                   >
                     <ChatMessage variant={variant} showActions={false}>
@@ -1151,22 +1183,26 @@ export default function ChatThreadPage() {
                         {buildLog ? buildLog : <div>Working…</div>}
                       </GenerationCard>
                     </ChatMessage>
-                  </div>
+                  </m.div>
                 );
               }
 
               if (kind === "path_ready") {
-                const pid = stringFromMetadata(m?.metadata, ["path_id", "pathId"]);
+                const pid = stringFromMetadata(msg?.metadata, ["path_id", "pathId"]);
                 const hasPath = pid ? Object.prototype.hasOwnProperty.call(pathCache, pid) : false;
                 const path = pid ? pathCache[pid] : null;
                 return (
-                  <div
-                    key={m.id}
+                  <m.div
+                    key={msg.id}
+                    initial={shouldAnimate ? "initial" : false}
+                    animate="animate"
+                    variants={nbFadeUp}
+                    transition={nbTransitions.micro}
                     style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}
                   >
                     <ChatMessage variant={variant}>
                       <div className="space-y-4">
-                        {renderMessageContent(m)}
+                        {renderMessageContent(msg)}
                         {pid ? (
                           path ? (
                             <PathCardLarge path={path} />
@@ -1186,19 +1222,23 @@ export default function ChatThreadPage() {
                         ) : null}
                       </div>
                     </ChatMessage>
-                  </div>
+                  </m.div>
                 );
               }
 
               return (
-                <div
-                  key={m.id}
+                <m.div
+                  key={msg.id}
+                  initial={shouldAnimate ? "initial" : false}
+                  animate="animate"
+                  variants={nbFadeUp}
+                  transition={nbTransitions.micro}
                   style={{ contentVisibility: "auto", containIntrinsicSize: "120px" }}
                 >
                   <ChatMessage variant={variant}>
-                    {renderMessageContent(m)}
+                    {renderMessageContent(msg)}
                   </ChatMessage>
-                </div>
+                </m.div>
               );
             })}
 
@@ -1221,7 +1261,7 @@ export default function ChatThreadPage() {
             <button
               type="button"
               onClick={() => scrollToBottom("smooth")}
-              className="absolute left-1/2 top-0 z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-[calc(50%+6px)] items-center justify-center rounded-full border border-border bg-background/95 shadow-lg transition hover:bg-muted"
+              className="absolute left-1/2 top-0 z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-[calc(50%+6px)] items-center justify-center rounded-full border border-border bg-background/95 shadow-lg nb-motion-fast motion-reduce:transition-none hover:bg-muted"
               aria-label="Scroll to bottom"
             >
               <ArrowDown className="h-4 w-4 text-muted-foreground" />

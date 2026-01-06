@@ -1,11 +1,13 @@
 import React, { useMemo } from "react";
 import { Files } from "lucide-react";
+import { AnimatePresence, m } from "framer-motion";
 
 import { useMaterials } from "@/app/providers/MaterialProvider";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { Container } from "@/shared/layout/Container";
 import type { MaterialFile } from "@/shared/types/models";
 import { MaterialCardLarge } from "@/features/files/components/MaterialCardLarge";
+import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 
 export default function FilesPage() {
   const { files, loading } = useMaterials();
@@ -41,9 +43,21 @@ export default function FilesPage() {
           />
         ) : (
           <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
-            {visible.map((file) => (
-              <MaterialCardLarge key={file.id} file={file} />
-            ))}
+            <AnimatePresence initial={false}>
+              {visible.map((file) => (
+                <m.div
+                  key={file.id}
+                  layout="position"
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={nbFadeUp}
+                  transition={nbTransitions.micro}
+                >
+                  <MaterialCardLarge file={file} />
+                </m.div>
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </Container>

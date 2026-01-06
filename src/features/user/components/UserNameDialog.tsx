@@ -268,7 +268,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
             {/* Upload */}
             <button
               type="button"
-              className="absolute bottom-0 right-0 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background/80 shadow-sm backdrop-blur-sm transition-colors group-hover:bg-muted/60"
+              className="absolute bottom-0 right-0 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background/80 shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none group-hover:bg-muted/60"
               aria-label="Upload profile picture"
               onClick={handlePickUpload}
               disabled={submitting}

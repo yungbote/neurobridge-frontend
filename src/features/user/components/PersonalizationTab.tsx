@@ -926,7 +926,7 @@ export function PersonalizationTab() {
           </div>
           <div
             className={cn(
-              "flex items-center gap-1.5 text-xs text-muted-foreground transition-opacity",
+              "flex items-center gap-1.5 text-xs text-muted-foreground transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none",
               justSaved ? "opacity-100" : "opacity-0"
             )}
             aria-live="polite"

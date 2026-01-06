@@ -195,13 +195,13 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
   );
 
   const card = (
-    <Card className="group relative w-full max-w-[360px] transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
-      <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+    <Card className="group relative w-full max-w-[360px] nb-motion-fast motion-reduce:transition-none hover:border-foreground/20 hover:shadow-md">
+      <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity nb-duration-micro nb-ease-out group-hover:opacity-100 group-focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
               aria-label="File options"
               title="Options"
               onClick={(e) => {
@@ -261,7 +261,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
                     alt={`Thumbnail for ${titleText}`}
                     loading="lazy"
                     decoding="async"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    className="h-full w-full object-cover transform-gpu transition-transform nb-duration nb-ease-out motion-reduce:transition-none group-hover:scale-[1.02]"
                     onError={() => setThumbError(true)}
                   />
                 ) : (

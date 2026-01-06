@@ -74,6 +74,95 @@
   .section-pad {
     @apply py-10 sm:py-16;
   }
+
+  /* === Motion system (OpenAI-style: snappy + consistent) === */
+  .nb-ease-out {
+    transition-timing-function: var(--nb-ease-out);
+  }
+
+  .nb-ease-in-out {
+    transition-timing-function: var(--nb-ease-in-out);
+  }
+
+  .nb-duration-micro {
+    transition-duration: var(--nb-dur-micro);
+  }
+
+  .nb-duration {
+    transition-duration: var(--nb-dur);
+  }
+
+  .nb-duration-panel {
+    transition-duration: var(--nb-dur-panel);
+  }
+
+  .nb-anim-ease-out {
+    animation-timing-function: var(--nb-ease-out);
+  }
+
+  .nb-anim-duration-micro {
+    animation-duration: var(--nb-dur-micro);
+  }
+
+  .nb-anim-duration {
+    animation-duration: var(--nb-dur);
+  }
+
+  .nb-anim-duration-panel {
+    animation-duration: var(--nb-dur-panel);
+  }
+
+  .nb-motion-fast {
+    transition-property: color, background-color, border-color, opacity, box-shadow, transform, filter;
+    transition-duration: var(--nb-dur-micro);
+    transition-timing-function: var(--nb-ease-out);
+  }
+
+  .nb-motion {
+    transition-property: color, background-color, border-color, opacity, box-shadow, transform, filter;
+    transition-duration: var(--nb-dur);
+    transition-timing-function: var(--nb-ease-out);
+  }
+
+  .nb-motion-panel {
+    transition-property: width, left, right, transform, opacity;
+    transition-duration: var(--nb-dur-panel);
+    transition-timing-function: var(--nb-ease-out);
+  }
+
+  .nb-will-change-width {
+    will-change: width;
+  }
+
+  .nb-will-change-sidebar {
+    will-change: width, left, right, transform;
+  }
+
+  /* Sidebar scrollbar (overrides global scrollbar hiding) */
+  .nb-scrollbar-sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--sidebar-foreground) 22%, transparent) transparent;
+  }
+
+  .nb-scrollbar-sidebar::-webkit-scrollbar {
+    display: block;
+    width: 10px;
+  }
+
+  .nb-scrollbar-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .nb-scrollbar-sidebar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--sidebar-foreground) 22%, transparent);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  .nb-scrollbar-sidebar:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--sidebar-foreground) 32%, transparent);
+  }
 }
 
 @layer base {
@@ -120,6 +209,13 @@
 
   --radius: 0.625rem;
 
+  /* === motion tokens === */
+  --nb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --nb-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --nb-dur-micro: 90ms;
+  --nb-dur: 150ms;
+  --nb-dur-panel: 200ms;
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -154,6 +250,14 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --nb-dur-micro: 1ms;
+    --nb-dur: 1ms;
+    --nb-dur-panel: 1ms;
+  }
 }
 
 /* === shadcn theme variables (dark mode) === */
@@ -1059,10 +1163,6 @@
     height: auto;
   }
 }
-
-
-
-
 
 
 

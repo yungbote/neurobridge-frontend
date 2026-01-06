@@ -5,6 +5,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/sheet"
 import { useIsMobile } from "@/app/providers/ViewportProvider";
 import { cn } from "@/shared/lib/utils";
 import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
+import { AnimatePresence, m } from "framer-motion";
+import { nbPanelRight, nbTransitions } from "@/shared/motion/presets";
 
 export function ActivityPanel() {
   const isMobile = useIsMobile();
@@ -87,7 +89,7 @@ export function ActivityPanel() {
                   <div className="mt-2">
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                       <div
-                        className="h-full rounded-full bg-primary transition-all duration-300"
+                        className="h-full rounded-full bg-primary transition-[width] nb-duration nb-ease-out motion-reduce:transition-none"
                         style={{ width: `${Math.max(0, Math.min(100, a.progress))}%` }}
                       />
                     </div>
@@ -120,26 +122,33 @@ export function ActivityPanel() {
     );
   }
 
-  if (!open) return null;
-
   return (
-    <div
-      style={{ width }}
-      className={cn(
-        "sticky top-0 h-svh shrink-0 border-l border-border bg-background/95 backdrop-blur flex flex-col relative"
-      )}
-    >
-      <div
-        onMouseDown={handleMouseDown}
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-muted/60 transition-colors"
-      >
-        <div className="absolute left-0 top-0 bottom-0 w-4 -translate-x-1/2" />
-      </div>
-      {Content}
-    </div>
+    <AnimatePresence initial={false} mode="popLayout">
+      {open ? (
+        <m.div
+          key="activity-panel"
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={nbPanelRight}
+          transition={nbTransitions.panel}
+          style={{ width }}
+          className={cn(
+            "sticky top-0 h-svh shrink-0 border-l border-border bg-background/95 backdrop-blur flex flex-col relative"
+          )}
+        >
+          <div
+            onMouseDown={handleMouseDown}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize nb-motion-fast motion-reduce:transition-none hover:bg-muted/60"
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-4 -translate-x-1/2" />
+          </div>
+          {Content}
+        </m.div>
+      ) : null}
+    </AnimatePresence>
   );
 }
-
 
 
 

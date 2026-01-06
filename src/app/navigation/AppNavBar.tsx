@@ -34,6 +34,8 @@ import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
 import { Container } from "@/shared/layout/Container";
 import { useSidebar } from "@/shared/ui/sidebar";
 import { cn } from "@/shared/lib/utils";
+import { m } from "framer-motion";
+import { nbTransitions } from "@/shared/motion/presets";
 
 const PATH_NAV_TABS = [
   { id: "materials", label: "Materials", icon: FolderOpen },
@@ -142,11 +144,15 @@ export function AppNavBar() {
         )}
 
         {isAuthenticated && isHome && !showPathTabs && (
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-0 flex items-center justify-center transition-all duration-200 ease-out transform-gpu",
-              showHomeChatbarDock ? "opacity-100 scale-100" : "opacity-0 scale-[0.98]"
-            )}
+          <m.div
+            initial={false}
+            animate={showHomeChatbarDock ? "open" : "closed"}
+            variants={{
+              open: { opacity: 1, scale: 1 },
+              closed: { opacity: 0, scale: 0.985 },
+            }}
+            transition={nbTransitions.default}
+            className="pointer-events-none absolute inset-0 flex items-center justify-center transform-gpu"
             aria-hidden={!showHomeChatbarDock}
           >
             <div
@@ -157,7 +163,7 @@ export function AppNavBar() {
             >
               <div id="home-chatbar-navbar-slot" />
             </div>
-          </div>
+          </m.div>
         )}
 
         {showPathTabs && (
@@ -178,7 +184,7 @@ export function AppNavBar() {
                     aria-selected={isActive}
                     onClick={() => handlePathTabClick(tab.id)}
                     className={cn(
-                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 sm:text-sm",
+                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium nb-motion-fast motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 sm:text-sm",
                       isActive
                         ? "bg-foreground text-background shadow-sm"
                         : "text-muted-foreground hover:text-foreground hover:bg-background/70"

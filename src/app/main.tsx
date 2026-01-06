@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { domAnimation, LazyMotion, MotionConfig } from "framer-motion";
 import { ViewportProvider } from "@/app/providers/ViewportProvider";
 import { ThemeProvider, ThemeSync } from "@/app/providers/ThemeProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
@@ -10,6 +11,7 @@ import { UserProvider } from "@/app/providers/UserProvider";
 import { PathProvider } from "@/app/providers/PathProvider";
 import { MaterialProvider } from "@/app/providers/MaterialProvider";
 import { LessonProvider } from "@/app/providers/LessonProvider";
+import { nbMotion } from "@/shared/motion/neurobridgeMotion";
 import App from "./App";
 import "@/styles/index.css";
 
@@ -22,29 +24,31 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <QueryClientProvider client={queryClient}>
-    <ViewportProvider>
-      <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
-        <AuthProvider>
-          <SSEGate>
-            <UserProvider>
-              <ThemeSync />
-              <PathProvider>
-                <MaterialProvider>
-                  <LessonProvider>
-                    <HomeChatbarDockProvider>
-                      <App />
-                    </HomeChatbarDockProvider>
-                  </LessonProvider>
-                </MaterialProvider>
-              </PathProvider>
-            </UserProvider>
-          </SSEGate>
-        </AuthProvider>
-      </ThemeProvider>
-    </ViewportProvider>
+    <LazyMotion features={domAnimation}>
+      <MotionConfig reducedMotion="user" transition={nbMotion.transition}>
+        <ViewportProvider>
+          <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
+            <AuthProvider>
+              <SSEGate>
+                <UserProvider>
+                  <ThemeSync />
+                  <PathProvider>
+                    <MaterialProvider>
+                      <LessonProvider>
+                        <HomeChatbarDockProvider>
+                          <App />
+                        </HomeChatbarDockProvider>
+                      </LessonProvider>
+                    </MaterialProvider>
+                  </PathProvider>
+                </UserProvider>
+              </SSEGate>
+            </AuthProvider>
+          </ThemeProvider>
+        </ViewportProvider>
+      </MotionConfig>
+    </LazyMotion>
     <ReactQueryDevtools initialIsOpen={false} />
   </QueryClientProvider>
 );
-
-
 

@@ -194,7 +194,7 @@ export function FileUploadDialog({
           {/* Drop Zone */}
           <div
             className={cn(
-              "relative cursor-pointer rounded-lg border-2 border-dashed p-6 text-center transition-all hover:border-primary/50 hover:bg-muted/30 sm:p-8",
+              "relative cursor-pointer rounded-lg border-2 border-dashed p-6 text-center transform-gpu nb-motion-fast motion-reduce:transition-none hover:border-primary/50 hover:bg-muted/30 sm:p-8",
               isDragging ? "border-primary bg-primary/5 scale-[0.98]" : "border-border/60",
             )}
             onClick={() => fileInputRef.current?.click()}
@@ -209,13 +209,13 @@ export function FileUploadDialog({
             <div className="flex flex-col items-center gap-3">
               <div
                 className={cn(
-                  "h-12 w-12 rounded-full flex items-center justify-center transition-colors",
+                  "h-12 w-12 rounded-full flex items-center justify-center nb-motion-fast motion-reduce:transition-none",
                   isDragging ? "bg-primary/10" : "bg-muted",
                 )}
               >
                 <Upload
                   className={cn(
-                    "h-6 w-6 transition-colors",
+                    "h-6 w-6 nb-motion-fast motion-reduce:transition-none",
                     isDragging ? "text-primary" : "text-muted-foreground",
                   )}
                 />
@@ -330,7 +330,6 @@ export function FileUploadDialog({
     </Dialog>
   );
 }
-
 
 
 

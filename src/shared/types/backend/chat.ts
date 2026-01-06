@@ -34,6 +34,10 @@ export interface BackendChatThreadResponse {
   messages?: BackendChatMessage[];
 }
 
+export interface BackendChatThreadsResponse {
+  threads?: BackendChatThread[];
+}
+
 export interface BackendChatSendResponse {
   user_message?: BackendChatMessage | null;
   assistant_message?: BackendChatMessage | null;

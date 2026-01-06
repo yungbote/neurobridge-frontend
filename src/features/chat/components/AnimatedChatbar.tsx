@@ -667,10 +667,10 @@ export const AnimatedChatbar = ({
           isNavbar
             ? `
           relative bg-background/70 border border-border/60 dark:border-border rounded-full px-2 py-1.5
-          shadow-sm transition-shadow hover:shadow-md focus-within:shadow-md`
+          shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none hover:shadow-md focus-within:shadow-md`
             : `
           relative bg-background border border-border rounded-3xl px-3
-          sm:px-4 sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow
+          sm:px-4 sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none
           hover:shadow-md focus-within:shadow-md`,
           isDragging && !disableUploads && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
         )}
@@ -765,7 +765,7 @@ export const AnimatedChatbar = ({
             <button
               type="button"
               onClick={() => setFiles([])}
-              className="inline-flex shrink-0 items-center rounded-full border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+              className="inline-flex shrink-0 items-center rounded-full border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-muted"
               aria-label={`Clear ${files.length} attached file${files.length === 1 ? "" : "s"}`}
               title="Clear attached files"
             >
@@ -777,7 +777,7 @@ export const AnimatedChatbar = ({
               aria-hidden="true"
               className={cn(
                 cn(
-                  "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center transition-all duration-200 ease-out transform-gpu",
+                  "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center transition-[opacity,transform] nb-duration nb-ease-out transform-gpu motion-reduce:transition-none",
                   isNavbar ? "px-2" : "px-3"
                 ),
                 ghostClass

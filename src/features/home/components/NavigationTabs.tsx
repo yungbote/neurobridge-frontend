@@ -40,10 +40,10 @@ export function NavigationTabs({
               type="button"
               onClick={() => onTabChange(tab.id)}
               aria-current={activeTab === tab.id ? "page" : undefined}
-              className={`
-                font-brand relative flex items-center cursor-pointer gap-2.5 whitespace-nowrap py-3 text-base sm:text-lg font-medium transition-all duration-200
-                ${activeTab === tab.id ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"}
-              `}
+              className={cn(
+                "font-brand relative flex cursor-pointer items-center gap-2.5 whitespace-nowrap py-3 text-base font-medium nb-motion-fast motion-reduce:transition-none sm:text-lg",
+                activeTab === tab.id ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"
+              )}
             >
               {tab.icon}
               <span>{tab.label}</span>
@@ -57,6 +57,5 @@ export function NavigationTabs({
     </header>
   );
 }
-
 
 

@@ -21,6 +21,7 @@ import {
 } from "@/shared/ui/sidebar";
 import { AppLogo } from "@/shared/components/AppLogo";
 import {
+  ChevronDown,
   File as FileIcon,
   FileText,
   Files,
@@ -28,10 +29,12 @@ import {
   Home,
   ImageIcon,
   Library,
+  MessageSquare,
   MoreHorizontal,
   Sparkles,
   Video,
 } from "lucide-react";
+import { AnimatePresence, m } from "framer-motion";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useMaterials } from "@/app/providers/MaterialProvider";
 import { usePaths } from "@/app/providers/PathProvider";
@@ -39,8 +42,10 @@ import { useLessons } from "@/app/providers/LessonProvider";
 import type { MaterialFile, Path, PathNode } from "@/shared/types/models";
 import { cn } from "@/shared/lib/utils";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
+import { nbTransitions } from "@/shared/motion/presets";
 import { UserAvatar } from "@/features/user/components/UserAvatar";
 import { generatePathCover, listNodesForPath } from "@/shared/api/PathService";
+import { listChatThreads } from "@/shared/api/ChatService";
 import { AVATAR_COLORS } from "@/features/user/components/ColorPicker";
 import {
   DropdownMenu,
@@ -58,8 +63,33 @@ import { getAccessToken } from "@/shared/services/StorageService";
 
 type JsonRecord = Record<string, unknown>;
 
+const SIDEBAR_YOUR_PATHS_OPEN_KEY = "nb:sidebar:your_paths_open";
+const SIDEBAR_YOUR_FILES_OPEN_KEY = "nb:sidebar:your_files_open";
+const SIDEBAR_YOUR_CHATS_OPEN_KEY = "nb:sidebar:your_chats_open";
+
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readStoredBool(key: string): boolean | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = window.localStorage.getItem(key);
+    if (v === "1" || v === "true") return true;
+    if (v === "0" || v === "false") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredBool(key: string, value: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // ignore
+  }
 }
 
 function getMeta(path: Path | null | undefined): JsonRecord {
@@ -211,7 +241,7 @@ function ProgressRing({
         strokeDasharray={circumference}
         strokeDashoffset={strokeDashoffset}
         strokeLinecap="round"
-        className="text-primary transition-all duration-300"
+        className="text-primary transition-[stroke-dashoffset] nb-duration nb-ease-out motion-reduce:transition-none"
       />
     </svg>
   );
@@ -241,6 +271,25 @@ export function AppSideBar() {
   const [lessons, setLessons] = useState<PathNode[]>([]);
   const [lessonsLoading, setLessonsLoading] = useState(false);
   const lastNormalRouteRef = useRef<string>("/");
+
+  const [yourPathsOpen, setYourPathsOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_PATHS_OPEN_KEY) ?? true);
+  const [yourFilesOpen, setYourFilesOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_FILES_OPEN_KEY) ?? true);
+  const [yourChatsOpen, setYourChatsOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_CHATS_OPEN_KEY) ?? true);
+
+  useEffect(() => {
+    writeStoredBool(SIDEBAR_YOUR_PATHS_OPEN_KEY, yourPathsOpen);
+  }, [yourPathsOpen]);
+
+  useEffect(() => {
+    writeStoredBool(SIDEBAR_YOUR_FILES_OPEN_KEY, yourFilesOpen);
+  }, [yourFilesOpen]);
+
+  useEffect(() => {
+    writeStoredBool(SIDEBAR_YOUR_CHATS_OPEN_KEY, yourChatsOpen);
+  }, [yourChatsOpen]);
+
+  const [chatThreads, setChatThreads] = useState<Array<{ id: string; title: string }>>([]);
+  const [chatThreadsLoading, setChatThreadsLoading] = useState(false);
 
   const showFooterName = isMobile ? openMobile : !isCollapsed;
 
@@ -273,6 +322,11 @@ export function AppSideBar() {
     if (matchPath({ path: "/files", end: false }, path)) return "files";
     if (path === "/") return "home";
     return "home";
+  }, [location.pathname]);
+
+  const currentThreadId = useMemo(() => {
+    const m = matchPath({ path: "/chat/threads/:id", end: false }, location.pathname);
+    return m?.params?.id ? String(m.params.id) : null;
   }, [location.pathname]);
 
   const pathIdFromRoute = useMemo(() => {
@@ -362,6 +416,40 @@ export function AppSideBar() {
       cancelled = true;
     };
   }, [isAuthenticated, isCollapsed, pathContextPathId]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setChatThreads([]);
+      setChatThreadsLoading(false);
+      return;
+    }
+    if (isCollapsed || isPathMode) {
+      setChatThreadsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      setChatThreadsLoading(true);
+      try {
+        const threads = await listChatThreads(30);
+        if (cancelled) return;
+        const compact = (threads || []).map((t) => ({
+          id: String(t.id),
+          title: String(t.title || "").trim() || "Chat",
+        }));
+        setChatThreads(compact);
+      } catch (err) {
+        if (!cancelled) setChatThreads([]);
+      } finally {
+        if (!cancelled) setChatThreadsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentThreadId, isAuthenticated, isCollapsed, isPathMode]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -615,10 +703,10 @@ export function AppSideBar() {
         )}
       </SidebarHeader>
 
-      <SidebarContent className={cn("py-4", isCollapsed ? "px-0" : "px-3")}>
+      <SidebarContent className={cn("pb-4 nb-scrollbar-sidebar", isCollapsed ? "px-0" : "px-3")}>
         {isPathMode ? (
           isCollapsed ? null : (
-            <SidebarGroup className="px-0">
+            <SidebarGroup className="px-0 pt-4">
               <SidebarGroupLabel>Your lessons</SidebarGroupLabel>
               <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
                 {lessonsLoading && lessons.length === 0 ? (
@@ -641,7 +729,7 @@ export function AppSideBar() {
                       matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
                     return (
                       <SidebarMenuSubItem key={n.id}>
-                        <div className="flex w-full items-center gap-1 rounded-xl transition-colors hover:bg-sidebar-accent/70">
+                        <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
                           <SidebarMenuSubButton
                             asChild
                             isActive={isActive}
@@ -682,13 +770,16 @@ export function AppSideBar() {
               </SidebarMenuSub>
             </SidebarGroup>
           )
-        ) : (
-          <>
-            <SidebarGroup className="px-0">
-              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-              <SidebarMenu className={cn(isCollapsed ? "items-center gap-2.5" : "gap-2.5")}>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
+	        ) : (
+	          <>
+	            <SidebarGroup className={cn(
+                "sticky top-0 z-20 bg-sidebar/95 backdrop-blur-sm pt-4",
+                !isCollapsed && "-mx-3 px-3"
+              )}>
+	              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+	              <SidebarMenu className={cn(isCollapsed ? "items-center gap-2.5" : "gap-2.5")}>
+	                <SidebarMenuItem>
+	                  <SidebarMenuButton
                     asChild
                     isActive={activeTab === "home"}
                     tooltip="Home"
@@ -731,15 +822,49 @@ export function AppSideBar() {
               </SidebarMenu>
             </SidebarGroup>
 
-            {!isCollapsed && (
-              <>
-                <SidebarGroup className="px-0">
-                <SidebarGroupLabel>Your paths</SidebarGroupLabel>
-                  <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
-                    {pathsLoading && realPaths.length === 0 ? (
-                      Array.from({ length: 6 }).map((_, i) => (
-                        <SidebarMenuSubItem key={`path-skel:${i}`}>
-                          <SidebarMenuSkeleton showIcon />
+	            {!isCollapsed && (
+	              <>
+		                <SidebarGroup className="px-0">
+		                  <SidebarGroupLabel asChild>
+	                    <button
+	                      type="button"
+	                      aria-expanded={yourPathsOpen}
+	                      aria-controls="sidebar-your-paths"
+	                      onClick={() => setYourPathsOpen((v) => !v)}
+	                      className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
+	                    >
+	                      <span>Your paths</span>
+	                      <ChevronDown
+	                        aria-hidden="true"
+	                        className={cn(
+	                          "transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
+	                          yourPathsOpen ? "rotate-0" : "-rotate-90"
+	                        )}
+	                      />
+	                    </button>
+	                  </SidebarGroupLabel>
+
+	                  <AnimatePresence initial={false}>
+	                    {yourPathsOpen ? (
+	                      <m.div
+	                        key="sidebar-your-paths"
+	                        initial={{ height: 0, opacity: 0 }}
+	                        animate={{
+	                          height: "auto",
+	                          opacity: 1,
+	                          transition: nbTransitions.default,
+	                        }}
+	                        exit={{ height: 0, opacity: 0, transition: nbTransitions.micro }}
+	                        style={{ overflow: "hidden" }}
+	                      >
+	                        <SidebarMenuSub
+	                          id="sidebar-your-paths"
+	                          className="gap-2.5 mx-0 border-l-0 px-0 py-0"
+	                        >
+	                    {pathsLoading && realPaths.length === 0 ? (
+	                      Array.from({ length: 6 }).map((_, i) => (
+	                        <SidebarMenuSubItem key={`path-skel:${i}`}>
+	                          <SidebarMenuSkeleton showIcon />
                         </SidebarMenuSubItem>
                       ))
                     ) : realPaths.length === 0 ? (
@@ -764,7 +889,7 @@ export function AppSideBar() {
                           >
                             <div
                               className={cn(
-                                "flex w-full items-center gap-1 rounded-xl transition-colors",
+                                "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
                                 isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
                               )}
                             >
@@ -810,7 +935,7 @@ export function AppSideBar() {
                                     variant="ghost"
                                     size="icon"
                                     className={cn(
-                                      "h-8 w-8 rounded-lg text-sidebar-foreground/70 transition-opacity",
+                                      "h-8 w-8 rounded-lg text-sidebar-foreground/70",
                                       "pointer-events-none opacity-0",
                                       "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
                                       "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
@@ -846,19 +971,56 @@ export function AppSideBar() {
                               </DropdownMenu>
                             </div>
                           </SidebarMenuSubItem>
-                        );
-                      })
-                    )}
-                  </SidebarMenuSub>
-                </SidebarGroup>
+	                        );
+	                      })
+	                    )}
+	                        </SidebarMenuSub>
+	                      </m.div>
+	                    ) : null}
+	                  </AnimatePresence>
+	                </SidebarGroup>
+	
+	                <SidebarGroup className="px-0">
+	                  <SidebarGroupLabel asChild>
+	                    <button
+	                      type="button"
+	                      aria-expanded={yourFilesOpen}
+	                      aria-controls="sidebar-your-files"
+	                      onClick={() => setYourFilesOpen((v) => !v)}
+	                      className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
+	                    >
+	                      <span>Your files</span>
+	                      <ChevronDown
+	                        aria-hidden="true"
+	                        className={cn(
+	                          "transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
+	                          yourFilesOpen ? "rotate-0" : "-rotate-90"
+	                        )}
+	                      />
+	                    </button>
+	                  </SidebarGroupLabel>
 
-                <SidebarGroup className="px-0">
-                <SidebarGroupLabel>Your files</SidebarGroupLabel>
-                  <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
-                    {materialFilesLoading && visibleFiles.length === 0 ? (
-                      Array.from({ length: 6 }).map((_, i) => (
-                        <SidebarMenuSubItem key={`file-skel:${i}`}>
-                          <SidebarMenuSkeleton showIcon />
+	                  <AnimatePresence initial={false}>
+	                    {yourFilesOpen ? (
+	                      <m.div
+	                        key="sidebar-your-files"
+	                        initial={{ height: 0, opacity: 0 }}
+	                        animate={{
+	                          height: "auto",
+	                          opacity: 1,
+	                          transition: nbTransitions.default,
+	                        }}
+	                        exit={{ height: 0, opacity: 0, transition: nbTransitions.micro }}
+	                        style={{ overflow: "hidden" }}
+	                      >
+	                        <SidebarMenuSub
+	                          id="sidebar-your-files"
+	                          className="gap-2.5 mx-0 border-l-0 px-0 py-0"
+	                        >
+	                    {materialFilesLoading && visibleFiles.length === 0 ? (
+	                      Array.from({ length: 6 }).map((_, i) => (
+	                        <SidebarMenuSubItem key={`file-skel:${i}`}>
+	                          <SidebarMenuSkeleton showIcon />
                         </SidebarMenuSubItem>
                       ))
                     ) : visibleFiles.length === 0 ? (
@@ -880,7 +1042,7 @@ export function AppSideBar() {
                             key={file.id}
                             style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
                           >
-                            <div className="flex w-full items-center gap-1 rounded-xl transition-colors hover:bg-sidebar-accent/70">
+                            <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
                               <SidebarMenuSubButton
                                 asChild
                                 className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
@@ -912,15 +1074,99 @@ export function AppSideBar() {
                               </SidebarMenuSubButton>
                             </div>
                           </SidebarMenuSubItem>
-                        );
-                      })
-                    )}
-                  </SidebarMenuSub>
-                </SidebarGroup>
-              </>
-            )}
-          </>
-        )}
+	                        );
+	                      })
+	                    )}
+	                        </SidebarMenuSub>
+	                      </m.div>
+	                    ) : null}
+		                  </AnimatePresence>
+		                </SidebarGroup>
+
+		                <SidebarGroup className="px-0">
+		                  <SidebarGroupLabel asChild>
+		                    <button
+		                      type="button"
+		                      aria-expanded={yourChatsOpen}
+		                      aria-controls="sidebar-your-chats"
+		                      onClick={() => setYourChatsOpen((v) => !v)}
+		                      className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
+		                    >
+		                      <span>Your chats</span>
+		                      <ChevronDown
+		                        aria-hidden="true"
+		                        className={cn(
+		                          "transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
+		                          yourChatsOpen ? "rotate-0" : "-rotate-90"
+		                        )}
+		                      />
+		                    </button>
+		                  </SidebarGroupLabel>
+
+		                  <AnimatePresence initial={false}>
+		                    {yourChatsOpen ? (
+		                      <m.div
+		                        key="sidebar-your-chats"
+		                        initial={{ height: 0, opacity: 0 }}
+		                        animate={{
+		                          height: "auto",
+		                          opacity: 1,
+		                          transition: nbTransitions.default,
+		                        }}
+		                        exit={{ height: 0, opacity: 0, transition: nbTransitions.micro }}
+		                        style={{ overflow: "hidden" }}
+		                      >
+		                        <SidebarMenuSub
+		                          id="sidebar-your-chats"
+		                          className="gap-2.5 mx-0 border-l-0 px-0 py-0"
+		                        >
+		                          {chatThreadsLoading && chatThreads.length === 0 ? (
+		                            Array.from({ length: 6 }).map((_, i) => (
+		                              <SidebarMenuSubItem key={`chat-skel:${i}`}>
+		                                <SidebarMenuSkeleton showIcon />
+		                              </SidebarMenuSubItem>
+		                            ))
+		                          ) : chatThreads.length === 0 ? (
+		                            <SidebarMenuSubItem>
+		                              <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
+		                                No chats yet
+		                              </div>
+		                            </SidebarMenuSubItem>
+		                          ) : (
+		                            chatThreads.map((t) => {
+		                              const isActive = currentThreadId != null && String(currentThreadId) === String(t.id);
+		                              return (
+		                                <SidebarMenuSubItem
+		                                  key={t.id}
+		                                  style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
+		                                >
+		                                  <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
+		                                    <SidebarMenuSubButton
+		                                      asChild
+		                                      isActive={isActive}
+		                                      className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
+		                                    >
+		                                      <Link to={`/chat/threads/${t.id}`} aria-label={`Open ${t.title}`}>
+		                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
+		                                          <MessageSquare className="h-4 w-4" />
+		                                        </span>
+		                                        <span className="truncate">{t.title}</span>
+		                                      </Link>
+		                                    </SidebarMenuSubButton>
+		                                  </div>
+		                                </SidebarMenuSubItem>
+		                              );
+		                            })
+		                          )}
+		                        </SidebarMenuSub>
+		                      </m.div>
+		                    ) : null}
+		                  </AnimatePresence>
+		                </SidebarGroup>
+		              </>
+		            )}
+		          </>
+		        )}
       </SidebarContent>
 
       {!isCollapsed && (

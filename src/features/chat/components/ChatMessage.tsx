@@ -378,7 +378,7 @@ function CodeBlock({ children, language, filename, showLineNumbers = false, high
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground nb-motion-fast motion-reduce:transition-none hover:bg-muted/60 hover:text-foreground"
         >
           {copied ? (
             <>
@@ -484,8 +484,8 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
                   isLoaded ? "opacity-100" : "opacity-0",
                 )}
               />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                <Maximize2 className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none flex items-center justify-center">
+                <Maximize2 className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none drop-shadow-lg" />
               </div>
             </>
           )}
@@ -504,7 +504,7 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
                   <button
                     type="button"
                     aria-label="Close image"
-                    className="absolute top-4 right-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
+                    className="absolute top-4 right-4 rounded-full p-2 text-white/90 nb-motion-fast motion-reduce:transition-none hover:bg-white/10"
                     onClick={() => setIsExpanded(false)}
                   >
                     <X className="h-6 w-6" />
@@ -788,14 +788,14 @@ function FileAttachment({ filename, size, url, type }: FileAttachmentProps) {
     <a
       href={href}
       download={filename || undefined}
-      className="my-3 flex items-center gap-3 rounded-xl border border-border/60 bg-card/80 p-3 shadow-sm backdrop-blur-sm transition-colors group hover:bg-muted/40"
+      className="my-3 flex items-center gap-3 rounded-xl border border-border/60 bg-card/80 p-3 shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none group hover:bg-muted/40"
     >
       <div className="rounded-lg bg-muted p-2 text-muted-foreground">{getIcon()}</div>
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate">{filename}</div>
         {size && <div className="text-sm text-muted-foreground">{size}</div>}
       </div>
-      <Download className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+      <Download className="h-5 w-5 text-muted-foreground group-hover:text-foreground nb-motion-fast motion-reduce:transition-none" />
     </a>
   )
 }
@@ -809,7 +809,7 @@ function LinkPreview({ url, title, description, image, favicon }: LinkPreviewPro
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="my-4 flex overflow-hidden rounded-xl border border-border/60 bg-card/80 shadow-sm backdrop-blur-sm transition-colors group hover:bg-muted/40"
+      className="my-4 flex overflow-hidden rounded-xl border border-border/60 bg-card/80 shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none group hover:bg-muted/40"
     >
       {image && (
         <div className="w-32 sm:w-48 flex-shrink-0 bg-muted">
@@ -820,7 +820,7 @@ function LinkPreview({ url, title, description, image, favicon }: LinkPreviewPro
         <div className="flex items-center gap-2 mb-1">
           {favicon && <img src={favicon || "/placeholder.svg"} alt="" className="w-4 h-4" />}
           <span className="text-xs text-muted-foreground truncate">{host}</span>
-          <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none" />
         </div>
         <div className="font-medium truncate">{title}</div>
         {description && <div className="text-sm text-muted-foreground line-clamp-2 mt-1">{description}</div>}
@@ -866,7 +866,7 @@ function Table({ headers = [], rows = [], caption }: TableProps) {
           {rows.map((row, i) => (
             <tr
               key={i}
-              className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/30"
+              className="border-b border-border/60 nb-motion-fast motion-reduce:transition-none last:border-0 hover:bg-muted/30"
             >
               {row.map((cell, j) => (
                 <td key={j} className="px-4 py-3">
@@ -983,7 +983,7 @@ function ThinkingContent({
           if (disableToggle) return
           setIsExpanded(!isExpanded)
         }}
-        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground nb-motion-fast motion-reduce:transition-none"
       >
         {!disableToggle && (isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />)}
         <Sparkles className="h-3.5 w-3.5" />
@@ -1030,7 +1030,7 @@ function ActionButton({ children, onClick, shortcut, ...props }: ActionButtonPro
     <button
       type="button"
       onClick={onClick}
-      className="cursor-pointer rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      className="cursor-pointer rounded-lg p-1.5 text-muted-foreground nb-motion-fast motion-reduce:transition-none hover:bg-muted/60 hover:text-foreground"
       {...props}
     >
       {children}

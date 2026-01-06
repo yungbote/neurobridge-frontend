@@ -85,7 +85,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                     type="button"
                     onClick={() => setActiveTab(item.id)}
                     className={[
-                      "flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+                      "flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium nb-motion-fast motion-reduce:transition-none",
                       isActive ? "bg-muted/60 text-foreground" : "text-foreground/70 hover:bg-muted/50",
                     ].join(" ")}
                   >
@@ -120,7 +120,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                     type="button"
                     onClick={() => setActiveTab(item.id)}
                     className={[
-                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium nb-motion-fast motion-reduce:transition-none",
                       isActive ? "bg-muted/60 text-foreground" : "text-foreground/70 hover:bg-muted/50",
                     ].join(" ")}
                   >
@@ -248,7 +248,7 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
                         setUiThemeOpen(false);
                       }}
                       className={[
-                        "w-full rounded-2xl border px-3 py-3 text-left transition",
+                        "w-full rounded-2xl border px-3 py-3 text-left nb-motion-fast motion-reduce:transition-none",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         isActive
                           ? "border-foreground/40 bg-muted/40 shadow-sm"

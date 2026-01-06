@@ -4,6 +4,7 @@ import type {
   BackendChatSendResponse,
   BackendChatThread,
   BackendChatThreadResponse,
+  BackendChatThreadsResponse,
 } from "@/shared/types/backend";
 import type { ChatMessage, ChatThread } from "@/shared/types/models";
 
@@ -76,6 +77,19 @@ export async function getChatThread(
   const messages = (resp.data?.messages || []).map(mapChatMessage).filter(Boolean) as ChatMessage[];
   messages.sort((a, b) => (a.seq || 0) - (b.seq || 0));
   return { thread, messages };
+}
+
+export async function listChatThreads(limit = 50): Promise<ChatThread[]> {
+  const resp = await axiosClient.get<BackendChatThreadsResponse>("/chat/threads", {
+    params: { limit },
+  });
+  const threads = (resp.data?.threads || []).map(mapChatThread).filter(Boolean) as ChatThread[];
+  threads.sort((a, b) => {
+    const ad = new Date(a?.lastMessageAt || a?.updatedAt || a?.createdAt || 0).getTime();
+    const bd = new Date(b?.lastMessageAt || b?.updatedAt || b?.createdAt || 0).getTime();
+    return bd - ad;
+  });
+  return threads;
 }
 
 export async function listChatMessages(

@@ -1,10 +1,12 @@
 import React, { useMemo } from "react";
 import { FolderOpen } from "lucide-react";
+import { AnimatePresence, m } from "framer-motion";
 
 import { usePaths } from "@/app/providers/PathProvider";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { Container } from "@/shared/layout/Container";
+import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 import type { Path } from "@/shared/types/models";
 
 type LegacyTimestampPath = { updated_at?: string | null; created_at?: string | null };
@@ -49,9 +51,21 @@ export default function PathsPage() {
           />
         ) : (
           <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
-            {list.map((p) => (
-              <PathCardLarge key={p.id} path={p} />
-            ))}
+            <AnimatePresence initial={false}>
+              {list.map((p) => (
+                <m.div
+                  key={p.id}
+                  layout="position"
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={nbFadeUp}
+                  transition={nbTransitions.micro}
+                >
+                  <PathCardLarge path={p} />
+                </m.div>
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </Container>
