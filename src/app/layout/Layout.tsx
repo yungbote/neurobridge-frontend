@@ -50,7 +50,7 @@ export default function Layout({ children }: LayoutProps) {
 
               {isAuthenticated && !hideBreadcrumbs && (
                 <div>
-                  <Container className="py-3">
+                  <Container size="app" className="py-3">
                     <Breadcrumbs />
                   </Container>
                 </div>
@@ -66,7 +66,6 @@ export default function Layout({ children }: LayoutProps) {
     </SidebarProvider>
   );
 }
-
 
 
 

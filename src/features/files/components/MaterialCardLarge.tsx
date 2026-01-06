@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Ellipsis, File as FileIcon, FileText, Image as ImageIcon, Video } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
@@ -14,6 +14,17 @@ import { cn } from "@/shared/lib/utils";
 
 interface MaterialCardLargeProps {
   file?: MaterialFile | null;
+}
+
+function splitFileNameExt(name: string): { base: string; ext: string } | null {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return null;
+  const lastDot = trimmed.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot >= trimmed.length - 1) return null;
+  const base = trimmed.slice(0, lastDot).trim();
+  const ext = trimmed.slice(lastDot).trim();
+  if (!base || !ext) return null;
+  return { base, ext };
 }
 
 function formatBytes(v: unknown) {
@@ -93,6 +104,9 @@ function fileTypeBadgeLabel(file: MaterialFile | null | undefined) {
 
 export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
   const [thumbError, setThumbError] = useState(false);
+  const [splitExtToSecondLine, setSplitExtToSecondLine] = useState(false);
+  const titleWrapRef = useRef<HTMLDivElement | null>(null);
+  const titleMeasureRef = useRef<HTMLDivElement | null>(null);
 
   const apiBase = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
   const token = getAccessToken();
@@ -118,6 +132,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
   if (!file) return null;
 
   const titleText = file.originalName || "Untitled file";
+  const titleParts = useMemo(() => splitFileNameExt(titleText), [titleText]);
   const typeText = fileTypeLabel(file);
   const typeBadgeText = fileTypeBadgeLabel(file);
   const sizeText = file.sizeBytes ? formatBytes(file.sizeBytes) : "";
@@ -125,6 +140,59 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
 
   const Icon = fileIcon(file);
   const showThumb = Boolean(thumbUrl) && !thumbError;
+
+  useLayoutEffect(() => {
+    if (!titleParts) {
+      setSplitExtToSecondLine(false);
+      return;
+    }
+    const measureEl = titleMeasureRef.current;
+    if (!measureEl) return;
+
+    const cs = window.getComputedStyle(measureEl);
+    let lineHeight = Number.parseFloat(cs.lineHeight);
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+      const fontSize = Number.parseFloat(cs.fontSize);
+      lineHeight = Number.isFinite(fontSize) && fontSize > 0 ? fontSize * 1.25 : 20;
+    }
+    const h = measureEl.getBoundingClientRect().height;
+    const lines = lineHeight > 0 ? Math.round(h / lineHeight) : 1;
+    setSplitExtToSecondLine(lines < 2);
+  }, [titleParts, titleText]);
+
+  useEffect(() => {
+    const el = titleWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (!titleParts) {
+        setSplitExtToSecondLine(false);
+        return;
+      }
+      const measureEl = titleMeasureRef.current;
+      if (!measureEl) return;
+
+      const cs = window.getComputedStyle(measureEl);
+      let lineHeight = Number.parseFloat(cs.lineHeight);
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+        const fontSize = Number.parseFloat(cs.fontSize);
+        lineHeight = Number.isFinite(fontSize) && fontSize > 0 ? fontSize * 1.25 : 20;
+      }
+      const h = measureEl.getBoundingClientRect().height;
+      const lines = lineHeight > 0 ? Math.round(h / lineHeight) : 1;
+      setSplitExtToSecondLine(lines < 2);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [titleParts]);
+
+  const titleNode = titleParts && splitExtToSecondLine ? (
+    <>
+      {titleParts.base}
+      <span className="block">{titleParts.ext}</span>
+    </>
+  ) : (
+    titleText
+  );
 
   const card = (
     <Card className="group relative w-full max-w-[360px] transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
@@ -159,9 +227,20 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
                 <Badge>File</Badge>
                 <Badge variant="subtle">{typeBadgeText}</Badge>
               </div>
-              <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">
-                {titleText}
-              </CardTitle>
+              <div ref={titleWrapRef} className="relative">
+                <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">
+                  {titleNode}
+                </CardTitle>
+                {titleParts ? (
+                  <div
+                    ref={titleMeasureRef}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-0 top-0 invisible w-full whitespace-normal text-balance text-lg leading-tight sm:text-xl"
+                  >
+                    {titleText}
+                  </div>
+                ) : null}
+              </div>
 
               {subText && (
                 <div className="pt-1">

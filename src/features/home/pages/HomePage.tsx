@@ -375,7 +375,7 @@ export default function HomePage() {
 
   return (
     <div className="page-surface">
-      <Container className="page-pad">
+      <Container size="app" className="page-pad">
         <div className="flex flex-col gap-3 items-center text-center">
           <h1 className="font-brand text-balance break-words text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
             Welcome, {firstName}.
@@ -429,6 +429,7 @@ export default function HomePage() {
         : null}
 
       <Container
+        size="app"
         className="page-pad"
         style={
           tabsDocked

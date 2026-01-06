@@ -32,7 +32,7 @@ export function NavigationTabs({
       isNavbar ? "bg-transparent border-b-0" : "border-b border-border bg-background",
       className
     )}>
-      <Container as="nav">
+      <Container as="nav" size="app">
         <div className="flex h-14 items-stretch justify-start gap-4 sm:gap-8 overflow-x-auto scrollbar-none">
           {tabs.map((tab) => (
             <button
@@ -57,7 +57,6 @@ export function NavigationTabs({
     </header>
   );
 }
-
 
 
 

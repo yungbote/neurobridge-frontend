@@ -120,6 +120,7 @@ export function AppNavBar() {
     >
       <Container
         as="div"
+        size={isAuthenticated ? "app" : "lg"}
         className="relative flex h-14 items-center gap-3"
       >
         {/* LEFT: Sidebar Trigger + Logo */}

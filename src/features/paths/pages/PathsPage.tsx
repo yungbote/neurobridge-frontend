@@ -29,7 +29,7 @@ export default function PathsPage() {
 
   return (
     <div className="page-surface">
-      <Container size="2xl" className="page-pad">
+      <Container size="app" className="page-pad">
         <div className="mb-10 space-y-3">
           <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Your paths
@@ -48,7 +48,7 @@ export default function PathsPage() {
             icon={<FolderOpen className="h-7 w-7" />}
           />
         ) : (
-          <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
             {list.map((p) => (
               <PathCardLarge key={p.id} path={p} />
             ))}

@@ -553,7 +553,7 @@ export function HomeTabContent({
 
   return (
     <div className="w-full">
-      <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
         {filtered.map((path) => (
           <PathCardLarge key={path.id} path={path} />
         ))}
@@ -727,7 +727,7 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
                   {title}
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+              <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
                 {visibleItems.map((item) =>
                   item.kind === "material" ? (
                     <MaterialCardLarge key={`material:${item.id}`} file={item.file} />

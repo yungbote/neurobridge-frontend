@@ -21,7 +21,7 @@ export default function FilesPage() {
 
   return (
     <div className="page-surface">
-      <Container size="2xl" className="page-pad">
+      <Container size="app" className="page-pad">
         <div className="mb-10 space-y-3">
           <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Your files
@@ -40,7 +40,7 @@ export default function FilesPage() {
             icon={<Files className="h-7 w-7" />}
           />
         ) : (
-          <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
             {visible.map((file) => (
               <MaterialCardLarge key={file.id} file={file} />
             ))}

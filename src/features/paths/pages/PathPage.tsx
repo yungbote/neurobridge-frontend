@@ -141,7 +141,7 @@ export default function PathPage() {
 
   return (
     <div className="page-surface">
-      <Container size="2xl" className="page-pad">
+      <Container size="app" className="page-pad">
         <div className="mb-12 space-y-4">
           <h1 className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
             {displayTitle}
