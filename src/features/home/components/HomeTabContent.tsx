@@ -553,7 +553,7 @@ export function HomeTabContent({
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
         {filtered.map((path) => (
           <PathCardLarge key={path.id} path={path} />
         ))}
@@ -727,7 +727,7 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
                   {title}
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
                 {visibleItems.map((item) =>
                   item.kind === "material" ? (
                     <MaterialCardLarge key={`material:${item.id}`} file={item.file} />
@@ -758,7 +758,7 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
           {visibleItems.map((item) => (
             <div
               key={`${item.kind}:${item.id}`}
-              className="shrink-0 snap-start w-[320px] sm:w-[360px] lg:w-[420px]"
+              className="shrink-0 snap-start w-[320px] sm:w-[360px]"
             >
               {item.kind === "material" ? (
                 <MaterialCardLarge file={item.file} />

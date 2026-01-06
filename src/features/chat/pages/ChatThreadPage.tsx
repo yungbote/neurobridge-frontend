@@ -18,13 +18,15 @@ import { Textarea } from "@/shared/ui/textarea";
 import { getChatThread, listChatMessages, mapChatMessage, sendChatMessage } from "@/shared/api/ChatService";
 import { cancelJob as apiCancelJob, restartJob as apiRestartJob } from "@/shared/api/JobService";
 import { enqueuePathNodeDocPatch, getPathNodeContent, getPathNodeDoc } from "@/shared/api/PathNodeService";
+import { getPath as apiGetPath } from "@/shared/api/PathService";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { Container } from "@/shared/layout/Container";
-import type { ChatMessage as ChatMessageModel, ChatThread, JsonInput, PathNode } from "@/shared/types/models";
+import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
+import type { ChatMessage as ChatMessageModel, ChatThread, JsonInput, Path, PathNode } from "@/shared/types/models";
 
 type DeltaState = { attempt: number; deltaSeq: number };
 
@@ -59,6 +61,42 @@ interface DocShape {
 
 interface LocationState {
   jobId?: string | null;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseJsonRecord(value: unknown): JsonRecord | null {
+  if (!value) return null;
+  if (isRecord(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return isRecord(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function messageKindFromMetadata(metadata: unknown): string {
+  const md = parseJsonRecord(metadata);
+  const kind = md ? String(md.kind ?? "") : "";
+  return kind.trim().toLowerCase();
+}
+
+function stringFromMetadata(metadata: unknown, keys: string[]): string {
+  const md = parseJsonRecord(metadata);
+  if (!md) return "";
+  for (const k of keys) {
+    const v = md[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
 }
 
 function getErrorMessage(err: unknown, fallback: string) {
@@ -194,6 +232,64 @@ function WaveText({ text }: { text: string }) {
   );
 }
 
+function GenerationCard({
+  title,
+  progress,
+  duration,
+  defaultExpanded,
+  children,
+}: {
+  title: string;
+  progress: number;
+  duration: string;
+  defaultExpanded?: boolean;
+  children?: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(Boolean(defaultExpanded));
+  const userToggledRef = useRef(false);
+
+  useEffect(() => {
+    if (userToggledRef.current) return;
+    if (defaultExpanded) setExpanded(true);
+  }, [defaultExpanded]);
+
+  return (
+    <div className="mb-4 rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
+      <button
+        type="button"
+        onClick={() => {
+          userToggledRef.current = true;
+          setExpanded((v) => !v);
+        }}
+        className="flex w-full items-center justify-between gap-3 py-1 text-left"
+        aria-expanded={expanded}
+      >
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <Sparkles className="h-3.5 w-3.5" />
+          <span className="truncate">{title}</span>
+        </div>
+        <div className="shrink-0 text-xs text-muted-foreground">
+          {Math.round(progress)}% · {duration}
+        </div>
+      </button>
+
+        <div className="mt-2 h-1.5 w-full rounded-full bg-muted/60">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-300"
+            style={{ width: `${Math.round(progress)}%` }}
+          />
+        </div>
+
+      {expanded ? (
+        <div className="mt-3 border-l border-border/60 pl-3 text-sm text-muted-foreground leading-relaxed">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ChatThreadPage() {
   const { id: threadId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
@@ -218,6 +314,15 @@ export default function ChatThreadPage() {
   const [revisionError, setRevisionError] = useState("");
   const [revisionQueued, setRevisionQueued] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const [pathCache, setPathCache] = useState<Record<string, Path | null>>({});
+  const pathCacheRef = useRef<Record<string, Path | null>>({});
+  const pathFetchRef = useRef<Set<string>>(new Set());
+  const terminalConvergeRef = useRef<string>("");
+
+  useEffect(() => {
+    pathCacheRef.current = pathCache;
+  }, [pathCache]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef(true);
@@ -392,6 +497,10 @@ export default function ChatThreadPage() {
     return thread?.jobId ? String(thread.jobId) : null;
   }, [isPathBuildThread, thread?.jobId]);
 
+  const hasGenerationMessage = useMemo(() => {
+    return (messages || []).some((m) => messageKindFromMetadata(m?.metadata) === "path_generation");
+  }, [messages]);
+
   // Apply SSE chat events for this thread.
   useEffect(() => {
     if (!lastMessage) return;
@@ -514,6 +623,38 @@ export default function ChatThreadPage() {
 
   const learningBuildCanceled = useMemo(() => learningBuildStatus === "canceled", [learningBuildStatus]);
 
+  // Converge messages when the build transitions to a terminal state (SSEProvider may drop intermediate events).
+  useEffect(() => {
+    if (!threadId) return;
+    if (!isPathBuildThread) return;
+    if (!buildJobId) return;
+
+    const status = String(learningBuildStatus || "").toLowerCase();
+    const isTerminal = status === "succeeded" || status === "failed" || status === "canceled";
+    if (!isTerminal) return;
+
+    const key = `${buildJobId}:${status}`;
+    if (terminalConvergeRef.current === key) return;
+    terminalConvergeRef.current = key;
+
+    let cancelled = false;
+    const t = setTimeout(() => {
+      void listChatMessages(threadId, { limit: 140 })
+        .then((fresh) => {
+          if (cancelled) return;
+          setMessages(fresh);
+        })
+        .catch((err) => {
+          console.warn("[ChatThreadPage] converge messages failed:", err);
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [threadId, isPathBuildThread, buildJobId, learningBuildStatus]);
+
   const lastAssistantMessage = useMemo(() => {
     const list = (messages || []).slice().reverse();
     return list.find((m) => String(m?.role || "").toLowerCase() === "assistant" && String(m?.content || "").trim());
@@ -580,12 +721,28 @@ export default function ChatThreadPage() {
     }
   }, [buildJobId]);
 
-  const thinkingSteps = useMemo(() => {
-    if (!learningBuildActive && !learningBuildCanceled) return null;
+  const buildLog = useMemo(() => {
+    const jid = buildJobId ? String(buildJobId) : "";
+    if (!jid) return null;
 
     const firstId = String((items || [])[0]?.id || "");
-    const list =
-      buildJobId && firstId.includes(String(buildJobId)) ? (items || []).slice(0, 200) : [];
+    const list = firstId.includes(jid) ? (items || []).slice(0, 200) : [];
+    if (list.length === 0) {
+      const fallbackTitle = stageLabel(String(activeJob?.stage || "")) || "Generating path…";
+      const fallbackProgress = clampPct(activeJob?.progress);
+      const fallbackMsg = String(activeJob?.message || "").trim();
+      return (
+        <div className="space-y-2">
+          <div className="font-semibold text-foreground">
+            <WaveText text={fallbackTitle} />
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {Math.round(fallbackProgress)}%{fallbackMsg ? ` — ${fallbackMsg}` : ""}
+          </div>
+        </div>
+      );
+    }
+
     const summaryIndex = list.findIndex((it) => String(it?.id || "").startsWith("summary:"));
     const summary =
       summaryIndex >= 0 ? list[summaryIndex] : list.length > 0 ? list[list.length - 1] : null;
@@ -593,19 +750,20 @@ export default function ChatThreadPage() {
       summaryIndex >= 0
         ? list.filter((_, idx) => idx !== summaryIndex)
         : list.slice(0, Math.max(0, list.length - 1));
+
     const title = summary?.title || stageLabel(String(activeJob?.stage || "")) || "Generating path…";
     const progress = clampPct(summary?.progress ?? activeJob?.progress);
     const msg = String(summary?.content || "").trim();
 
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {stages.length > 0 && (
           <div className="space-y-1">
             {stages.map((it) => (
               <button
                 key={it.id || `${it.title}-${it.progress}`}
                 type="button"
-                onClick={() => buildJobId && openForJob(buildJobId)}
+                onClick={() => openForJob(jid)}
                 className="block w-full text-left hover:text-foreground transition-colors"
               >
                 <span className="font-medium text-foreground">{it.title}</span>
@@ -621,7 +779,7 @@ export default function ChatThreadPage() {
         <div className={stages.length > 0 ? "pt-2" : ""}>
           <button
             type="button"
-            onClick={() => buildJobId && openForJob(buildJobId)}
+            onClick={() => openForJob(jid)}
             className="w-full text-left hover:text-foreground transition-colors"
           >
             <span className="font-semibold text-foreground">
@@ -648,7 +806,33 @@ export default function ChatThreadPage() {
         ) : null}
       </div>
     );
-  }, [items, buildJobId, activeJob?.stage, activeJob?.progress, learningBuildActive, learningBuildCanceled, openForJob, handleRestartBuild]);
+  }, [items, buildJobId, activeJob?.stage, activeJob?.progress, activeJob?.message, openForJob, learningBuildCanceled, handleRestartBuild]);
+
+  useEffect(() => {
+    const needed = new Set<string>();
+    for (const m of messages || []) {
+      const kind = messageKindFromMetadata(m?.metadata);
+      if (kind !== "path_ready") continue;
+      const pid = stringFromMetadata(m?.metadata, ["path_id", "pathId"]);
+      if (pid) needed.add(pid);
+    }
+    for (const pid of needed) {
+      if (pathFetchRef.current.has(pid)) continue;
+      if (Object.prototype.hasOwnProperty.call(pathCacheRef.current, pid)) continue;
+      pathFetchRef.current.add(pid);
+      void apiGetPath(pid)
+        .then((p) => {
+          setPathCache((prev) => ({ ...prev, [pid]: p }));
+        })
+        .catch((err) => {
+          console.warn("[ChatThreadPage] getPath failed:", err);
+          setPathCache((prev) => ({ ...prev, [pid]: null }));
+        })
+        .finally(() => {
+          pathFetchRef.current.delete(pid);
+        });
+    }
+  }, [messages]);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -725,11 +909,6 @@ export default function ChatThreadPage() {
     );
   }, []);
 
-  const goToPath = useCallback(() => {
-    if (!thread?.pathId) return;
-    navigate(`/paths/${thread.pathId}`);
-  }, [navigate, thread?.pathId]);
-
   const blockLabel = blockTypeParam || blockContext?.block?.type || "block";
   const hasRevisionText = String(revisionInstruction || "").trim().length > 0;
 
@@ -750,18 +929,6 @@ export default function ChatThreadPage() {
         <Container size="sm" className="page-pad-compact">
           {loading && !thread ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
-          ) : null}
-
-          {thread?.pathId ? (
-            <div className="mb-3">
-              <button
-                type="button"
-                onClick={goToPath}
-                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
-              >
-                View path
-              </button>
-            </div>
           ) : null}
 
           {blockNodeId && blockId ? (
@@ -837,17 +1004,75 @@ export default function ChatThreadPage() {
           ) : null}
 
           <div className="space-y-2">
-            {(messages || []).map((m) => (
-              <ChatMessage key={m.id} variant={String(m.role || "").toLowerCase() === "user" ? "user" : "assistant"}>
-                {renderMessageContent(m)}
-              </ChatMessage>
-            ))}
+            {(messages || []).map((m) => {
+              const role = String(m?.role || "").toLowerCase();
+              const variant = role === "user" ? "user" : "assistant";
+              const kind = messageKindFromMetadata(m?.metadata);
 
-            {thinkingSteps ? (
+              if (kind === "path_generation") {
+                const statusLabel =
+                  String(learningBuildStatus || "").toLowerCase() === "succeeded"
+                    ? "Path ready"
+                    : String(learningBuildStatus || "").toLowerCase() === "failed"
+                      ? "Generation failed"
+                      : String(learningBuildStatus || "").toLowerCase() === "canceled"
+                        ? "Generation canceled"
+                        : "Generating path…";
+                const progress = clampPct(activeJob?.progress);
+                const defaultExpanded = learningBuildActive || learningBuildCanceled;
+
+                return (
+                  <ChatMessage key={m.id} variant={variant} showActions={false}>
+                    <GenerationCard
+                      title={statusLabel}
+                      progress={progress}
+                      duration={thinkingDuration}
+                      defaultExpanded={defaultExpanded}
+                    >
+                      {buildLog ? buildLog : <div>Working…</div>}
+                    </GenerationCard>
+                  </ChatMessage>
+                );
+              }
+
+              if (kind === "path_ready") {
+                const pid = stringFromMetadata(m?.metadata, ["path_id", "pathId"]);
+                const hasPath = pid ? Object.prototype.hasOwnProperty.call(pathCache, pid) : false;
+                const path = pid ? pathCache[pid] : null;
+                return (
+                  <ChatMessage key={m.id} variant={variant}>
+                    <div className="space-y-4">
+                      {renderMessageContent(m)}
+                      {pid ? (
+                        path ? (
+                          <PathCardLarge path={path} />
+                        ) : hasPath ? (
+                          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                            Path unavailable.
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                            Loading path…
+                          </div>
+                        )
+                      ) : null}
+                    </div>
+                  </ChatMessage>
+                );
+              }
+
+              return (
+                <ChatMessage key={m.id} variant={variant}>
+                  {renderMessageContent(m)}
+                </ChatMessage>
+              );
+            })}
+
+            {!hasGenerationMessage && buildLog && (learningBuildActive || learningBuildCanceled) ? (
               <ChatMessage
                 variant="system"
                 showActions={false}
-                thinkingContent={thinkingSteps}
+                thinkingContent={buildLog}
                 thinkingDuration={thinkingDuration}
                 thinkingDefaultExpanded
               />

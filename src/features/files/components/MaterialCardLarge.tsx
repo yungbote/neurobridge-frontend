@@ -127,7 +127,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
   const showThumb = Boolean(thumbUrl) && !thumbError;
 
   const card = (
-    <Card className="group relative transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
+    <Card className="group relative w-full max-w-[360px] transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
       <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -216,7 +216,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
       href={fileUrl}
       target="_blank"
       rel="noreferrer"
-      className="cursor-pointer"
+      className="block cursor-pointer !no-underline !text-foreground"
       aria-label={`Open file ${titleText}`}
     >
       {card}

@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Ellipsis, RotateCcw, Trash2 } from "lucide-react";
+import { BookOpen, Ellipsis, RotateCcw, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
 import {
@@ -15,6 +15,7 @@ import { deletePath } from "@/shared/api/PathService";
 import { useMaterials } from "@/app/providers/MaterialProvider";
 import { usePaths } from "@/app/providers/PathProvider";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
+import { cn } from "@/shared/lib/utils";
 import type { Path } from "@/shared/types/models";
 
 interface PathCardLargeProps {
@@ -74,6 +75,11 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   const { activePathId, clearActivePath, reload } = usePaths();
   const { reload: reloadMaterials } = useMaterials();
   const [action, setAction] = useState<"retry" | "trash" | null>(null);
+  const [coverError, setCoverError] = useState(false);
+
+  useEffect(() => {
+    setCoverError(false);
+  }, [path?.id, path?.updatedAt]);
 
   const isPlaceholder = String(path.id || "").startsWith("job:");
 
@@ -109,7 +115,8 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   const meta = safeParseMetadata(path.metadata);
   const coverUrl = getPathAvatarUrl(path, meta);
   const isReady = String(path.status || "").toLowerCase() === "ready";
-  const showCover = !showGen && isReady && Boolean(coverUrl);
+  const showMedia = !showGen && isReady;
+  const showCover = showMedia && Boolean(coverUrl) && !coverError;
 
   const circumference = 2 * Math.PI * 45;
   const strokeDashoffset =
@@ -151,7 +158,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   }, [activePathId, clearActivePath, path.id, reload, reloadMaterials]);
 
   const card = (
-    <Card className="group relative transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
+    <Card className="group relative w-full max-w-[360px] transition-all duration-200 hover:border-foreground/20 hover:shadow-md">
       <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -265,17 +272,33 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
             )}
           </div>
 
-          {showCover && coverUrl && (
+          {showMedia && (
             <div className="flex justify-center">
               <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/30 shadow-sm">
                 <div className="aspect-[16/9]">
-                  <img
-                    src={coverUrl}
-                    alt={`Cover for ${path.title || "learning path"}`}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                  />
+                  {showCover && coverUrl ? (
+                    <img
+                      src={coverUrl}
+                      alt={`Cover for ${path.title || "learning path"}`}
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                      onError={() => setCoverError(true)}
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        "h-full w-full flex items-center justify-center",
+                        "bg-gradient-to-br from-muted/60 via-muted/30 to-background/60"
+                      )}
+                      aria-label="No cover available"
+                    >
+                      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-background/60 px-3 py-2 shadow-sm">
+                        <BookOpen className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground">PATH</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -296,7 +319,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   return (
     <Link
       to={to}
-      className="cursor-pointer"
+      className="block cursor-pointer !no-underline !text-foreground"
       aria-label={`Open path ${path.title || "path"}`}
     >
       {card}

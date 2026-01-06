@@ -40,7 +40,7 @@ export default function FilesPage() {
             icon={<Files className="h-7 w-7" />}
           />
         ) : (
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-6 justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
             {visible.map((file) => (
               <MaterialCardLarge key={file.id} file={file} />
             ))}
