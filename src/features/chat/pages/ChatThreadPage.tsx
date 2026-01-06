@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,6 +26,7 @@ import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { Container } from "@/shared/layout/Container";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
+import { Skeleton } from "@/shared/ui/skeleton";
 import type { ChatMessage as ChatMessageModel, ChatThread, JsonInput, Path, PathNode } from "@/shared/types/models";
 
 type DeltaState = { attempt: number; deltaSeq: number };
@@ -181,6 +182,24 @@ function upsertByID(list: ChatMessageItem[], msg: ChatMessageItem) {
   return next.sort((a, b) => (a?.seq || 0) - (b?.seq || 0));
 }
 
+function mergeMessagesByID(list: ChatMessageItem[], incoming: ChatMessageItem[]) {
+  const byID = new Map<string, ChatMessageItem>();
+  for (const m of list || []) {
+    const id = String(m?.id || "").trim();
+    if (!id) continue;
+    byID.set(id, m);
+  }
+  for (const m of incoming || []) {
+    const id = String(m?.id || "").trim();
+    if (!id) continue;
+    const prev = byID.get(id);
+    byID.set(id, prev ? { ...prev, ...m } : m);
+  }
+  const out = Array.from(byID.values());
+  out.sort((a, b) => (a?.seq || 0) - (b?.seq || 0));
+  return out;
+}
+
 function appendDeltaWithDedupe(
   list: ChatMessageItem[],
   messageId: string,
@@ -303,6 +322,8 @@ export default function ChatThreadPage() {
   const [loading, setLoading] = useState(false);
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasOlder, setHasOlder] = useState(true);
   const [sendError, setSendError] = useState("");
 
   const [blockNode, setBlockNode] = useState<PathNode | null>(null);
@@ -319,6 +340,9 @@ export default function ChatThreadPage() {
   const pathCacheRef = useRef<Record<string, Path | null>>({});
   const pathFetchRef = useRef<Set<string>>(new Set());
   const terminalConvergeRef = useRef<string>("");
+  const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const loadingOlderRef = useRef(false);
 
   useEffect(() => {
     pathCacheRef.current = pathCache;
@@ -370,6 +394,70 @@ export default function ChatThreadPage() {
     updateScrollState();
   }, [updateScrollState]);
 
+  const oldestSeq = useMemo(() => {
+    const first = (messages || [])[0];
+    const seq = typeof first?.seq === "number" ? first.seq : Number(first?.seq || 0);
+    return Number.isFinite(seq) && seq > 0 ? seq : null;
+  }, [messages]);
+
+  const loadOlder = useCallback(async () => {
+    if (!threadId) return;
+    if (loadingOlderRef.current) return;
+    if (!hasOlder) return;
+    if (!oldestSeq) {
+      setHasOlder(false);
+      return;
+    }
+
+    const el = scrollRef.current;
+    if (el) {
+      prependAnchorRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
+    }
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const pageSize = 100;
+      const older = await listChatMessages(threadId, { limit: pageSize, beforeSeq: oldestSeq });
+      setMessages((prev) => mergeMessagesByID(prev || [], older as ChatMessageItem[]));
+      if (!older || older.length < pageSize) setHasOlder(false);
+    } catch (err) {
+      console.warn("[ChatThreadPage] Failed to load older messages:", err);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [hasOlder, oldestSeq, threadId]);
+
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current;
+    const el = scrollRef.current;
+    if (!anchor || !el) return;
+    prependAnchorRef.current = null;
+    const delta = el.scrollHeight - anchor.scrollHeight;
+    if (delta !== 0) {
+      el.scrollTop = anchor.scrollTop + delta;
+    }
+  }, [messages.length]);
+
+  useEffect(() => {
+    const el = topSentinelRef.current;
+    if (!el) return;
+    if (!hasOlder) return;
+    if (typeof IntersectionObserver === "undefined") return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        void loadOlder();
+      },
+      { root: scrollRef.current, rootMargin: "600px 0px", threshold: 0.01 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasOlder, loadOlder]);
+
   useEffect(() => {
     if (!threadId) return;
     let cancelled = false;
@@ -381,6 +469,8 @@ export default function ChatThreadPage() {
         if (cancelled) return;
         setThread(t);
         setMessages(ms);
+        setHasOlder((ms || []).length >= 100);
+        setLoadingOlder(false);
         startedAtRef.current = Date.now();
         deltaStateRef.current.clear();
       } catch (err) {
@@ -559,9 +649,9 @@ export default function ChatThreadPage() {
     let cancelled = false;
     const tick = async () => {
       try {
-        const fresh = await listChatMessages(threadId, { limit: 120 });
+        const fresh = await listChatMessages(threadId, { limit: 200 });
         if (cancelled) return;
-        setMessages(fresh);
+        setMessages((prev) => mergeMessagesByID(prev || [], fresh as ChatMessageItem[]));
       } catch (err) {
         console.warn("[ChatThreadPage] Poll messages failed:", err);
       }
@@ -639,10 +729,10 @@ export default function ChatThreadPage() {
 
     let cancelled = false;
     const t = setTimeout(() => {
-      void listChatMessages(threadId, { limit: 140 })
+      void listChatMessages(threadId, { limit: 200 })
         .then((fresh) => {
           if (cancelled) return;
-          setMessages(fresh);
+          setMessages((prev) => mergeMessagesByID(prev || [], fresh as ChatMessageItem[]));
         })
         .catch((err) => {
           console.warn("[ChatThreadPage] converge messages failed:", err);
@@ -928,7 +1018,17 @@ export default function ChatThreadPage() {
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto">
         <Container size="sm" className="page-pad-compact">
           {loading && !thread ? (
-            <div className="text-sm text-muted-foreground">Loading…</div>
+            <div className="space-y-3 py-2">
+              <div className="flex justify-end">
+                <Skeleton className="h-11 w-[240px] rounded-3xl bg-muted/30" />
+              </div>
+              <div className="flex justify-start">
+                <Skeleton className="h-16 w-[340px] rounded-3xl bg-muted/30" />
+              </div>
+              <div className="flex justify-end">
+                <Skeleton className="h-11 w-[180px] rounded-3xl bg-muted/30" />
+              </div>
+            </div>
           ) : null}
 
           {blockNodeId && blockId ? (
@@ -1004,6 +1104,21 @@ export default function ChatThreadPage() {
           ) : null}
 
           <div className="space-y-2">
+            <div ref={topSentinelRef} aria-hidden="true" className="h-px w-full" />
+            <div className="sticky top-0 z-20 h-0 pointer-events-none">
+              <div className="absolute left-0 right-0 flex justify-center pt-2">
+                {loadingOlder ? (
+                  <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+                    <Skeleton className="h-2.5 w-2.5 rounded-full bg-muted/30" />
+                    <Skeleton className="h-3 w-32 rounded-full bg-muted/30" />
+                  </div>
+                ) : !hasOlder && messages.length > 0 ? (
+                  <div className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+                    Start of chat
+                  </div>
+                ) : null}
+              </div>
+            </div>
             {(messages || []).map((m) => {
               const role = String(m?.role || "").toLowerCase();
               const variant = role === "user" ? "user" : "assistant";
@@ -1022,16 +1137,21 @@ export default function ChatThreadPage() {
                 const defaultExpanded = learningBuildActive || learningBuildCanceled;
 
                 return (
-                  <ChatMessage key={m.id} variant={variant} showActions={false}>
-                    <GenerationCard
-                      title={statusLabel}
-                      progress={progress}
-                      duration={thinkingDuration}
-                      defaultExpanded={defaultExpanded}
-                    >
-                      {buildLog ? buildLog : <div>Working…</div>}
-                    </GenerationCard>
-                  </ChatMessage>
+                  <div
+                    key={m.id}
+                    style={{ contentVisibility: "auto", containIntrinsicSize: "180px" }}
+                  >
+                    <ChatMessage variant={variant} showActions={false}>
+                      <GenerationCard
+                        title={statusLabel}
+                        progress={progress}
+                        duration={thinkingDuration}
+                        defaultExpanded={defaultExpanded}
+                      >
+                        {buildLog ? buildLog : <div>Working…</div>}
+                      </GenerationCard>
+                    </ChatMessage>
+                  </div>
                 );
               }
 
@@ -1040,31 +1160,45 @@ export default function ChatThreadPage() {
                 const hasPath = pid ? Object.prototype.hasOwnProperty.call(pathCache, pid) : false;
                 const path = pid ? pathCache[pid] : null;
                 return (
-                  <ChatMessage key={m.id} variant={variant}>
-                    <div className="space-y-4">
-                      {renderMessageContent(m)}
-                      {pid ? (
-                        path ? (
-                          <PathCardLarge path={path} />
-                        ) : hasPath ? (
-                          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
-                            Path unavailable.
-                          </div>
-                        ) : (
-                          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
-                            Loading path…
-                          </div>
-                        )
-                      ) : null}
-                    </div>
-                  </ChatMessage>
+                  <div
+                    key={m.id}
+                    style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}
+                  >
+                    <ChatMessage variant={variant}>
+                      <div className="space-y-4">
+                        {renderMessageContent(m)}
+                        {pid ? (
+                          path ? (
+                            <PathCardLarge path={path} />
+                          ) : hasPath ? (
+                            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                              Path unavailable.
+                            </div>
+                          ) : (
+                            <div className="h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4">
+                              <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                              <div className="mt-4 space-y-2">
+                                <Skeleton className="h-4 w-3/4 bg-muted/30" />
+                                <Skeleton className="h-4 w-1/2 bg-muted/30" />
+                              </div>
+                            </div>
+                          )
+                        ) : null}
+                      </div>
+                    </ChatMessage>
+                  </div>
                 );
               }
 
               return (
-                <ChatMessage key={m.id} variant={variant}>
-                  {renderMessageContent(m)}
-                </ChatMessage>
+                <div
+                  key={m.id}
+                  style={{ contentVisibility: "auto", containIntrinsicSize: "120px" }}
+                >
+                  <ChatMessage variant={variant}>
+                    {renderMessageContent(m)}
+                  </ChatMessage>
+                </div>
               );
             })}
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { MaterialCardLarge } from "@/features/files/components/MaterialCardLarge";
 import { EmptyContent } from "@/shared/components/EmptyContent";
@@ -21,6 +21,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/lib/utils";
 import {
   Atom,
@@ -41,6 +42,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { LibraryTaxonomySnapshotV1, MaterialFile, Path } from "@/shared/types/models";
+import { listTaxonomyNodeItems } from "@/shared/api/LibraryService";
 
 export type HomeTabKey = "home" | "in-progress" | "saved" | "completed" | "recently-viewed";
 
@@ -189,6 +191,7 @@ type HomeRailSection = {
   title: string;
   iconKey?: string;
   items: HomeCardItem[];
+  nodeId?: string;
 };
 
 type HomeRailFilterValue = "all" | "paths" | "files";
@@ -344,8 +347,7 @@ export function HomeTabContent({
     const generating = list
       .filter((p) => isBuildingPath(p))
       .slice()
-      .sort(byUpdatedDesc)
-      .slice(0, 12);
+      .sort(byUpdatedDesc);
     const maxNewAgeDays = (() => {
       const raw = String(import.meta.env.VITE_HOME_NEW_MAX_AGE_DAYS || "7");
       const parsed = Number.parseInt(raw, 10);
@@ -375,8 +377,7 @@ export function HomeTabContent({
     const newPaths = list
       .filter((p) => isNewPath(p))
       .slice()
-      .sort((a, b) => readyMsFor(b) - readyMsFor(a))
-      .slice(0, 12);
+      .sort((a, b) => readyMsFor(b) - readyMsFor(a));
 
     const sections: HomeRailSection[] = [];
     if (generating.length > 0) {
@@ -473,6 +474,7 @@ export function HomeTabContent({
       if (ordered.length < minTopicAnchorPaths) continue;
       topicSections.push({
         id: node.id,
+        nodeId,
         title: node.name || "Untitled",
         iconKey: String(node.key || ""),
         items: buildItems(ordered),
@@ -536,6 +538,7 @@ export function HomeTabContent({
             title={section.title}
             iconKey={section.iconKey}
             items={section.items}
+            nodeId={section.nodeId}
           />
         ))}
       </div>
@@ -562,29 +565,209 @@ export function HomeTabContent({
   );
 }
 
-function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; items: HomeCardItem[] }) {
+function HomeRail({
+  title,
+  iconKey,
+  items,
+  nodeId,
+}: {
+  title: string;
+  iconKey?: string;
+  items: HomeCardItem[];
+  nodeId?: string;
+}) {
   const railRef = useRef<HTMLDivElement | null>(null);
+  const pendingAnchorRef = useRef<{ key: string; within: number } | null>(null);
   const [filter, setFilter] = useState<HomeRailFilterValue>("all");
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
 
+  const isPaginated = Boolean(nodeId);
+  const [loadedItems, setLoadedItems] = useState<HomeCardItem[]>(() => items || []);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialFetched, setInitialFetched] = useState(false);
+  const loadingMoreRef = useRef(false);
+  const [viewAllOpen, setViewAllOpen] = useState(false);
+  const viewAllScrollRef = useRef<HTMLDivElement | null>(null);
+  const viewAllSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [viewAllRenderCount, setViewAllRenderCount] = useState(0);
+
+  const allItems = isPaginated ? loadedItems : items;
+
+  const mergeIntoLoaded = useMemo(() => {
+    return (prev: HomeCardItem[], incoming: HomeCardItem[]) => {
+      const byKey = new Map<string, HomeCardItem>();
+      for (const it of prev || []) {
+        const id = String(it?.id || "");
+        const kind = String(it?.kind || "");
+        if (!id || !kind) continue;
+        byKey.set(`${kind}:${id}`, it);
+      }
+      for (const it of incoming || []) {
+        const id = String(it?.id || "");
+        const kind = String(it?.kind || "");
+        if (!id || !kind) continue;
+        byKey.set(`${kind}:${id}`, it);
+      }
+      const out = Array.from(byKey.values());
+      out.sort((a, b) => {
+        const diff = itemUpdatedMs(b) - itemUpdatedMs(a);
+        if (diff !== 0) return diff;
+        const ar = a.kind === "material" ? 1 : 0;
+        const br = b.kind === "material" ? 1 : 0;
+        if (ar !== br) return ar - br;
+        return String(a.id || "").localeCompare(String(b.id || ""), undefined, { sensitivity: "base" });
+      });
+      return out;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPaginated) return;
+    setLoadedItems((prev) => mergeIntoLoaded(prev, items || []));
+  }, [isPaginated, items, mergeIntoLoaded]);
+
+  useEffect(() => {
+    if (!isPaginated) return;
+    // When node changes, reset pagination state.
+    setLoadedItems(items || []);
+    setNextCursor(null);
+    setInitialFetched(false);
+  }, [isPaginated, nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const counts = useMemo(() => {
     let paths = 0;
     let files = 0;
-    for (const item of items || []) {
+    for (const item of allItems || []) {
       if (item.kind === "path") paths++;
       if (item.kind === "material") files++;
     }
     return { paths, files, total: paths + files };
-  }, [items]);
+  }, [allItems]);
 
   const visibleItems = useMemo(() => {
-    const list = items || [];
+    const list = allItems || [];
     if (filter === "paths") return list.filter((i) => i.kind === "path");
     if (filter === "files") return list.filter((i) => i.kind === "material");
     return list;
-  }, [filter, items]);
+  }, [filter, allItems]);
+
+  const [cardWidth, setCardWidth] = useState<number>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia === "undefined") return 320;
+    return window.matchMedia("(min-width: 640px)").matches ? 360 : 320;
+  });
+  const gapPx = 24;
+  const stridePx = cardWidth + gapPx;
+  const overscan = 2;
+  const rafRef = useRef<number | null>(null);
+  const tailSkeletonCount = loadingMore ? 2 : 0;
+  const displayCount = visibleItems.length + tailSkeletonCount;
+  const [range, setRange] = useState<{ start: number; end: number }>(() => ({
+    start: 0,
+    end: Math.min(visibleItems.length, 8),
+  }));
+
+  const fetchMore = useCallback(async () => {
+    const nid = String(nodeId || "");
+    if (!nid) return;
+    if (loadingMoreRef.current) return;
+    if (initialFetched && !nextCursor) return;
+
+    loadingMoreRef.current = true;
+    const el = railRef.current;
+    if (el && el.scrollLeft > 1 && visibleItems.length > 0) {
+      const idx = Math.max(0, Math.min(visibleItems.length - 1, Math.floor(el.scrollLeft / stridePx)));
+      const anchor = visibleItems[idx];
+      if (anchor) {
+        pendingAnchorRef.current = {
+          key: `${anchor.kind}:${anchor.id}`,
+          within: el.scrollLeft - idx * stridePx,
+        };
+      }
+    }
+
+    setLoadingMore(true);
+    try {
+      const { items: incoming, nextCursor: cursor } = await listTaxonomyNodeItems(nid, {
+        facet: "topic",
+        filter: "all",
+        limit: 48,
+        cursor: initialFetched ? nextCursor : null,
+      });
+      const mapped: HomeCardItem[] = incoming.map((it) => {
+        if (it.kind === "path") return { kind: "path", id: String(it.path.id), path: it.path };
+        return { kind: "material", id: String(it.file.id), file: it.file };
+      });
+      setLoadedItems((prev) => mergeIntoLoaded(prev, mapped));
+      setNextCursor(cursor);
+      setInitialFetched(true);
+    } catch (err) {
+      console.warn("[HomeRail] Failed to load more items:", err);
+      setInitialFetched(true);
+      setNextCursor(null);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [initialFetched, mergeIntoLoaded, nextCursor, nodeId, stridePx, visibleItems]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia === "undefined") return;
+    const mql = window.matchMedia("(min-width: 640px)");
+    const onChange = () => setCardWidth(mql.matches ? 360 : 320);
+    onChange();
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    }
+    // Safari < 14
+    // eslint-disable-next-line deprecation/deprecation
+    mql.addListener(onChange);
+    // eslint-disable-next-line deprecation/deprecation
+    return () => mql.removeListener(onChange);
+  }, []);
+
+  const updateVirtualRange = () => {
+    const el = railRef.current;
+    if (!el) return;
+    const count = displayCount;
+    if (count <= 0) {
+      setRange({ start: 0, end: 0 });
+      return;
+    }
+    const start = Math.max(0, Math.floor(el.scrollLeft / stridePx) - overscan);
+    const end = Math.min(
+      count,
+      Math.ceil((el.scrollLeft + el.clientWidth) / stridePx) + overscan
+    );
+    setRange((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+  };
+
+  const maybeLoadMore = () => {
+    if (!isPaginated) return;
+    if (loadingMore) return;
+    if (initialFetched && !nextCursor) return;
+    const el = railRef.current;
+    if (!el) return;
+    const count = visibleItems.length;
+    if (count <= 0) return;
+    const totalWidth = count * stridePx - gapPx;
+    if (el.scrollLeft + el.clientWidth >= totalWidth - stridePx * 2) {
+      void fetchMore();
+    }
+  };
+
+  const scheduleUpdate = () => {
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      updateScrollState();
+      updateVirtualRange();
+      maybeLoadMore();
+    });
+  };
 
   const updateScrollState = () => {
     const el = railRef.current;
@@ -596,18 +779,18 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
   };
 
   useEffect(() => {
-    updateScrollState();
+    scheduleUpdate();
     const el = railRef.current;
     if (!el) return;
-    const onScroll = () => updateScrollState();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(() => updateScrollState());
+    const ro = new ResizeObserver(() => scheduleUpdate());
     ro.observe(el);
     return () => {
-      el.removeEventListener("scroll", onScroll);
       ro.disconnect();
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleItems.length, cardWidth, isPaginated, nextCursor, loadingMore]);
 
   const scrollByCards = (direction: -1 | 1) => {
     const el = railRef.current;
@@ -620,16 +803,72 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
     const el = railRef.current;
     if (!el) return;
     el.scrollTo({ left: 0, behavior: "auto" });
-    updateScrollState();
+    scheduleUpdate();
+    pendingAnchorRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
   useEffect(() => {
-    updateScrollState();
+    scheduleUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleItems]);
 
-  if (!items || items.length === 0) return null;
+  useEffect(() => {
+    if (!viewAllOpen) {
+      setViewAllRenderCount(0);
+      return;
+    }
+    setViewAllRenderCount((prev) => {
+      const base = prev > 0 ? prev : 48;
+      return Math.min(Math.max(24, base), visibleItems.length);
+    });
+  }, [filter, viewAllOpen, visibleItems.length]);
+
+  useEffect(() => {
+    if (!viewAllOpen) return;
+    const root = viewAllScrollRef.current;
+    const sentinel = viewAllSentinelRef.current;
+    if (!root || !sentinel) return;
+    if (typeof IntersectionObserver === "undefined") return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+
+        setViewAllRenderCount((prev) => {
+          const next = Math.min(visibleItems.length, Math.max(24, prev) + 24);
+          return next;
+        });
+
+        if (!isPaginated) return;
+        if (loadingMore) return;
+        if (initialFetched && !nextCursor) return;
+
+        const nearEnd = viewAllRenderCount >= Math.max(0, visibleItems.length - 6);
+        if (nearEnd) void fetchMore();
+      },
+      { root, rootMargin: "600px 0px", threshold: 0.01 }
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [viewAllOpen, viewAllRenderCount, visibleItems.length, isPaginated, loadingMore, initialFetched, nextCursor, fetchMore]);
+
+  useEffect(() => {
+    const pending = pendingAnchorRef.current;
+    const el = railRef.current;
+    if (!pending || !el) return;
+    const idx = visibleItems.findIndex((it) => `${it.kind}:${it.id}` === pending.key);
+    pendingAnchorRef.current = null;
+    if (idx < 0) return;
+    // Avoid jumping the user when they're at the very start.
+    if (el.scrollLeft <= 1) return;
+    el.scrollLeft = idx * stridePx + pending.within;
+    scheduleUpdate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleItems.length, stridePx]);
+
+  if (!allItems || allItems.length === 0) return null;
 
   return (
     <section className="space-y-4">
@@ -709,7 +948,7 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
           </DropdownMenu>
         </div>
         {hasOverflow && (
-          <Dialog>
+          <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
             <DialogTrigger asChild>
               <Button
                 type="button"
@@ -721,21 +960,40 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
                 View all
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
+            <DialogContent ref={viewAllScrollRef} className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-brand text-2xl sm:text-3xl">
                   {title}
                 </DialogTitle>
               </DialogHeader>
               <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
-                {visibleItems.map((item) =>
-                  item.kind === "material" ? (
-                    <MaterialCardLarge key={`material:${item.id}`} file={item.file} />
-                  ) : (
-                    <PathCardLarge key={`path:${item.id}`} path={item.path} />
-                  )
-                )}
+                {visibleItems.slice(0, Math.max(0, viewAllRenderCount || 0)).map((item) => (
+                  <div
+                    key={`${item.kind}:${item.id}`}
+                    style={{ contentVisibility: "auto", containIntrinsicSize: "280px" }}
+                  >
+                    {item.kind === "material" ? (
+                      <MaterialCardLarge file={item.file} />
+                    ) : (
+                      <PathCardLarge path={item.path} />
+                    )}
+                  </div>
+                ))}
+                {(loadingMore || viewAllRenderCount < visibleItems.length) &&
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={`viewall-skel:${i}`}
+                      className="h-[280px] w-full max-w-[360px] rounded-xl border border-border/60 bg-muted/20 p-4"
+                    >
+                      <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                      <div className="mt-4 space-y-2">
+                        <Skeleton className="h-4 w-3/4 bg-muted/30" />
+                        <Skeleton className="h-4 w-1/2 bg-muted/30" />
+                      </div>
+                    </div>
+                  ))}
               </div>
+              <div ref={viewAllSentinelRef} aria-hidden="true" className="h-px w-full" />
             </DialogContent>
           </Dialog>
         )}
@@ -745,7 +1003,11 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
         <div
           ref={railRef}
           className="scrollbar-none flex gap-6 overflow-x-auto overscroll-x-contain pb-1 scroll-smooth snap-x snap-proximity"
-          style={{ WebkitOverflowScrolling: "touch" }}
+          style={{
+            WebkitOverflowScrolling: "touch",
+            paddingLeft: Math.max(0, range.start) * stridePx,
+            paddingRight: Math.max(0, displayCount - range.end) * stridePx,
+          }}
           onWheel={(e) => {
             const el = e.currentTarget;
             const canScrollX = el.scrollWidth > el.clientWidth;
@@ -753,20 +1015,41 @@ function HomeRail({ title, iconKey, items }: { title: string; iconKey?: string; 
             if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
             el.scrollLeft += e.deltaY;
           }}
-          onScroll={updateScrollState}
+          onScroll={scheduleUpdate}
         >
-          {visibleItems.map((item) => (
-            <div
-              key={`${item.kind}:${item.id}`}
-              className="shrink-0 snap-start w-[320px] sm:w-[360px]"
-            >
-              {item.kind === "material" ? (
-                <MaterialCardLarge file={item.file} />
-              ) : (
-                <PathCardLarge path={item.path} />
-              )}
-            </div>
-          ))}
+          {Array.from({ length: Math.max(0, range.end - range.start) }).map((_, offset) => {
+            const idx = range.start + offset;
+            const item = idx < visibleItems.length ? visibleItems[idx] : null;
+            if (!item) {
+              return (
+                <div
+                  key={`rail-skel:${idx}`}
+                  className="shrink-0 snap-start w-[320px] sm:w-[360px]"
+                  aria-hidden="true"
+                >
+                  <div className="h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4">
+                    <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                    <div className="mt-4 space-y-2">
+                      <Skeleton className="h-4 w-3/4 bg-muted/30" />
+                      <Skeleton className="h-4 w-1/2 bg-muted/30" />
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div
+                key={`${item.kind}:${item.id}`}
+                className="shrink-0 snap-start w-[320px] sm:w-[360px]"
+              >
+                {item.kind === "material" ? (
+                  <MaterialCardLarge file={item.file} />
+                ) : (
+                  <PathCardLarge path={item.path} />
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div

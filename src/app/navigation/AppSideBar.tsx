@@ -14,6 +14,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
+  SidebarMenuSkeleton,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarSeparator,
@@ -226,6 +227,7 @@ export function AppSideBar() {
   const { files: materialFiles, loading: materialFilesLoading } = useMaterials();
   const {
     paths,
+    loading: pathsLoading,
     reload,
     activePathId,
     activePath: activePathFromProvider,
@@ -370,7 +372,7 @@ export function AppSideBar() {
     });
   }, [activePathId, activatePath, isAuthenticated, pathIdFromRoute]);
 
-  const visibleFiles = useMemo(() => (materialFiles || []).slice(0, 12), [materialFiles]);
+  const visibleFiles = useMemo(() => materialFiles || [], [materialFiles]);
 
   const handleGenerateCover = async (path: Path, force: boolean) => {
     if (!path?.id) return;
@@ -620,11 +622,11 @@ export function AppSideBar() {
               <SidebarGroupLabel>Your lessons</SidebarGroupLabel>
               <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
                 {lessonsLoading && lessons.length === 0 ? (
-                  <SidebarMenuSubItem>
-                    <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-                      Loading lessons...
-                    </div>
-                  </SidebarMenuSubItem>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <SidebarMenuSubItem key={`lesson-skel:${i}`}>
+                      <SidebarMenuSkeleton showIcon />
+                    </SidebarMenuSubItem>
+                  ))
                 ) : lessons.length === 0 ? (
                   <SidebarMenuSubItem>
                     <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
@@ -732,16 +734,22 @@ export function AppSideBar() {
             {!isCollapsed && (
               <>
                 <SidebarGroup className="px-0">
-                  <SidebarGroupLabel>Your paths</SidebarGroupLabel>
+                <SidebarGroupLabel>Your paths</SidebarGroupLabel>
                   <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
-                    {realPaths.length === 0 ? (
+                    {pathsLoading && realPaths.length === 0 ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <SidebarMenuSubItem key={`path-skel:${i}`}>
+                          <SidebarMenuSkeleton showIcon />
+                        </SidebarMenuSubItem>
+                      ))
+                    ) : realPaths.length === 0 ? (
                       <SidebarMenuSubItem>
                         <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
                           No paths yet
                         </div>
                       </SidebarMenuSubItem>
                     ) : (
-                      realPaths.slice(0, 12).map((p) => {
+                      realPaths.map((p) => {
                         const coverUrl = getPathAvatarUrl(p);
                         const fallbackColor = pickPathColor(String(p?.id || p?.title || ""));
                         const build = buildProgressState(p);
@@ -750,7 +758,10 @@ export function AppSideBar() {
                         const actionLabel = coverUrl ? "Regenerate avatar" : "Generate avatar";
 
                         return (
-                          <SidebarMenuSubItem key={p.id}>
+                          <SidebarMenuSubItem
+                            key={p.id}
+                            style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
+                          >
                             <div
                               className={cn(
                                 "flex w-full items-center gap-1 rounded-xl transition-colors",
@@ -842,14 +853,14 @@ export function AppSideBar() {
                 </SidebarGroup>
 
                 <SidebarGroup className="px-0">
-                  <SidebarGroupLabel>Your files</SidebarGroupLabel>
+                <SidebarGroupLabel>Your files</SidebarGroupLabel>
                   <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
                     {materialFilesLoading && visibleFiles.length === 0 ? (
-                      <SidebarMenuSubItem>
-                        <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-                          Loading files...
-                        </div>
-                      </SidebarMenuSubItem>
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <SidebarMenuSubItem key={`file-skel:${i}`}>
+                          <SidebarMenuSkeleton showIcon />
+                        </SidebarMenuSubItem>
+                      ))
                     ) : visibleFiles.length === 0 ? (
                       <SidebarMenuSubItem>
                         <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
@@ -865,7 +876,10 @@ export function AppSideBar() {
                         const thumbKey = `${file.id}:${thumbVersion}`;
                         const showThumb = Boolean(thumbUrl) && !fileThumbErrors[thumbKey];
                         return (
-                          <SidebarMenuSubItem key={file.id}>
+                          <SidebarMenuSubItem
+                            key={file.id}
+                            style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
+                          >
                             <div className="flex w-full items-center gap-1 rounded-xl transition-colors hover:bg-sidebar-accent/70">
                               <SidebarMenuSubButton
                                 asChild

@@ -1,3 +1,6 @@
+import type { BackendMaterialFile } from "./materials";
+import type { BackendPath } from "./paths";
+
 export interface BackendLibraryTaxonomyPathMembershipV1 {
   path_id: string;
   weight: number;
@@ -47,3 +50,15 @@ export interface BackendLibraryTaxonomyResponse {
   enqueued_refine?: boolean;
 }
 
+export type BackendLibraryTaxonomyNodeItemKind = "path" | "material";
+
+export interface BackendLibraryTaxonomyNodeItem {
+  kind: BackendLibraryTaxonomyNodeItemKind;
+  path?: BackendPath;
+  file?: BackendMaterialFile;
+}
+
+export interface BackendLibraryTaxonomyNodeItemsResponse {
+  items?: BackendLibraryTaxonomyNodeItem[];
+  next_cursor?: string | null;
+}
