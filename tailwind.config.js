@@ -9,6 +9,8 @@ module.exports = {
     extend: {
       fontFamily: {
         brand: ['"Riforma"', 'system-ui', 'sans-serif'],
+        pragmata: ['"Pragmata Pro"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        mono: ['"Pragmata Pro"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       screens: {
         xs: "360px",

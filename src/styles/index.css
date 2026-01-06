@@ -12,6 +12,30 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Pragmata Pro";
+  src: url("/fonts/PragmataPro/PragmataPro_Mono_R_0903.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Pragmata Pro";
+  src: url("/fonts/PragmataPro/PragmataPro_Mono_B_0903.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Pragmata Pro";
+  src: url("/fonts/PragmataPro/PragmataPro_Mono_I_0903.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
 .debug-riforma {
   font-family: "Riforma", cursive;
 }
@@ -19,6 +43,12 @@
 @layer utilities {
   .font-brand {
     font-family: "Riforma", system-ui, sans-serif;
+  }
+
+  .font-pragmata,
+  .font-mono {
+    font-family: "Pragmata Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
   }
 
   .scrollbar-none {
@@ -884,6 +914,17 @@
 
 /* Minimal typography styling (without @tailwindcss/typography) */
 @layer components {
+  /* Force Pragmata Pro for all code */
+  code,
+  pre,
+  kbd,
+  samp,
+  tt,
+  .prose :where(code, pre):not(:where(.not-prose, .not-prose *)) {
+    font-family: "Pragmata Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+  }
+
   .prose {
     color: var(--foreground);
     line-height: 1.75;
@@ -1018,3 +1059,12 @@
     height: auto;
   }
 }
+
+
+
+
+
+
+
+
+

@@ -37,7 +37,7 @@ function SheetOverlay({
   animation?: "slide" | "fade" | "none";
 }) {
   const base =
-    "fixed inset-0 z-50 bg-black/50 " +
+    "fixed inset-0 z-[55] bg-black/50 " +
     "data-[state=open]:opacity-100 data-[state=closed]:opacity-0 " +
     "data-[state=closed]:pointer-events-none"
 
@@ -68,7 +68,7 @@ function SheetContent({
   forceMount?: boolean;
 }) {
   const base =
-    "bg-background fixed z-50 data-[state=closed]:-z-10 flex flex-col gap-4 shadow-lg outline-none " +
+    "bg-background fixed z-[56] data-[state=closed]:-z-10 flex flex-col gap-4 shadow-lg outline-none " +
     "data-[state=open]:opacity-100 data-[state=closed]:opacity-0 " +
     "data-[state=closed]:pointer-events-none"
 
@@ -183,8 +183,6 @@ export {
   SheetTitle,
   SheetDescription,
 };
-
-
 
 
 

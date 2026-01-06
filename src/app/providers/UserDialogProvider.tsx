@@ -34,8 +34,8 @@ export function useUserDialogs() {
  */
 export const USER_DIALOG_OPEN_EVENT = "nb:user-dialog-open";
 
-// IMPORTANT: your sheet close duration is 300ms. 80ms causes overlap -> dialog behind sheet.
-const OPEN_DIALOG_AFTER_SIDEBAR_CLOSE_MS = 360;
+// We can open dialogs immediately; the sheet is layered beneath dialogs (z-index).
+const OPEN_DIALOG_AFTER_SIDEBAR_CLOSE_MS = 0;
 const REOPEN_SIDEBAR_AFTER_DIALOG_CLOSE_MS = 260;
 
 // Avoid flicker by closing the sheet before paint when needed.
@@ -239,8 +239,6 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
     </UserDialogsContext.Provider>
   );
 }
-
-
 
 
 
