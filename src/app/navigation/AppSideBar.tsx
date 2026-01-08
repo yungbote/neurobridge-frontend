@@ -22,6 +22,7 @@ import {
 import { AppLogo } from "@/shared/components/AppLogo";
 import {
   ChevronDown,
+  CornerDownRight,
   File as FileIcon,
   FileText,
   Files,
@@ -354,6 +355,22 @@ export function AppSideBar() {
   const realPaths = useMemo(() => {
     return (sortedPaths || []).filter((p) => !String(p?.id || "").startsWith("job:"));
   }, [sortedPaths]);
+
+  const generatingPaths = useMemo(() => {
+    return (sortedPaths || []).filter((p) => buildProgressState(p).showProgress);
+  }, [sortedPaths]);
+
+  const generatingPathIds = useMemo(() => {
+    return new Set((generatingPaths || []).map((p) => String(p?.id || "")));
+  }, [generatingPaths]);
+
+  const nonGeneratingRealPaths = useMemo(() => {
+    if (!realPaths?.length) return [];
+    if (generatingPathIds.size === 0) return realPaths;
+    return realPaths.filter((p) => !generatingPathIds.has(String(p?.id || "")));
+  }, [generatingPathIds, realPaths]);
+
+  const hasAnySidebarPaths = generatingPaths.length > 0 || nonGeneratingRealPaths.length > 0;
 
   const pathContextPathId = activePathId || pathIdFromRoute;
   const isPathMode = Boolean(pathContextPathId);
@@ -861,119 +878,229 @@ export function AppSideBar() {
 	                          id="sidebar-your-paths"
 	                          className="gap-2.5 mx-0 border-l-0 px-0 py-0"
 	                        >
-	                    {pathsLoading && realPaths.length === 0 ? (
+	                    {pathsLoading && !hasAnySidebarPaths ? (
 	                      Array.from({ length: 6 }).map((_, i) => (
 	                        <SidebarMenuSubItem key={`path-skel:${i}`}>
 	                          <SidebarMenuSkeleton showIcon />
                         </SidebarMenuSubItem>
                       ))
-                    ) : realPaths.length === 0 ? (
+                    ) : !hasAnySidebarPaths ? (
                       <SidebarMenuSubItem>
                         <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
                           No paths yet
                         </div>
                       </SidebarMenuSubItem>
                     ) : (
-                      realPaths.map((p) => {
-                        const coverUrl = getPathAvatarUrl(p);
-                        const fallbackColor = pickPathColor(String(p?.id || p?.title || ""));
-                        const build = buildProgressState(p);
-                        const isGenerating = coverLoadingId === p.id;
-                        const isActionHover = actionHoverId === p.id;
-                        const actionLabel = coverUrl ? "Regenerate avatar" : "Generate avatar";
+                      <>
+                        {generatingPaths.length > 0 && (
+                          <>
+                            <SidebarMenuSubItem className="pl-2 -mb-1">
+                              <div className="flex h-7 items-center gap-2 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+                                <CornerDownRight className="h-4 w-4 text-sidebar-foreground/50" aria-hidden="true" />
+                                <span>Generating</span>
+                              </div>
+                            </SidebarMenuSubItem>
 
-                        return (
-                          <SidebarMenuSubItem
-                            key={p.id}
-                            style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
-                          >
-                            <div
-                              className={cn(
-                                "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
-                                isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
-                              )}
+                            {generatingPaths.map((p) => {
+                              const coverUrl = getPathAvatarUrl(p);
+                              const fallbackColor = pickPathColor(String(p?.id || p?.title || ""));
+                              const build = buildProgressState(p);
+                              const isPlaceholder = String(p?.id || "").startsWith("job:");
+                              const href = p?.jobId
+                                ? `/paths/build/${p.jobId}`
+                                : isPlaceholder
+                                  ? null
+                                  : `/paths/${p.id}`;
+
+                              return (
+                                <SidebarMenuSubItem
+                                  key={p.id}
+                                  className="pl-2"
+                                  style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
+                                >
+                                  <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
+                                    <SidebarMenuSubButton
+                                      asChild
+                                      size="sm"
+                                      isActive={currentPathId === p.id}
+                                      aria-disabled={!href}
+                                      className={cn(
+                                        "flex-1 pl-9 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                        "group-hover/menu-sub-item:text-sidebar-accent-foreground",
+                                        !href && "cursor-default opacity-80"
+                                      )}
+                                    >
+                                      {href ? (
+                                        <Link to={href} aria-label={`Open ${pathLabel(p)}`}>
+                                          <span
+                                            className={cn(
+                                              "flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full",
+                                              build.showProgress ? "" : "border border-border/60 bg-muted/40"
+                                            )}
+                                            style={
+                                              build.showProgress || coverUrl
+                                                ? undefined
+                                                : { backgroundColor: fallbackColor }
+                                            }
+                                            aria-hidden="true"
+                                          >
+                                            {build.showProgress ? (
+                                              <ProgressRing size={16} progress={build.progressPct} strokeWidth={2.5} />
+                                            ) : coverUrl ? (
+                                              <img
+                                                src={coverUrl}
+                                                alt=""
+                                                loading="lazy"
+                                                decoding="async"
+                                                className="h-full w-full object-cover"
+                                              />
+                                            ) : null}
+                                          </span>
+                                          <span className="truncate">{pathLabel(p)}</span>
+                                        </Link>
+                                      ) : (
+                                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                          <span
+                                            className={cn(
+                                              "flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full",
+                                              build.showProgress ? "" : "border border-border/60 bg-muted/40"
+                                            )}
+                                            style={
+                                              build.showProgress || coverUrl
+                                                ? undefined
+                                                : { backgroundColor: fallbackColor }
+                                            }
+                                            aria-hidden="true"
+                                          >
+                                            {build.showProgress ? (
+                                              <ProgressRing size={16} progress={build.progressPct} strokeWidth={2.5} />
+                                            ) : coverUrl ? (
+                                              <img
+                                                src={coverUrl}
+                                                alt=""
+                                                loading="lazy"
+                                                decoding="async"
+                                                className="h-full w-full object-cover"
+                                              />
+                                            ) : null}
+                                          </span>
+                                          <span className="truncate">{pathLabel(p)}</span>
+                                        </div>
+                                      )}
+                                    </SidebarMenuSubButton>
+                                    {/* Reserve space to match the action-button gutter in non-generating rows. */}
+                                    <div className="h-8 w-8 shrink-0 pointer-events-none" aria-hidden="true" />
+                                  </div>
+                                </SidebarMenuSubItem>
+                              );
+                            })}
+                          </>
+                        )}
+
+                        {nonGeneratingRealPaths.map((p) => {
+                          const coverUrl = getPathAvatarUrl(p);
+                          const fallbackColor = pickPathColor(String(p?.id || p?.title || ""));
+                          const build = buildProgressState(p);
+                          const isGenerating = coverLoadingId === p.id;
+                          const actionKey = `path:${p.id}`;
+                          const isActionHover = actionHoverId === actionKey;
+                          const actionLabel = coverUrl ? "Regenerate avatar" : "Generate avatar";
+
+                          return (
+                            <SidebarMenuSubItem
+                              key={p.id}
+                              style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
                             >
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={currentPathId === p.id}
+                              <div
                                 className={cn(
-                                  "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
-                                  !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
-                                  isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
+                                  "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
+                                  isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
                                 )}
                               >
-                                <Link to={`/paths/${p.id}`} aria-label={`Open ${pathLabel(p)}`}>
-                                  <span
-                                    className={cn(
-                                      "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full",
-                                      build.showProgress ? "" : "border border-border/60 bg-muted/40"
-                                    )}
-                                    style={
-                                      build.showProgress || coverUrl ? undefined : { backgroundColor: fallbackColor }
-                                    }
-                                    aria-hidden="true"
-                                  >
-                                    {build.showProgress ? (
-                                      <ProgressRing size={20} progress={build.progressPct} strokeWidth={3} />
-                                    ) : coverUrl ? (
-                                      <img
-                                        src={coverUrl}
-                                        alt=""
-                                        loading="lazy"
-                                        decoding="async"
-                                        className="h-full w-full object-cover"
-                                      />
-                                    ) : null}
-                                  </span>
-                                  <span className="truncate">{pathLabel(p)}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className={cn(
-                                      "h-8 w-8 rounded-lg text-sidebar-foreground/70",
-                                      "pointer-events-none opacity-0",
-                                      "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
-                                      "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
-                                      "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={currentPathId === p.id}
+                                  className={cn(
+                                    "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                    !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
+                                    isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
+                                  )}
+                                >
+                                  <Link to={`/paths/${p.id}`} aria-label={`Open ${pathLabel(p)}`}>
+                                    <span
+                                      className={cn(
+                                        "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full",
+                                        build.showProgress ? "" : "border border-border/60 bg-muted/40"
+                                      )}
+                                      style={
+                                        build.showProgress || coverUrl
+                                          ? undefined
+                                          : { backgroundColor: fallbackColor }
+                                      }
+                                      aria-hidden="true"
+                                    >
+                                      {build.showProgress ? (
+                                        <ProgressRing size={20} progress={build.progressPct} strokeWidth={3} />
+                                      ) : coverUrl ? (
+                                        <img
+                                          src={coverUrl}
+                                          alt=""
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="h-full w-full object-cover"
+                                        />
+                                      ) : null}
+                                    </span>
+                                    <span className="truncate">{pathLabel(p)}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className={cn(
+                                        "h-8 w-8 rounded-lg text-sidebar-foreground/70",
+                                        "pointer-events-none opacity-0",
+                                        "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
+                                        "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
+                                        "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                                     )}
                                     aria-label={`Open path actions for ${pathLabel(p)}`}
-                                    onMouseEnter={() => setActionHoverId(p.id)}
+                                    onMouseEnter={() => setActionHoverId(actionKey)}
                                     onMouseLeave={() => setActionHoverId(null)}
-                                    onFocus={() => setActionHoverId(p.id)}
+                                    onFocus={() => setActionHoverId(actionKey)}
                                     onBlur={() => setActionHoverId(null)}
                                   >
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" side="right" className="w-56">
-                                  <DropdownMenuItem
-                                    onSelect={() => navigate(`/paths/${p.id}`)}
-                                    className="gap-2"
-                                  >
-                                    <FolderOpen className="h-4 w-4" />
-                                    Open path
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    disabled={isGenerating}
-                                    onSelect={() => handleGenerateCover(p, Boolean(coverUrl))}
-                                    className="gap-2"
-                                  >
-                                    <Sparkles className={cn("h-4 w-4", isGenerating && "animate-pulse")} />
-                                    {isGenerating ? "Generating avatar…" : actionLabel}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </SidebarMenuSubItem>
-	                        );
-	                      })
-	                    )}
+                                  <DropdownMenuContent align="end" side="right" className="w-56">
+                                    <DropdownMenuItem
+                                      onSelect={() => navigate(`/paths/${p.id}`)}
+                                      className="gap-2"
+                                    >
+                                      <FolderOpen className="h-4 w-4" />
+                                      Open path
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      disabled={isGenerating}
+                                      onSelect={() => handleGenerateCover(p, Boolean(coverUrl))}
+                                      className="gap-2"
+                                    >
+                                      <Sparkles className={cn("h-4 w-4", isGenerating && "animate-pulse")} />
+                                      {isGenerating ? "Generating avatar…" : actionLabel}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </SidebarMenuSubItem>
+                          );
+                        })}
+                      </>
+                    )}
 	                        </SidebarMenuSub>
 	                      </m.div>
 	                    ) : null}
@@ -1037,15 +1164,25 @@ export function AppSideBar() {
                         const thumbUrl = buildFileThumbnailUrl(file.id, thumbVersion);
                         const thumbKey = `${file.id}:${thumbVersion}`;
                         const showThumb = Boolean(thumbUrl) && !fileThumbErrors[thumbKey];
+                        const actionKey = `file:${file.id}`;
+                        const isActionHover = actionHoverId === actionKey;
                         return (
                           <SidebarMenuSubItem
                             key={file.id}
                             style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
                           >
-                            <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
+                            <div
+                              className={cn(
+                                "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
+                                isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
+                              )}
+                            >
                               <SidebarMenuSubButton
                                 asChild
-                                className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
+                                className={cn(
+                                  "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                  !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground"
+                                )}
                               >
                                 <a
                                   href={buildFileViewUrl(file.id)}
@@ -1072,6 +1209,41 @@ export function AppSideBar() {
                                   <span className="truncate">{label}</span>
                                 </a>
                               </SidebarMenuSubButton>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                      "h-8 w-8 rounded-lg text-sidebar-foreground/70",
+                                      "pointer-events-none opacity-0",
+                                      "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
+                                      "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
+                                      "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                                    )}
+                                    aria-label={`Open file actions for ${label}`}
+                                    onMouseEnter={() => setActionHoverId(actionKey)}
+                                    onMouseLeave={() => setActionHoverId(null)}
+                                    onFocus={() => setActionHoverId(actionKey)}
+                                    onBlur={() => setActionHoverId(null)}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" side="right" className="w-56">
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      const url = buildFileViewUrl(file.id);
+                                      window.open(url, "_blank", "noopener,noreferrer");
+                                    }}
+                                    className="gap-2"
+                                  >
+                                    <FileIcon className="h-4 w-4" />
+                                    Open file
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </SidebarMenuSubItem>
 	                        );
@@ -1135,16 +1307,27 @@ export function AppSideBar() {
 		                          ) : (
 		                            chatThreads.map((t) => {
 		                              const isActive = currentThreadId != null && String(currentThreadId) === String(t.id);
+		                              const actionKey = `chat:${t.id}`;
+		                              const isActionHover = actionHoverId === actionKey;
 		                              return (
 		                                <SidebarMenuSubItem
 		                                  key={t.id}
 		                                  style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
 		                                >
-		                                  <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
+		                                  <div
+		                                    className={cn(
+		                                      "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
+		                                      isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
+		                                    )}
+		                                  >
 		                                    <SidebarMenuSubButton
 		                                      asChild
 		                                      isActive={isActive}
-		                                      className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
+		                                      className={cn(
+		                                        "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+		                                        !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
+		                                        isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
+		                                      )}
 		                                    >
 		                                      <Link to={`/chat/threads/${t.id}`} aria-label={`Open ${t.title}`}>
 		                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
@@ -1153,6 +1336,38 @@ export function AppSideBar() {
 		                                        <span className="truncate">{t.title}</span>
 		                                      </Link>
 		                                    </SidebarMenuSubButton>
+		                                    <DropdownMenu>
+		                                      <DropdownMenuTrigger asChild>
+		                                        <Button
+		                                          type="button"
+		                                          variant="ghost"
+		                                          size="icon"
+		                                          className={cn(
+		                                            "h-8 w-8 rounded-lg text-sidebar-foreground/70",
+		                                            "pointer-events-none opacity-0",
+		                                            "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
+		                                            "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
+		                                            "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+		                                          )}
+		                                          aria-label={`Open chat actions for ${t.title}`}
+		                                          onMouseEnter={() => setActionHoverId(actionKey)}
+		                                          onMouseLeave={() => setActionHoverId(null)}
+		                                          onFocus={() => setActionHoverId(actionKey)}
+		                                          onBlur={() => setActionHoverId(null)}
+		                                        >
+		                                          <MoreHorizontal className="h-4 w-4" />
+		                                        </Button>
+		                                      </DropdownMenuTrigger>
+		                                      <DropdownMenuContent align="end" side="right" className="w-56">
+		                                        <DropdownMenuItem
+		                                          onSelect={() => navigate(`/chat/threads/${t.id}`)}
+		                                          className="gap-2"
+		                                        >
+		                                          <MessageSquare className="h-4 w-4" />
+		                                          Open chat
+		                                        </DropdownMenuItem>
+		                                      </DropdownMenuContent>
+		                                    </DropdownMenu>
 		                                  </div>
 		                                </SidebarMenuSubItem>
 		                              );
