@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -14,6 +14,7 @@ import { Separator } from "@/shared/ui/separator";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
+import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
 import type { JsonInput } from "@/shared/types/models";
 
@@ -35,6 +36,10 @@ interface DocBlock {
   source?: string;
   columns?: unknown[];
   rows?: unknown[];
+  items_md?: unknown[];
+  steps_md?: unknown[];
+  terms?: unknown[];
+  qas?: unknown[];
   prompt_md?: string;
   answer_md?: string;
   [key: string]: unknown;
@@ -86,6 +91,51 @@ function safeString(v: unknown) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
 }
 
+const sectionLabelByType: Record<string, string> = {
+  objectives: "Objectives",
+  prerequisites: "Prerequisites",
+  key_takeaways: "Key takeaways",
+  glossary: "Glossary",
+  common_mistakes: "Common mistakes",
+  misconceptions: "Misconceptions",
+  edge_cases: "Edge cases",
+  heuristics: "Heuristics",
+  steps: "Steps",
+  checklist: "Checklist",
+  faq: "FAQ",
+  intuition: "Intuition",
+  mental_model: "Mental model",
+  why_it_matters: "Why it matters",
+  connections: "Connections",
+};
+
+function toMarkdownBullets(items: string[]) {
+  return items.map((it) => `- ${it}`).join("\n");
+}
+
+function toMarkdownNumbered(items: string[]) {
+  return items.map((it, i) => `${i + 1}. ${it}`).join("\n");
+}
+
+function SectionBlock({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const t = safeString(title).trim();
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      {t ? <div className="mt-1 text-sm font-medium text-foreground">{t}</div> : null}
+      <div className={cn("mt-3", t && "mt-2")}>{children}</div>
+    </div>
+  );
+}
+
 function markdownComponents(): Components {
   return {
     p({ children }: { children?: React.ReactNode }) {
@@ -103,19 +153,20 @@ function markdownComponents(): Components {
         </a>
       );
     },
-    code({ inline, children }: { inline?: boolean; children?: React.ReactNode }) {
-      if (inline) {
-        return (
-          <code className="rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[0.9em] text-foreground">
-            {children}
-          </code>
-        );
-      }
-      return (
-        <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
-          <code>{children}</code>
-        </pre>
-      );
+    code({
+      inline,
+      className,
+      children,
+    }: {
+      inline?: boolean;
+      className?: string;
+      children?: React.ReactNode;
+    }) {
+      const raw = String(children || "");
+      const m = /language-([a-zA-Z0-9_-]+)/.exec(className || "");
+      const lang = m?.[1] || "";
+      if (inline) return <InlineCode>{raw}</InlineCode>;
+      return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
     },
     ul({ children }: { children?: React.ReactNode }) {
       return <ul className="list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;
@@ -134,6 +185,22 @@ function markdownComponents(): Components {
     },
     h4({ children }: { children?: React.ReactNode }) {
       return <h4 className="text-balance text-base font-semibold tracking-tight text-foreground">{children}</h4>;
+    },
+  };
+}
+
+function inlineMarkdownComponents(): Components {
+  const base = markdownComponents();
+  return {
+    ...base,
+    p({ children }: { children?: React.ReactNode }) {
+      return <span className="leading-relaxed">{children}</span>;
+    },
+    ul({ children }: { children?: React.ReactNode }) {
+      return <span>{children}</span>;
+    },
+    ol({ children }: { children?: React.ReactNode }) {
+      return <span>{children}</span>;
     },
   };
 }
@@ -177,40 +244,6 @@ function svgToDataURL(svg: unknown) {
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, "");
   return `data:image/svg+xml;utf8,${encodeURIComponent(stripped)}`;
-}
-
-function CodeBlock({ language, filename, code }: { language?: string; filename?: string; code?: string }) {
-  const [copied, setCopied] = useState(false);
-  const hasHeader = Boolean(safeString(language).trim() || safeString(filename).trim());
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(String(code ?? ""));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 900);
-    } catch {
-      // no-op
-    }
-  };
-
-  return (
-    <div className="rounded-2xl border border-border/60 bg-muted/20">
-      {hasHeader ? (
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
-          <div className="min-w-0 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground/80">{safeString(filename).trim() || "Code"}</span>
-            {safeString(language).trim() ? <span className="ms-2">{safeString(language).trim()}</span> : null}
-          </div>
-          <Button variant="ghost" size="sm" onClick={copy}>
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-      ) : null}
-      <pre className={cn("overflow-x-auto p-4 text-sm", !hasHeader && "rounded-xl")}>
-        <code>{safeString(code)}</code>
-      </pre>
-    </div>
-  );
 }
 
 function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: string }) {
@@ -488,13 +521,161 @@ export function NodeDocRenderer({
           );
         }
 
-        if (type === "code") {
+        const sectionLabel = sectionLabelByType[type];
+
+        if (
+          sectionLabel &&
+          [
+            "objectives",
+            "prerequisites",
+            "key_takeaways",
+            "common_mistakes",
+            "misconceptions",
+            "edge_cases",
+            "heuristics",
+            "connections",
+          ].includes(type)
+        ) {
+          const title = safeString(b?.title).trim();
+          const items = asUnknownArray(b?.items_md).map(safeString).map((s) => s.trim()).filter(Boolean);
+          if (items.length === 0) return null;
+          const md = toMarkdownBullets(items);
           return wrap(
-            <CodeBlock
-              language={b?.language}
-              filename={b?.filename}
-              code={b?.code}
-            />
+            <SectionBlock label={sectionLabel} title={title}>
+              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                  {md}
+                </ReactMarkdown>
+              </div>
+            </SectionBlock>
+          );
+        }
+
+        if (sectionLabel && type === "checklist") {
+          const title = safeString(b?.title).trim();
+          const items = asUnknownArray(b?.items_md).map(safeString).map((s) => s.trim()).filter(Boolean);
+          if (items.length === 0) return null;
+          return wrap(
+            <SectionBlock label={sectionLabel} title={title}>
+              <ul className="space-y-2">
+                {items.map((it, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-[15px] leading-relaxed text-foreground/90">
+                    <span className="mt-1 inline-flex h-4 w-4 shrink-0 rounded-[5px] border border-border/60 bg-background" />
+                    <div dir="auto" className="min-w-0 flex-1">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                        {it}
+                      </ReactMarkdown>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </SectionBlock>
+          );
+        }
+
+        if (sectionLabel && type === "steps") {
+          const title = safeString(b?.title).trim();
+          const stepsMd = asUnknownArray(b?.steps_md).map(safeString).map((s) => s.trim()).filter(Boolean);
+          if (stepsMd.length === 0) return null;
+          const md = toMarkdownNumbered(stepsMd);
+          return wrap(
+            <SectionBlock label={sectionLabel} title={title}>
+              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                  {md}
+                </ReactMarkdown>
+              </div>
+            </SectionBlock>
+          );
+        }
+
+        if (sectionLabel && type === "glossary") {
+          const title = safeString(b?.title).trim();
+          const terms = asUnknownArray(b?.terms)
+            .map((it) => {
+              if (!it || typeof it !== "object" || Array.isArray(it)) return null;
+              const term = safeString((it as { term?: unknown }).term).trim();
+              const definition = safeString((it as { definition_md?: unknown }).definition_md).trim();
+              if (!term || !definition) return null;
+              return { term, definition };
+            })
+            .filter((it): it is { term: string; definition: string } => Boolean(it));
+          if (terms.length === 0) return null;
+          return wrap(
+            <SectionBlock label={sectionLabel} title={title}>
+              <div className="space-y-3">
+                {terms.map((t, idx) => (
+                  <div key={idx} className="grid gap-2 sm:grid-cols-[160px,1fr]">
+                    <div className="text-sm font-medium text-foreground/90">{t.term}</div>
+                    <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                        {t.definition}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionBlock>
+          );
+        }
+
+        if (sectionLabel && type === "faq") {
+          const title = safeString(b?.title).trim();
+          const qas = asUnknownArray(b?.qas)
+            .map((it) => {
+              if (!it || typeof it !== "object" || Array.isArray(it)) return null;
+              const q = safeString((it as { question_md?: unknown }).question_md).trim();
+              const a = safeString((it as { answer_md?: unknown }).answer_md).trim();
+              if (!q || !a) return null;
+              return { q, a };
+            })
+            .filter((it): it is { q: string; a: string } => Boolean(it));
+          if (qas.length === 0) return null;
+          return wrap(
+            <SectionBlock label={sectionLabel} title={title}>
+              <div className="space-y-2">
+                {qas.map((qa, idx) => (
+                  <details key={idx} className="rounded-xl border border-border/60 bg-background/60 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-foreground/90">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={inlineMarkdownComponents()} skipHtml>
+                        {qa.q}
+                      </ReactMarkdown>
+                    </summary>
+                    <div dir="auto" className="mt-3 text-[15px] leading-relaxed text-foreground/90">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                        {qa.a}
+                      </ReactMarkdown>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </SectionBlock>
+          );
+        }
+
+        if (sectionLabel && ["intuition", "mental_model", "why_it_matters"].includes(type)) {
+          const title = safeString(b?.title).trim();
+          const md = safeString(b?.md).trim();
+          if (!md) return null;
+          return wrap(
+            <SectionBlock label={sectionLabel} title={title}>
+              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                  {md}
+                </ReactMarkdown>
+              </div>
+            </SectionBlock>
+          );
+        }
+
+        if (type === "code") {
+          const raw = safeString(b?.code).replace(/\n$/, "");
+          const filename = safeString(b?.filename).trim();
+          const language = safeString(b?.language).trim();
+          return wrap(
+            <CodeBlock filename={filename || undefined} language={language || undefined}>
+              {raw}
+            </CodeBlock>
           );
         }
 

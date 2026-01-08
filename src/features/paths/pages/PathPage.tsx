@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/shared/ui/button";
-import { BookOpen, ChevronRight, Headphones } from "lucide-react";
+import { BookOpen, ChevronRight, CornerDownRight, Headphones } from "lucide-react";
 
 import { usePaths } from "@/app/providers/PathProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
@@ -13,6 +13,8 @@ import { Container } from "@/shared/layout/Container";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 import { useI18n } from "@/app/providers/I18nProvider";
 import type { Path, PathNode } from "@/shared/types/models";
+
+type OutlineRow = { node: PathNode; depth: number; hasChildren: boolean };
 
 export default function PathPage() {
   const { id: pathId } = useParams<{ id: string }>();
@@ -126,14 +128,51 @@ export default function PathPage() {
     };
   }, [pathId, activatePath, navigate]);
 
-  const firstNode = useMemo(() => {
-    const sortedNodes = (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-    return sortedNodes[0] || null;
+  const outline = useMemo((): { rows: OutlineRow[]; firstLeaf: PathNode | null } => {
+    const sorted = (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    if (sorted.length === 0) return { rows: [], firstLeaf: null };
+
+    const byId = new Map<string, PathNode>();
+    sorted.forEach((n) => {
+      if (n?.id) byId.set(String(n.id), n);
+    });
+
+    const childrenByParent = new Map<string, PathNode[]>();
+    const roots: PathNode[] = [];
+    sorted.forEach((n) => {
+      const parentId = n?.parentNodeId ? String(n.parentNodeId) : "";
+      if (parentId && byId.has(parentId)) {
+        const arr = childrenByParent.get(parentId) ?? [];
+        arr.push(n);
+        childrenByParent.set(parentId, arr);
+      } else {
+        roots.push(n);
+      }
+    });
+    for (const arr of childrenByParent.values()) {
+      arr.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    }
+    roots.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+    const rows: OutlineRow[] = [];
+    const seen = new Set<string>();
+    const walk = (node: PathNode, depth: number) => {
+      const id = String(node?.id || "");
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const children = childrenByParent.get(id) ?? [];
+      rows.push({ node, depth, hasChildren: children.length > 0 });
+      children.forEach((c) => walk(c, Math.min(depth + 1, 6)));
+    };
+    roots.forEach((r) => walk(r, 0));
+
+    const firstLeaf = rows.find((r) => !r.hasChildren)?.node ?? rows[0]?.node ?? null;
+    return { rows, firstLeaf };
   }, [nodes]);
 
   const onStart = () => {
-    if (!firstNode) return;
-    navigate(`/path-nodes/${firstNode.id}`);
+    if (!outline.firstLeaf) return;
+    navigate(`/path-nodes/${outline.firstLeaf.id}`);
   };
 
   if (!pathId) return null;
@@ -193,15 +232,16 @@ export default function PathPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {(nodes || [])
-                    .slice()
-                    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-                    .map((node, nodeIndex) => {
+                  {outline.rows.map(({ node, depth, hasChildren }) => {
                       const hasContent = Boolean(node?.contentJson);
                       const avatarUrl =
                         typeof node?.avatarUrl === "string" && node.avatarUrl.trim()
                           ? node.avatarUrl.trim()
                           : null;
+                      const indent = Math.min(depth, 4) * 16;
+                      const fallbackIndex =
+                        typeof node?.index === "number" && node.index > 0 ? node.index : 0;
+
                       return (
                         <button
                           key={node.id}
@@ -210,12 +250,21 @@ export default function PathPage() {
                           className="w-full rounded-xl border border-border bg-background px-4 py-4 text-start transition-colors hover:bg-muted/30"
                         >
                           <div className="flex items-start gap-3">
+                            {indent > 0 ? (
+                              <div
+                                aria-hidden="true"
+                                className="mt-0.5 flex shrink-0 items-center justify-end text-muted-foreground/70"
+                                style={{ width: indent }}
+                              >
+                                <CornerDownRight className="h-4 w-4" />
+                              </div>
+                            ) : null}
                             <Avatar className="mt-0.5 h-6 w-6 shrink-0">
                               {avatarUrl ? (
                                 <AvatarImage src={avatarUrl} alt={`${node.title} avatar`} />
                               ) : null}
                               <AvatarFallback className="text-xs font-medium text-muted-foreground">
-                                {nodeIndex + 1}
+                                {fallbackIndex || ""}
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">
@@ -226,7 +275,11 @@ export default function PathPage() {
                                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {hasContent ? t("paths.lessons.ready") : t("paths.lessons.writing")}
+                                {hasChildren
+                                  ? t("paths.outline")
+                                  : hasContent
+                                    ? t("paths.lessons.ready")
+                                    : t("paths.lessons.writing")}
                               </p>
                             </div>
                           </div>
@@ -238,7 +291,7 @@ export default function PathPage() {
             </div>
 
             <div className="flex justify-center pt-4">
-              <Button size="lg" className="px-8" onClick={onStart} disabled={!firstNode}>
+              <Button size="lg" className="px-8" onClick={onStart} disabled={!outline.firstLeaf}>
                 {t("paths.start")}
               </Button>
             </div>

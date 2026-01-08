@@ -13,6 +13,7 @@ import { PathProvider } from "@/app/providers/PathProvider";
 import { MaterialProvider } from "@/app/providers/MaterialProvider";
 import { LessonProvider } from "@/app/providers/LessonProvider";
 import { nbMotion } from "@/shared/motion/neurobridgeMotion";
+import { ToastProvider } from "@/shared/ui/toast";
 import App from "./App";
 import "@/styles/index.css";
 
@@ -51,7 +52,9 @@ createRoot(rootElement).render(
                       <MaterialProvider>
                         <LessonProvider>
                           <HomeChatbarDockProvider>
-                            <App />
+                            <ToastProvider>
+                              <App />
+                            </ToastProvider>
                           </HomeChatbarDockProvider>
                         </LessonProvider>
                       </MaterialProvider>

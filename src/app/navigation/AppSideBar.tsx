@@ -413,6 +413,47 @@ export function AppSideBar() {
   const lessons = lessonsQuery.data ?? [];
   const lessonsLoading = Boolean(lessonsQuery.isPending);
 
+  const lessonRows = useMemo(() => {
+    const list = Array.isArray(lessons) ? lessons.slice() : [];
+    if (list.length === 0) return [] as Array<{ node: PathNode; depth: number; hasChildren: boolean }>;
+
+    const byId = new Map<string, PathNode>();
+    list.forEach((n) => {
+      if (n?.id) byId.set(String(n.id), n);
+    });
+
+    const childrenByParent = new Map<string, PathNode[]>();
+    const roots: PathNode[] = [];
+    list.forEach((n) => {
+      const parentId = n?.parentNodeId ? String(n.parentNodeId) : "";
+      if (parentId && byId.has(parentId)) {
+        const arr = childrenByParent.get(parentId) ?? [];
+        arr.push(n);
+        childrenByParent.set(parentId, arr);
+      } else {
+        roots.push(n);
+      }
+    });
+    for (const arr of childrenByParent.values()) {
+      arr.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    }
+    roots.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+    const rows: Array<{ node: PathNode; depth: number; hasChildren: boolean }> = [];
+    const seen = new Set<string>();
+    const walk = (node: PathNode, depth: number) => {
+      const id = String(node?.id || "");
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const children = childrenByParent.get(id) ?? [];
+      rows.push({ node, depth, hasChildren: children.length > 0 });
+      children.forEach((c) => walk(c, Math.min(depth + 1, 6)));
+    };
+    roots.forEach((r) => walk(r, 0));
+
+    return rows;
+  }, [lessons]);
+
   const chatThreadsLimit = isPathMode ? 60 : 30;
   const chatThreadsQuery = useQuery({
     queryKey: queryKeys.chatThreads({ limit: chatThreadsLimit }),
@@ -748,11 +789,12 @@ export function AppSideBar() {
                             </div>
                           </SidebarMenuSubItem>
                         ) : (
-                          lessons.map((n) => {
+                          lessonRows.map(({ node: n, depth, hasChildren }) => {
                             const avatarUrl = getLessonAvatarUrl(n);
                             const fallbackColor = pickPathColor(String(n?.id || n?.title || ""));
                             const isActive =
                               matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
+                            const indent = Math.min(depth, 4) * 14;
                             return (
                               <SidebarMenuSubItem key={n.id}>
                                 <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
@@ -770,6 +812,15 @@ export function AppSideBar() {
                                         });
                                       }}
                                     >
+                                      {indent > 0 ? (
+                                        <span
+                                          aria-hidden="true"
+                                          className="flex shrink-0 items-center justify-end text-sidebar-foreground/50"
+                                          style={{ width: indent }}
+                                        >
+                                          <CornerDownRight className="h-3.5 w-3.5" />
+                                        </span>
+                                      ) : null}
                                       <span
                                         className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
                                         style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
@@ -783,6 +834,8 @@ export function AppSideBar() {
                                             decoding="async"
                                             className="h-full w-full object-cover"
                                           />
+                                        ) : hasChildren ? (
+                                          <FolderOpen className="h-3.5 w-3.5 text-white/80" />
                                         ) : null}
                                       </span>
                                       <span className="truncate">{n.title || "Lesson"}</span>

@@ -9,10 +9,14 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Info, RotateCcw, Shield, Sparkles } from "lucide-react";
 import { useUser } from "@/app/providers/UserProvider";
+import { getPersonalizationPrefs, patchPersonalizationPrefs } from "@/shared/api/UserService";
+import { queryKeys } from "@/shared/query/queryKeys";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { Switch } from "@/shared/ui/switch";
 import { Textarea } from "@/shared/ui/textarea";
 import {
@@ -22,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select";
+import { useToast } from "@/shared/ui/toast";
 import { cn } from "@/shared/lib/utils";
 
 type LanguagePreference = "auto" | "en" | "es" | "fr" | "de" | "pt";
@@ -34,6 +39,17 @@ type ResponseDepth = "concise" | "standard" | "thorough";
 type TeachingStyle = "balanced" | "direct" | "socratic";
 type TonePreference = "neutral" | "encouraging" | "no_fluff";
 type PracticePreference = "light" | "balanced" | "more";
+type LearningDisability =
+  | "adhd"
+  | "dyslexia"
+  | "dyscalculia"
+  | "dysgraphia"
+  | "dyspraxia"
+  | "auditory_processing"
+  | "autism_spectrum"
+  | "executive_function"
+  | "other"
+  | "prefer_not_to_say";
 
 type PersonalizationPrefsV1 = {
   version: 1;
@@ -51,6 +67,9 @@ type PersonalizationPrefsV1 = {
   codingComfort: CodingComfort;
   sessionMinutes: 10 | 15 | 20 | 30 | 45 | 60 | 90;
   sessionsPerWeek: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10 | 14;
+
+  learningDisabilities: LearningDisability[];
+  learningDisabilitiesOther: string;
 
   defaultDepth: ResponseDepth;
   defaultTeachingStyle: TeachingStyle;
@@ -90,9 +109,56 @@ function oneOf<T extends string | number>(value: unknown, allowed: readonly T[],
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
+function strArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v) => typeof v === "string")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+}
+
 function asInt(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+const LEARNING_DISABILITIES: ReadonlyArray<LearningDisability> = [
+  "adhd",
+  "dyslexia",
+  "dyscalculia",
+  "dysgraphia",
+  "dyspraxia",
+  "auditory_processing",
+  "autism_spectrum",
+  "executive_function",
+  "other",
+  "prefer_not_to_say",
+] as const;
+
+const LEARNING_DISABILITY_SET = new Set<LearningDisability>(LEARNING_DISABILITIES);
+
+function normalizeLearningDisabilities(
+  raw: unknown,
+  rawOther: unknown,
+  fallback: PersonalizationPrefsV1["learningDisabilities"]
+): {
+  learningDisabilities: PersonalizationPrefsV1["learningDisabilities"];
+  learningDisabilitiesOther: string;
+} {
+  const picked = strArray(raw)
+    .map((v) => v.toLowerCase().trim())
+    .filter((v): v is LearningDisability => LEARNING_DISABILITY_SET.has(v as LearningDisability));
+
+  // De-dupe (keep stable order as listed in LEARNING_DISABILITIES).
+  const unique = new Set<LearningDisability>(picked);
+  let ordered = LEARNING_DISABILITIES.filter((k) => unique.has(k));
+  if (ordered.includes("prefer_not_to_say")) ordered = ["prefer_not_to_say"];
+
+  const other = str(rawOther).trim().slice(0, 280);
+  if (!ordered.includes("other")) {
+    return { learningDisabilities: ordered.length ? ordered : fallback, learningDisabilitiesOther: "" };
+  }
+  return { learningDisabilities: ordered.length ? ordered : fallback, learningDisabilitiesOther: other };
 }
 
 function buildDefaults(opts: {
@@ -115,6 +181,9 @@ function buildDefaults(opts: {
     codingComfort: "some",
     sessionMinutes: 30,
     sessionsPerWeek: 4,
+
+    learningDisabilities: [],
+    learningDisabilitiesOther: "",
 
     defaultDepth: "standard",
     defaultTeachingStyle: "balanced",
@@ -158,6 +227,12 @@ function normalizePrefs(raw: unknown, defaults: PersonalizationPrefsV1): Persona
     defaults.sessionsPerWeek
   );
 
+  const { learningDisabilities, learningDisabilitiesOther } = normalizeLearningDisabilities(
+    obj.learningDisabilities,
+    obj.learningDisabilitiesOther,
+    defaults.learningDisabilities
+  );
+
   const defaultDepth = oneOf<ResponseDepth>(
     obj.defaultDepth,
     ["concise", "standard", "thorough"] as const,
@@ -197,6 +272,9 @@ function normalizePrefs(raw: unknown, defaults: PersonalizationPrefsV1): Persona
     codingComfort,
     sessionMinutes,
     sessionsPerWeek,
+
+    learningDisabilities,
+    learningDisabilitiesOther,
 
     defaultDepth,
     defaultTeachingStyle,
@@ -576,6 +654,125 @@ const LearningDefaultsSection = memo(function LearningDefaultsSection({
   );
 });
 
+const LEARNING_DISABILITY_OPTIONS: Array<{
+  key: LearningDisability;
+  label: string;
+  description: string;
+}> = [
+  { key: "adhd", label: "ADHD / attention", description: "More structure, shorter steps, frequent checkpoints." },
+  { key: "dyslexia", label: "Dyslexia", description: "Short paragraphs, clear formatting, fewer dense blocks." },
+  { key: "dyscalculia", label: "Dyscalculia", description: "Slower math ramp, more intuition and examples." },
+  { key: "dysgraphia", label: "Dysgraphia", description: "Less writing-heavy work, more choice-based practice." },
+  { key: "dyspraxia", label: "Dyspraxia", description: "Clear step ordering and reduced motor-heavy tasks." },
+  { key: "auditory_processing", label: "Auditory processing", description: "Prefer text-first instructions and captions." },
+  { key: "autism_spectrum", label: "Autism spectrum", description: "Direct language, predictable structure, fewer tangents." },
+  { key: "executive_function", label: "Executive function", description: "Plan-first outlines, reminders, and chunked tasks." },
+  { key: "other", label: "Other", description: "Add a note below." },
+  { key: "prefer_not_to_say", label: "Prefer not to say", description: "We won’t use this signal." },
+];
+
+const AccessibilitySection = memo(function AccessibilitySection({
+  learningDisabilities,
+  learningDisabilitiesOther,
+  setPrefs,
+}: {
+  learningDisabilities: LearningDisability[];
+  learningDisabilitiesOther: string;
+  setPrefs: PrefsSetter;
+}) {
+  const selected = useMemo(() => new Set<LearningDisability>(learningDisabilities), [learningDisabilities]);
+
+  const toggle = useCallback(
+    (key: LearningDisability) => {
+      setPrefs((prev) => {
+        if (key === "prefer_not_to_say") {
+          return { ...prev, learningDisabilities: ["prefer_not_to_say"], learningDisabilitiesOther: "" };
+        }
+
+        const next = new Set<LearningDisability>(
+          (prev.learningDisabilities || []).filter((v) => v !== "prefer_not_to_say")
+        );
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+
+        const ordered = LEARNING_DISABILITIES.filter((k) => next.has(k) && k !== "prefer_not_to_say");
+        const keepOther = ordered.includes("other");
+
+        return {
+          ...prev,
+          learningDisabilities: ordered,
+          learningDisabilitiesOther: keepOther ? prev.learningDisabilitiesOther : "",
+        };
+      });
+    },
+    [setPrefs]
+  );
+
+  return (
+    <section className="space-y-5 pb-8 border-b border-border/60">
+      <SectionHeader
+        icon={<Shield className="h-4 w-4" />}
+        title="Accessibility"
+        subtitle="Optional. Helps Neurobridge format explanations and practice."
+      />
+
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {LEARNING_DISABILITY_OPTIONS.map((opt) => {
+            const isOn = selected.has(opt.key);
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                aria-pressed={isOn}
+                onClick={() => toggle(opt.key)}
+                className={cn(
+                  "flex items-start gap-3 rounded-2xl border p-3 text-left nb-motion-fast motion-reduce:transition-none",
+                  isOn
+                    ? "border-foreground/15 bg-muted/40"
+                    : "border-border/60 bg-muted/10 hover:bg-muted/20"
+                )}
+              >
+                <div
+                  className={cn(
+                    "mt-0.5 flex h-5 w-5 items-center justify-center rounded-md border text-muted-foreground",
+                    isOn ? "border-foreground/20 bg-background/60" : "border-border/60 bg-background/40"
+                  )}
+                  aria-hidden="true"
+                >
+                  {isOn ? <Check className="h-3.5 w-3.5" /> : null}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">{opt.label}</div>
+                  <div className="text-xs text-muted-foreground">{opt.description}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {selected.has("other") ? (
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-foreground">Other (optional)</div>
+            <div className="text-xs text-muted-foreground">
+              Share anything that helps us adapt formatting, pacing, and practice.
+            </div>
+            <Input
+              value={learningDisabilitiesOther}
+              onChange={(e) => setPrefs((prev) => ({ ...prev, learningDisabilitiesOther: e.target.value }))}
+              placeholder="e.g., migraines, color sensitivity, processing speed…"
+              className="rounded-xl"
+            />
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+});
+
 const DefaultTeachingStyleSection = memo(function DefaultTeachingStyleSection({
   defaultDepth,
   defaultTeachingStyle,
@@ -812,87 +1009,199 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
 
 export function PersonalizationTab() {
   const { user } = useUser();
+  const queryClient = useQueryClient();
+  const { push } = useToast();
   const detectedTimezone = useDetectedTimezone();
 
-  const storageKey = useMemo(() => (user?.id ? storageKeyForUser(user.id) : ""), [user?.id]);
+  const userId = String(user?.id ?? "").trim();
+  const storageKey = useMemo(() => (userId ? storageKeyForUser(userId) : ""), [userId]);
 
   const defaults = useMemo(() => {
     const nickname = String(user?.firstName || "").trim();
     return buildDefaults({ nickname, detectedTimezone });
   }, [user?.firstName, detectedTimezone]);
 
+  const prefsQuery = useQuery({
+    queryKey: queryKeys.personalizationPrefs(userId || "unknown"),
+    enabled: Boolean(userId),
+    queryFn: async () => {
+      const { prefs } = await getPersonalizationPrefs();
+      return prefs;
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const toastCooldownRef = useRef(0);
+  const lastSavedJSONRef = useRef("");
+
+  const patchMutation = useMutation({
+    mutationFn: async (nextPrefs: PersonalizationPrefsV1) => {
+      const { prefs } = await patchPersonalizationPrefs(nextPrefs);
+      return prefs;
+    },
+    onMutate: async (nextPrefs) => {
+      if (!userId) return { prev: null };
+      const key = queryKeys.personalizationPrefs(userId);
+      const prev = queryClient.getQueryData<unknown | null>(key) ?? null;
+      queryClient.setQueryData(key, nextPrefs);
+      return { prev };
+    },
+    onSuccess: (_serverPrefs, sentPrefs) => {
+      const sentJSON = JSON.stringify(sentPrefs);
+      lastSavedJSONRef.current = sentJSON;
+    },
+    onError: (_err, _sentPrefs, ctx) => {
+      if (userId) {
+        const key = queryKeys.personalizationPrefs(userId);
+        queryClient.setQueryData(key, ctx?.prev ?? null);
+      }
+      const now = Date.now();
+      if (now - toastCooldownRef.current > 8000) {
+        toastCooldownRef.current = now;
+        push({
+          variant: "error",
+          title: "Couldn't save personalization",
+          description: "Check your connection and try again.",
+        });
+      }
+    },
+  });
+  const patchPrefs = patchMutation.mutate;
+
   const [prefs, setPrefs] = useState<PersonalizationPrefsV1>(defaults);
   const prefsRef = useRef(prefs);
   const hydratedRef = useRef(false);
+  const initialSyncRef = useRef(false);
+  const prevUserIdRef = useRef<string>("");
 
-  const [justSaved, setJustSaved] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remotePersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     prefsRef.current = prefs;
   }, [prefs]);
 
   useEffect(() => {
-    if (!storageKey) return;
-    hydratedRef.current = true;
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        setPrefs(defaults);
-        return;
-      }
-      const parsed = safeParseJSON(raw);
-      setPrefs(normalizePrefs(parsed, defaults));
-    } catch {
-      setPrefs(defaults);
-    }
-  }, [storageKey, defaults]);
+    if (prevUserIdRef.current === userId) return;
+    prevUserIdRef.current = userId;
+    hydratedRef.current = false;
+    initialSyncRef.current = false;
+    setSaveState("idle");
+    setPrefs(defaults);
+    lastSavedJSONRef.current = JSON.stringify(defaults);
+  }, [userId, defaults]);
 
   useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (!storageKey) return;
-    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(() => {
-      persistTimerRef.current = null;
+    if (!userId) return;
+
+    const remoteReady = prefsQuery.isSuccess || prefsQuery.isError;
+    if (!remoteReady) return;
+
+    hydratedRef.current = true;
+
+    const serverRaw = prefsQuery.isSuccess ? prefsQuery.data : null;
+    if (serverRaw) {
+      const normalized = normalizePrefs(serverRaw, defaults);
+      setPrefs(normalized);
+      lastSavedJSONRef.current = JSON.stringify(normalized);
       try {
-        window.localStorage.setItem(storageKey, JSON.stringify(prefsRef.current));
+        if (storageKey) window.localStorage.setItem(storageKey, JSON.stringify(normalized));
       } catch {
         // ignore storage errors
       }
-    }, 250);
+      return;
+    }
 
-    setJustSaved(true);
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      setJustSaved(false);
-      saveTimerRef.current = null;
-    }, 1200);
-  }, [prefs, storageKey]);
+    // If server has no prefs (or is unreachable), fall back to local cache.
+    let next = defaults;
+    try {
+      const raw = storageKey ? window.localStorage.getItem(storageKey) : null;
+      const parsed = raw ? safeParseJSON(raw) : null;
+      if (parsed) next = normalizePrefs(parsed, defaults);
+    } catch {
+      next = defaults;
+    }
+
+    setPrefs(next);
+    lastSavedJSONRef.current = JSON.stringify(next);
+
+    // One-time migration: if server has no prefs but local cache exists, sync it up.
+    if (prefsQuery.isSuccess && prefsQuery.data == null && storageKey && !initialSyncRef.current) {
+      initialSyncRef.current = true;
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        const parsed = raw ? safeParseJSON(raw) : null;
+        if (parsed) patchPrefs(normalizePrefs(parsed, defaults));
+      } catch {
+        // ignore
+      }
+    }
+  }, [userId, prefsQuery.data, prefsQuery.isError, prefsQuery.isSuccess, defaults, storageKey, patchPrefs]);
 
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+      if (localPersistTimerRef.current) clearTimeout(localPersistTimerRef.current);
+      if (remotePersistTimerRef.current) clearTimeout(remotePersistTimerRef.current);
     };
   }, []);
 
-  // Flush pending writes on unmount and when storageKey changes.
   useEffect(() => {
-    return () => {
-      if (persistTimerRef.current) {
-        clearTimeout(persistTimerRef.current);
-        persistTimerRef.current = null;
-      }
-      if (!hydratedRef.current) return;
-      if (!storageKey) return;
-      try {
-        window.localStorage.setItem(storageKey, JSON.stringify(prefsRef.current));
-      } catch {
-        // ignore storage errors
-      }
-    };
-  }, [storageKey]);
+    if (!hydratedRef.current) return;
+
+    // Local cache (best-effort).
+    if (storageKey) {
+      if (localPersistTimerRef.current) clearTimeout(localPersistTimerRef.current);
+      localPersistTimerRef.current = setTimeout(() => {
+        localPersistTimerRef.current = null;
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(prefsRef.current));
+        } catch {
+          // ignore storage errors
+        }
+      }, 250);
+    }
+
+    const json = JSON.stringify(prefsRef.current);
+    const dirty = json !== lastSavedJSONRef.current;
+    if (!dirty) {
+      setSaveState("idle");
+      return;
+    }
+
+    const canSync = Boolean(userId) && !prefsQuery.isError;
+    if (!canSync) {
+      setSaveState("error");
+      return;
+    }
+
+    setSaveState("saving");
+    if (remotePersistTimerRef.current) clearTimeout(remotePersistTimerRef.current);
+    remotePersistTimerRef.current = setTimeout(() => {
+      remotePersistTimerRef.current = null;
+      patchPrefs(prefsRef.current, {
+        onSuccess: (_server, sent) => {
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          const sentJSON = JSON.stringify(sent);
+          if (JSON.stringify(prefsRef.current) !== sentJSON) return;
+          setSaveState("saved");
+          saveTimerRef.current = setTimeout(() => {
+            if (JSON.stringify(prefsRef.current) === sentJSON) setSaveState("idle");
+            saveTimerRef.current = null;
+          }, 1200);
+        },
+        onError: () => {
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          setSaveState("error");
+          saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null;
+          }, 1200);
+        },
+      });
+    }, 650);
+  }, [prefs, storageKey, userId, prefsQuery.isError, patchPrefs]);
 
   const resolvedTimezone = useMemo(
     () => prettyTimezone(prefs.timezoneMode, prefs.timezone, detectedTimezone),
@@ -907,6 +1216,30 @@ export function PersonalizationTab() {
       // ignore
     }
   }, [defaults, storageKey]);
+
+  if (userId && prefsQuery.isPending) {
+    return (
+      <div className="space-y-8">
+        <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background/60 text-muted-foreground">
+              <Info className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-foreground">Personalization</div>
+              <div className="text-xs text-muted-foreground">Loading your preferences…</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <Skeleton className="h-28 w-full rounded-2xl" />
+          <Skeleton className="h-28 w-full rounded-2xl" />
+          <Skeleton className="h-28 w-full rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -927,12 +1260,16 @@ export function PersonalizationTab() {
           <div
             className={cn(
               "flex items-center gap-1.5 text-xs text-muted-foreground transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none",
-              justSaved ? "opacity-100" : "opacity-0"
+              saveState === "saving" || saveState === "saved" || saveState === "error" ? "opacity-100" : "opacity-0"
             )}
             aria-live="polite"
           >
-            <Check className="h-3.5 w-3.5" />
-            Saved
+            {saveState === "saving" ? <RotateCcw className="h-3.5 w-3.5 animate-spin" /> : null}
+            {saveState === "saved" ? <Check className="h-3.5 w-3.5" /> : null}
+            {saveState === "error" ? <Info className="h-3.5 w-3.5" /> : null}
+            {saveState === "saving" ? "Saving…" : null}
+            {saveState === "saved" ? "Saved" : null}
+            {saveState === "error" ? "Saved locally" : null}
           </div>
         </div>
       </div>
@@ -958,6 +1295,12 @@ export function PersonalizationTab() {
         codingComfort={prefs.codingComfort}
         sessionMinutes={prefs.sessionMinutes}
         sessionsPerWeek={prefs.sessionsPerWeek}
+        setPrefs={setPrefs}
+      />
+
+      <AccessibilitySection
+        learningDisabilities={prefs.learningDisabilities}
+        learningDisabilitiesOther={prefs.learningDisabilitiesOther}
         setPrefs={setPrefs}
       />
 

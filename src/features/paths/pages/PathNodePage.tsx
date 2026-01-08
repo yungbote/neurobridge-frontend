@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
@@ -12,6 +13,7 @@ import { cn } from "@/shared/lib/utils";
 
 import { createChatThread, sendChatMessage } from "@/shared/api/ChatService";
 import { ingestEvents } from "@/shared/api/EventService";
+import { getConceptGraph } from "@/shared/api/PathService";
 import {
   enqueuePathNodeDocPatch,
   generateDrillForNode,
@@ -22,6 +24,8 @@ import {
 import { NodeContentRenderer } from "@/features/paths/components/NodeContentRenderer";
 import { NodeDocRenderer } from "@/features/paths/components/NodeDocRenderer";
 import { Container } from "@/shared/layout/Container";
+import { queryKeys } from "@/shared/query/queryKeys";
+import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
@@ -45,6 +49,24 @@ type DocBlock = {
 };
 
 type BlockFeedback = "" | "like" | "dislike";
+
+const markdownCodeComponents = {
+  code({
+    inline,
+    className,
+    children,
+  }: {
+    inline?: boolean;
+    className?: string;
+    children?: React.ReactNode;
+  }) {
+    const raw = String(children || "");
+    const m = /language-([a-zA-Z0-9_-]+)/.exec(className || "");
+    const lang = m?.[1] || "";
+    if (inline) return <InlineCode>{raw}</InlineCode>;
+    return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
+  },
+};
 
 function safeParseJSON(v: unknown): unknown {
   if (!v) return null;
@@ -84,7 +106,22 @@ function extractConceptKeys(node: PathNode | null | undefined) {
   const md = (safeParseJSON(node?.metadata) ?? node?.metadata) as Record<string, unknown> | null;
   const keys = (md?.concept_keys ?? md?.conceptKeys ?? []) as unknown[];
   if (!Array.isArray(keys)) return [];
-  return keys.map((k) => String(k || "").trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  keys
+    .map((k) => String(k || "").trim())
+    .filter(Boolean)
+    .forEach((k) => {
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(k);
+    });
+  return out;
+}
+
+function humanizeConceptKey(key: string) {
+  const s = String(key || "").trim().replace(/_/g, " ");
+  return s || key;
 }
 
 interface DrillProps {
@@ -132,7 +169,9 @@ function FlashcardsDrill({ drill }: DrillProps) {
         )}
       >
         <div className="w-full text-[15px] leading-relaxed text-foreground/90">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{showBack ? back : front}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
+            {showBack ? back : front}
+          </ReactMarkdown>
         </div>
       </div>
 
@@ -221,7 +260,9 @@ function QuizDrill({ drill }: DrillProps) {
 
       <div className="rounded-xl border border-border bg-muted/30 p-4">
         <div className="text-[15px] leading-relaxed text-foreground/90">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{String(q.prompt_md ?? "")}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
+            {String(q.prompt_md ?? "")}
+          </ReactMarkdown>
         </div>
       </div>
 
@@ -251,7 +292,9 @@ function QuizDrill({ drill }: DrillProps) {
 	        <div className="rounded-xl border border-border bg-background p-4">
 	          <div className="text-xs font-medium text-muted-foreground">{t("pathNode.drills.quiz.explanation")}</div>
 	          <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
-	            <ReactMarkdown remarkPlugins={[remarkGfm]}>{String(q.explanation_md ?? "")}</ReactMarkdown>
+	            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
+	              {String(q.explanation_md ?? "")}
+	            </ReactMarkdown>
 	          </div>
 	        </div>
 	      ) : null}
@@ -375,6 +418,29 @@ export default function PathNodePage() {
   }, [nodeId, activateLesson, activatePath, loadDoc]);
 
   const conceptKeys = useMemo(() => extractConceptKeys(node), [node]);
+
+  const pathId = node?.pathId || path?.id || "";
+  const conceptGraphQuery = useQuery({
+    queryKey: queryKeys.conceptGraph(pathId || "unknown"),
+    enabled: Boolean(pathId),
+    staleTime: 10 * 60_000,
+    queryFn: () => getConceptGraph(pathId),
+  });
+
+  const conceptNameByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    const concepts = conceptGraphQuery.data?.concepts ?? [];
+    concepts.forEach((c) => {
+      const key = String(c?.key ?? "").trim();
+      const name = String(c?.name ?? "").trim();
+      if (key && name) map.set(key, name);
+    });
+    return map;
+  }, [conceptGraphQuery.data]);
+
+  const conceptLabels = useMemo(() => {
+    return conceptKeys.map((k) => conceptNameByKey.get(k) ?? humanizeConceptKey(k));
+  }, [conceptKeys, conceptNameByKey]);
 
   useEffect(() => {
     if (!feedbackStorageKey) return;
@@ -761,7 +827,7 @@ export default function PathNodePage() {
   return (
     <div className="page-surface">
       <Container size="2xl" className="page-pad">
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto w-full max-w-5xl">
 	          <div className="mb-8 space-y-3">
 	            <div className="flex items-center gap-2">
 	              <Button variant="ghost" size="sm" onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}>
@@ -776,14 +842,14 @@ export default function PathNodePage() {
 	              {node?.title || (loading ? t("pathNode.loading") : t("pathNode.node"))}
 	            </h1>
 
-            {conceptKeys.length > 0 ? (
+            {conceptLabels.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {conceptKeys.slice(0, 18).map((k) => (
+                {conceptLabels.slice(0, 18).map((label, idx) => (
                   <span
-                    key={k}
+                    key={`${conceptKeys[idx] ?? label}:${idx}`}
                     className="rounded-full border border-border/60 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground"
                   >
-                    {k}
+                    {label}
                   </span>
                 ))}
               </div>

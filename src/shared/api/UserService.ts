@@ -52,6 +52,15 @@ export async function uploadAvatar(file: File): Promise<void> {
   });
 }
 
+export async function getPersonalizationPrefs(): Promise<{ prefs: unknown | null }> {
+  const resp = await axiosClient.get<{ prefs?: unknown | null }>("/user/personalization");
+  return { prefs: resp?.data?.prefs ?? null };
+}
+
+export async function patchPersonalizationPrefs(prefs: unknown): Promise<{ prefs: unknown | null }> {
+  const resp = await axiosClient.patch<{ prefs?: unknown | null }>("/user/personalization", { prefs });
+  return { prefs: resp?.data?.prefs ?? null };
+}
 
 
 

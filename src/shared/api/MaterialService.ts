@@ -8,13 +8,21 @@ import type {
 } from "@/shared/types/backend";
 import type { MaterialAsset, MaterialFile, MaterialListing } from "@/shared/types/models";
 
-export async function uploadMaterialSet(files: File[]): Promise<BackendMaterialUploadResponse> {
-  if (!files || files.length === 0) {
-    throw new Error("uploadMaterialSet: no files provided");
+export async function uploadMaterialSet(
+  files: File[],
+  { prompt }: { prompt?: string } = {}
+): Promise<BackendMaterialUploadResponse> {
+  const trimmedPrompt = String(prompt || "").trim();
+  const hasFiles = Array.isArray(files) && files.length > 0;
+  if (!hasFiles && !trimmedPrompt) {
+    throw new Error("uploadMaterialSet: provide files or a prompt");
   }
   const formData = new FormData();
-  for (const file of files) {
+  for (const file of files || []) {
     formData.append("files", file);
+  }
+  if (trimmedPrompt) {
+    formData.append("prompt", trimmedPrompt);
   }
 
   // IMPORTANT: don't set Content-Type manually for multipart; axios will set boundary
@@ -89,8 +97,6 @@ export async function listUserMaterialFiles(): Promise<MaterialFile[]> {
   const raws = resp.data?.files || [];
   return raws.map(mapMaterialFile).filter(Boolean) as MaterialFile[];
 }
-
-
 
 
 

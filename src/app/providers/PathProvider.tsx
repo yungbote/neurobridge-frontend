@@ -31,7 +31,7 @@ interface PathContextValue {
   activatePath: (id: string | null) => Promise<Path | null>;
   reload: () => Promise<void>;
   getById: (id: string) => Path | null;
-  uploadMaterialSet: (files: File[]) => Promise<BackendMaterialUploadResponse>;
+  uploadMaterialSet: (files: File[], opts?: { prompt?: string }) => Promise<BackendMaterialUploadResponse>;
 }
 
 const PathContext = createContext<PathContextValue>({
@@ -185,6 +185,8 @@ function asJobPayload(value: SseMessage["data"]): JobEventPayload | null {
 interface PathProviderProps {
   children: React.ReactNode;
 }
+
+type UploadMaterialSetArgs = { files: File[]; prompt?: string };
 
 export function PathProvider({ children }: PathProviderProps) {
   const { isAuthenticated } = useAuth();
@@ -579,7 +581,7 @@ export function PathProvider({ children }: PathProviderProps) {
   );
 
   const uploadMaterialSetMutation = useMutation({
-    mutationFn: apiUploadMaterialSet,
+    mutationFn: async ({ files, prompt }: UploadMaterialSetArgs) => apiUploadMaterialSet(files, { prompt }),
     onSuccess: (res) => {
       const jobId = res?.job_id ?? res?.jobId ?? null;
       const materialSetId = res?.material_set_id ?? res?.materialSetId ?? null;
@@ -630,11 +632,13 @@ export function PathProvider({ children }: PathProviderProps) {
   });
 
   const uploadMaterialSet = useCallback(
-    async (files: File[]) => {
-      if (!files || files.length === 0) {
-        throw new Error("uploadMaterialSet: no files provided");
+    async (files: File[], opts?: { prompt?: string }) => {
+      const hasFiles = Array.isArray(files) && files.length > 0;
+      const prompt = String(opts?.prompt || "").trim();
+      if (!hasFiles && !prompt) {
+        throw new Error("uploadMaterialSet: provide files or a prompt");
       }
-      return uploadMaterialSetMutation.mutateAsync(files);
+      return uploadMaterialSetMutation.mutateAsync({ files: files || [], prompt });
     },
     [uploadMaterialSetMutation]
   );

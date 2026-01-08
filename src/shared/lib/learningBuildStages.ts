@@ -7,7 +7,7 @@ export function clampPct(n: number | string | null | undefined): number {
 export function normalizeStage(stage: string | null | undefined): string {
   let s = String(stage || "").trim();
   if (!s) return "";
-  const prefixes = ["waiting_child_", "stale_", "timeout_"];
+  const prefixes = ["waiting_child_", "waiting_user_", "stale_", "timeout_"];
   let changed = true;
   while (changed) {
     changed = false;
@@ -25,6 +25,12 @@ export function stageLabel(stage: string | null | undefined): string | null {
   const raw = String(stage || "").trim();
   if (!raw) return null;
   const lowered = raw.toLowerCase();
+  if (lowered === "waiting_user") return "Waiting for your response";
+  if (lowered.startsWith("waiting_user_")) {
+    const base = raw.slice("waiting_user_".length);
+    const baseLabel = stageLabel(base) || base;
+    return `Waiting for your response — ${baseLabel}`;
+  }
   if (lowered.startsWith("stale_")) {
     const base = raw.slice("stale_".length);
     const baseLabel = stageLabel(base) || base;
@@ -45,6 +51,7 @@ export function stageLabel(stage: string | null | undefined): string | null {
   if (s === "chain_signature_build") return "Building signatures";
   if (s === "user_profile_refresh") return "Refreshing profile";
   if (s === "teaching_patterns_seed") return "Seeding teaching patterns";
+  if (s === "path_intake") return "Clarifying your goal";
   if (s === "path_plan_build") return "Planning path";
   if (s === "path_cover_render") return "Generating path avatar";
   if (s === "node_avatar_render") return "Generating unit avatars";
@@ -72,6 +79,7 @@ export const learningBuildStageOrder = [
   "chain_signature_build",
   "user_profile_refresh",
   "teaching_patterns_seed",
+  "path_intake",
   "path_plan_build",
   "path_cover_render",
   "node_avatar_render",

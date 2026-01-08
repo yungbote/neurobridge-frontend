@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Separator } from "@/shared/ui/separator";
+import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
 import type { JsonInput } from "@/shared/types/models";
 
@@ -61,19 +62,20 @@ function markdownComponents({ compact = false }: { compact?: boolean } = {}): Co
         </a>
       );
     },
-    code({ inline, children }: { inline?: boolean; children?: React.ReactNode }) {
-      if (inline) {
-        return (
-          <code className="rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[0.9em] text-foreground">
-            {children}
-          </code>
-        );
-      }
-      return (
-        <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
-          <code>{children}</code>
-        </pre>
-      );
+    code({
+      inline,
+      className,
+      children,
+    }: {
+      inline?: boolean;
+      className?: string;
+      children?: React.ReactNode;
+    }) {
+      const raw = String(children || "");
+      const m = /language-([a-zA-Z0-9_-]+)/.exec(className || "");
+      const lang = m?.[1] || "";
+      if (inline) return <InlineCode>{raw}</InlineCode>;
+      return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
     },
     ul({ children }: { children?: React.ReactNode }) {
       return <ul className="list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;

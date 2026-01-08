@@ -10,6 +10,7 @@ import { Container } from "@/shared/layout/Container";
 import { UserDialogsProvider } from "@/app/providers/UserDialogProvider";
 import { ActivityPanelProvider } from "@/app/providers/ActivityPanelProvider";
 import { ActivityPanel } from "@/features/activity/components/ActivityPanel";
+import { IntakeNotifications } from "@/app/components/IntakeNotifications";
 
 interface LayoutProps {
   children: ReactNode;
@@ -47,6 +48,7 @@ export default function Layout({ children }: LayoutProps) {
 
             <div className="flex-1 flex flex-col min-w-0 min-h-0">
               <AppNavBar />
+              {isAuthenticated ? <IntakeNotifications /> : null}
 
               {isAuthenticated && !hideBreadcrumbs && (
                 <div>
@@ -66,5 +68,4 @@ export default function Layout({ children }: LayoutProps) {
     </SidebarProvider>
   );
 }
-
 

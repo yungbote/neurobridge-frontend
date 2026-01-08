@@ -62,7 +62,7 @@ interface DragState {
 
 interface AnimatedChatbarProps {
   onSubmit?: (value: string, files?: ChatUploadFile[]) => void | Promise<void>;
-  onUpload?: (files: File[]) => Promise<BackendMaterialUploadResponse>;
+  onUpload?: (files: File[], opts?: { prompt?: string }) => Promise<BackendMaterialUploadResponse>;
   className?: string;
   disablePlaceholderAnimation?: boolean;
   disableUploads?: boolean;
@@ -553,33 +553,44 @@ export const AnimatedChatbar = ({
 
     const uploadFn = onUpload || uploadMaterialSet;
     const filesToUpload = disableUploads ? [] : files.map((f) => f.file);
+    const trimmed = value.trim();
 
-    if (!isCancelMode && !value.trim() && filesToUpload.length === 0) {
+    if (!isCancelMode && !trimmed && filesToUpload.length === 0) {
       return;
     }
 
-    if (filesToUpload.length > 0) {
-      if (!uploadFn) return;
-    }
+    const shouldStartBuild =
+      !isCancelMode &&
+      !disableUploads &&
+      Boolean(uploadFn) &&
+      (filesToUpload.length > 0 || trimmed.length > 0);
 
     setIsGenerating(true);
 
     let nextJobId: string | null = null;
     let nextThreadId: string | null = null;
+    let didUpload = false;
 
-    if (filesToUpload.length > 0) {
-      console.log(
-        "[AnimatedChatbar] Uploading files:",
-        filesToUpload.map((f) => f.name),
-      );
+    if (shouldStartBuild) {
+      if (!uploadFn) {
+        setIsGenerating(false);
+        return;
+      }
+      if (filesToUpload.length > 0) {
+        console.log(
+          "[AnimatedChatbar] Uploading files:",
+          filesToUpload.map((f) => f.name),
+        );
+      }
       try {
-        const res = await uploadFn(filesToUpload);
+        const res = await uploadFn(filesToUpload, { prompt: trimmed });
         const jobId = res?.job_id ?? res?.jobId ?? null;
         const threadId = res?.thread_id ?? res?.threadId ?? null;
         nextJobId =
           typeof jobId === "string" || typeof jobId === "number" ? String(jobId) : null;
         nextThreadId =
           typeof threadId === "string" || typeof threadId === "number" ? String(threadId) : null;
+        didUpload = true;
       } catch (err) {
         console.error("[AnimatedChatbar] uploadMaterialSet failed:", err);
         setIsGenerating(false);
@@ -588,7 +599,9 @@ export const AnimatedChatbar = ({
     }
 
     try {
-      await Promise.resolve(onSubmit?.(value, files));
+      if (!didUpload) {
+        await Promise.resolve(onSubmit?.(value, files));
+      }
       setValue("");
       setFiles([]);
     } catch (err) {

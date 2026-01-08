@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { Separator } from "@/shared/ui/separator";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 
 import { getActivity } from "@/shared/api/ActivityService";
 import { ingestEvents } from "@/shared/api/EventService";
@@ -21,6 +22,24 @@ type ActivityBlock = {
   url?: string;
   alt?: string;
   caption?: string;
+};
+
+const markdownCodeComponents = {
+  code({
+    inline,
+    className,
+    children,
+  }: {
+    inline?: boolean;
+    className?: string;
+    children?: React.ReactNode;
+  }) {
+    const raw = String(children || "");
+    const m = /language-([a-zA-Z0-9_-]+)/.exec(className || "");
+    const lang = m?.[1] || "";
+    if (inline) return <InlineCode>{raw}</InlineCode>;
+    return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
+  },
 };
 
 function safeParseJSON(v: unknown): unknown {
@@ -149,13 +168,7 @@ export default function ActivityPage() {
           </p>
         );
       case "code":
-        return (
-          <div key={index} className="overflow-hidden rounded-lg border border-border bg-muted/30">
-            <pre className="overflow-x-auto p-4">
-              <code className="text-sm text-foreground">{block.content}</code>
-            </pre>
-          </div>
-        );
+        return <CodeBlock key={index}>{String(block.content || "").replace(/\n$/, "")}</CodeBlock>;
       case "image":
         if (!block.url) return null;
         return (
@@ -255,7 +268,7 @@ export default function ActivityPage() {
             </div>
           ) : (
             <div className="prose prose-neutral dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
                 {activity.contentMd || ""}
               </ReactMarkdown>
             </div>
