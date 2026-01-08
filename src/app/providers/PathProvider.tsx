@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
@@ -14,6 +15,7 @@ import { useSSEContext } from "@/app/providers/SSEProvider";
 import { uploadMaterialSet as apiUploadMaterialSet } from "@/shared/api/MaterialService";
 import { getPath as apiGetPath, listPaths as apiListPaths } from "@/shared/api/PathService";
 import { getSessionState, patchSessionState } from "@/shared/api/SessionService";
+import { queryKeys } from "@/shared/query/queryKeys";
 import type { BackendJob, BackendMaterialUploadResponse } from "@/shared/types/backend";
 import type { JobEventPayload, Path, SseMessage } from "@/shared/types/models";
 
@@ -188,26 +190,16 @@ export function PathProvider({ children }: PathProviderProps) {
   const { isAuthenticated } = useAuth();
   const { user } = useUser();
   const { lastMessage, connected } = useSSEContext();
+  const queryClient = useQueryClient();
 
-  const [paths, setPaths] = useState<Path[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown | null>(null);
   const [activePathId, setActivePathIdState] = useState<string | null>(null);
-  const [activePathOverride, setActivePathOverride] = useState<Path | null>(null);
-  const activateSeq = useRef(0);
-  const pathsRef = useRef<Path[]>([]);
+  const restoredActivePathRef = useRef(false);
 
-  useEffect(() => {
-    pathsRef.current = paths;
-  }, [paths]);
-
-  const loadPaths = useCallback(async () => {
-    if (!isAuthenticated) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
+  const pathsQuery = useQuery({
+    queryKey: queryKeys.paths(),
+    enabled: isAuthenticated,
+    staleTime: 30_000,
+    queryFn: async () => {
       const loaded = await apiListPaths();
       const normalized = (Array.isArray(loaded) ? loaded : []).map((p) => {
         if (!p?.jobId) return p;
@@ -219,34 +211,23 @@ export function PathProvider({ children }: PathProviderProps) {
           progress: typeof p?.jobProgress === "number" ? p.jobProgress : 0,
         });
       });
-      setPaths((prev) => {
-        const pending = (prev || []).filter((p) => String(p?.id || "").startsWith("job:"));
-        return [...pending, ...normalized];
-      });
-    } catch (err) {
-      console.error("[PathProvider] Failed to load paths:", err);
-      setError(err);
-      setPaths((prev) => (prev || []).filter((p) => String(p?.id || "").startsWith("job:")));
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setPaths([]);
-      setLoading(false);
-      setError(null);
-      setActivePathIdState(null);
-      setActivePathOverride(null);
-      return;
-    }
-    loadPaths();
-  }, [isAuthenticated, loadPaths]);
+      const prev = queryClient.getQueryData<Path[]>(queryKeys.paths()) ?? [];
+      const pending = (prev || []).filter((p) => String(p?.id || "").startsWith("job:"));
+      return [...pending, ...normalized];
+    },
+  });
+
+  const paths = isAuthenticated ? (pathsQuery.data ?? []) : [];
+  const loading = Boolean(isAuthenticated && pathsQuery.isPending);
+  const error = isAuthenticated ? pathsQuery.error ?? null : null;
 
   // Restore active path for this session (best-effort; doesn't navigate).
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (restoredActivePathRef.current) return;
+    restoredActivePathRef.current = true;
+
     let mounted = true;
     (async () => {
       try {
@@ -254,13 +235,12 @@ export function PathProvider({ children }: PathProviderProps) {
         if (!mounted) return;
         const pathId = state?.activePathId ? String(state.activePathId) : null;
         if (!pathId) return;
-        setActivePathIdState(pathId);
-        const fresh = await apiGetPath(pathId);
-        if (!mounted) return;
-        if (fresh?.id) {
-          setActivePathOverride(fresh);
-          setPaths((prev) => upsertById(prev || [], stripJobFields(fresh), { replace: true }));
-        }
+        setActivePathIdState((prev) => (prev ? prev : pathId));
+        void queryClient.prefetchQuery({
+          queryKey: queryKeys.path(pathId),
+          queryFn: () => apiGetPath(pathId),
+          staleTime: 60_000,
+        });
       } catch {
         // ignore restore errors
       }
@@ -274,8 +254,15 @@ export function PathProvider({ children }: PathProviderProps) {
   useEffect(() => {
     if (!isAuthenticated) return;
     if (!connected) return;
-    loadPaths();
-  }, [connected, isAuthenticated, loadPaths]);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.paths(), exact: true });
+  }, [connected, isAuthenticated, queryClient]);
+
+  useEffect(() => {
+    if (isAuthenticated) return;
+    setActivePathIdState(null);
+    restoredActivePathRef.current = false;
+    queryClient.removeQueries({ queryKey: queryKeys.paths() });
+  }, [isAuthenticated, queryClient]);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -295,9 +282,10 @@ export function PathProvider({ children }: PathProviderProps) {
     if (!jobId || jobType !== "learning_build") return;
 
     if (event === "jobcreated") {
-      setPaths((prev) => {
-        const exists = (prev || []).some((p) => p?.jobId === jobId);
-        if (exists) return prev;
+      queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const exists = list.some((p) => p?.jobId === jobId);
+        if (exists) return list;
 
         const placeholderId = pathIdFromEvent ? String(pathIdFromEvent) : `job:${jobId}`;
         const placeholder = attachJobFields(
@@ -313,19 +301,18 @@ export function PathProvider({ children }: PathProviderProps) {
           { job, jobId, jobType, status: job?.status ?? "queued", stage: job?.stage ?? "queued" }
         );
 
-        return [placeholder, ...(prev || [])];
+        return [placeholder, ...list];
       });
       return;
     }
 
     if (event === "jobprogress") {
-      setPaths((prev) => {
+      queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
         const existing =
-          (prev || []).find((p) => p?.jobId === jobId) ||
-          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
-          (pathIdFromEvent
-            ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent))
-            : null) ||
+          list.find((p) => p?.jobId === jobId) ||
+          list.find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? list.find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
           null;
 
         const base =
@@ -348,19 +335,18 @@ export function PathProvider({ children }: PathProviderProps) {
           jobType,
         });
 
-        return upsertById(prev || [], next);
+        return upsertById(list, next);
       });
       return;
     }
 
     if (event === "jobfailed") {
-      setPaths((prev) => {
+      queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
         const existing =
-          (prev || []).find((p) => p?.jobId === jobId) ||
-          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
-          (pathIdFromEvent
-            ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent))
-            : null) ||
+          list.find((p) => p?.jobId === jobId) ||
+          list.find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? list.find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
           null;
 
         const base =
@@ -383,7 +369,7 @@ export function PathProvider({ children }: PathProviderProps) {
           jobType,
         });
 
-        return upsertById(prev || [], next);
+        return upsertById(list, next);
       });
       return;
     }
@@ -392,12 +378,10 @@ export function PathProvider({ children }: PathProviderProps) {
       const pathId = pathIdFromEvent ?? extractPathIdFromJob(job);
 
       // Optimistically mark placeholder done
-      setPaths((prev) => {
-        const existing =
-          (prev || []).find((p) => p?.jobId === jobId) ||
-          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
-          null;
-        if (!existing) return prev;
+      queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const existing = list.find((p) => p?.jobId === jobId) || list.find((p) => p?.id === `job:${jobId}`) || null;
+        if (!existing) return list;
 
         const next = attachJobFields(existing, {
           job,
@@ -409,16 +393,22 @@ export function PathProvider({ children }: PathProviderProps) {
           jobType,
         });
 
-        return upsertById(prev || [], next, { replace: true });
+        return upsertById(list, next, { replace: true });
       });
 
-      (async () => {
+      void (async () => {
         try {
           if (pathId) {
-            const fresh = await apiGetPath(pathId);
+            const fresh = await queryClient.fetchQuery({
+              queryKey: queryKeys.path(String(pathId)),
+              queryFn: () => apiGetPath(String(pathId)),
+              staleTime: 60_000,
+            });
+
             if (fresh?.id) {
-              setPaths((prev) => {
-                const withoutPlaceholder = (prev || []).filter((p) => p?.jobId !== jobId);
+              queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+                const list = Array.isArray(prev) ? prev : [];
+                const withoutPlaceholder = list.filter((p) => p?.jobId !== jobId);
                 return upsertById(withoutPlaceholder, stripJobFields(fresh), { replace: true });
               });
               return;
@@ -427,18 +417,17 @@ export function PathProvider({ children }: PathProviderProps) {
         } catch (err) {
           console.warn("[PathProvider] Failed to fetch path after job done:", err);
         }
-        loadPaths();
+        void queryClient.invalidateQueries({ queryKey: queryKeys.paths(), exact: true });
       })();
     }
 
     if (event === "jobcanceled") {
-      setPaths((prev) => {
+      queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
         const existing =
-          (prev || []).find((p) => p?.jobId === jobId) ||
-          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
-          (pathIdFromEvent
-            ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent))
-            : null) ||
+          list.find((p) => p?.jobId === jobId) ||
+          list.find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? list.find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
           null;
 
         const base =
@@ -461,18 +450,17 @@ export function PathProvider({ children }: PathProviderProps) {
           jobType,
         });
 
-        return upsertById(prev || [], next);
+        return upsertById(list, next);
       });
     }
 
     if (event === "jobrestarted") {
-      setPaths((prev) => {
+      queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
         const existing =
-          (prev || []).find((p) => p?.jobId === jobId) ||
-          (prev || []).find((p) => p?.id === `job:${jobId}`) ||
-          (pathIdFromEvent
-            ? (prev || []).find((p) => String(p?.id || "") === String(pathIdFromEvent))
-            : null) ||
+          list.find((p) => p?.jobId === jobId) ||
+          list.find((p) => p?.id === `job:${jobId}`) ||
+          (pathIdFromEvent ? list.find((p) => String(p?.id || "") === String(pathIdFromEvent)) : null) ||
           null;
 
         const base =
@@ -495,11 +483,11 @@ export function PathProvider({ children }: PathProviderProps) {
           jobType,
         });
 
-        return upsertById(prev || [], next);
+        return upsertById(list, next);
       });
       return;
     }
-  }, [lastMessage, user?.id, loadPaths]);
+  }, [lastMessage, queryClient, user?.id]);
 
   const getById = useCallback(
     (id: string) => paths.find((p) => p?.id === id) ?? null,
@@ -510,22 +498,18 @@ export function PathProvider({ children }: PathProviderProps) {
     (id: string | null) => {
       const next = id ? String(id) : null;
       setActivePathIdState(next);
-      if (!next || String(activePathOverride?.id || "") !== next) {
-        setActivePathOverride(null);
-      }
       if (isAuthenticated) {
         void patchSessionState({ active_path_id: next }).catch((err) => {
           console.warn("[PathProvider] Failed to patch session state:", err);
         });
       }
     },
-    [activePathOverride, isAuthenticated]
+    [isAuthenticated]
   );
 
   const setActivePath = useCallback((path: Path | null) => {
     if (!path) {
       setActivePathIdState(null);
-      setActivePathOverride(null);
       if (isAuthenticated) {
         void patchSessionState({ active_path_id: null }).catch((err) => {
           console.warn("[PathProvider] Failed to patch session state:", err);
@@ -536,18 +520,20 @@ export function PathProvider({ children }: PathProviderProps) {
     const nextId = path?.id ? String(path.id) : null;
     if (!nextId) return;
     setActivePathIdState(nextId);
-    setActivePathOverride(path);
-    setPaths((prev) => upsertById(prev || [], path));
+    queryClient.setQueryData(queryKeys.path(nextId), path);
+    queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return upsertById(list, path);
+    });
     if (isAuthenticated) {
       void patchSessionState({ active_path_id: nextId }).catch((err) => {
         console.warn("[PathProvider] Failed to patch session state:", err);
       });
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, queryClient]);
 
   const clearActivePath = useCallback(() => {
     setActivePathIdState(null);
-    setActivePathOverride(null);
     if (isAuthenticated) {
       void patchSessionState({ active_path_id: null }).catch((err) => {
         console.warn("[PathProvider] Failed to patch session state:", err);
@@ -557,61 +543,56 @@ export function PathProvider({ children }: PathProviderProps) {
 
   const activatePath = useCallback(
     async (id: string | null): Promise<Path | null> => {
-      const seq = ++activateSeq.current;
       const nextId = id ? String(id) : null;
 
       setActivePathIdState(nextId);
-      if (!nextId) {
-        setActivePathOverride(null);
-        if (isAuthenticated) {
-          void patchSessionState({ active_path_id: null }).catch((err) => {
-            console.warn("[PathProvider] Failed to patch session state:", err);
-          });
-        }
-        return null;
-      }
-
-      const cached =
-        (pathsRef.current || []).find((p) => String(p?.id || "") === String(nextId)) ?? null;
-      if (cached) setActivePathOverride(cached);
-
       if (isAuthenticated) {
         void patchSessionState({ active_path_id: nextId }).catch((err) => {
           console.warn("[PathProvider] Failed to patch session state:", err);
         });
       }
+      if (!nextId) return null;
 
-      const fresh = await apiGetPath(nextId);
-      if (activateSeq.current !== seq) return fresh;
+      const cached = getById(nextId);
+      if (cached) queryClient.setQueryData(queryKeys.path(nextId), cached);
 
-      if (fresh?.id) {
-        setActivePathOverride(fresh);
-        setPaths((prev) => upsertById(prev || [], stripJobFields(fresh), { replace: true }));
+      try {
+        const fresh = await queryClient.fetchQuery({
+          queryKey: queryKeys.path(nextId),
+          queryFn: () => apiGetPath(nextId),
+          staleTime: 60_000,
+        });
+
+        if (fresh?.id) {
+          queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            return upsertById(list, stripJobFields(fresh), { replace: true });
+          });
+        }
+        return fresh;
+      } catch (err) {
+        console.warn("[PathProvider] Failed to activate path:", err);
+        return cached ?? null;
       }
-      return fresh;
     },
-    [isAuthenticated]
+    [getById, isAuthenticated, queryClient]
   );
 
-  const uploadMaterialSet = useCallback(
-    async (files: File[]) => {
-      if (!files || files.length === 0) {
-        throw new Error("uploadMaterialSet: no files provided");
-      }
-
-      const res = await apiUploadMaterialSet(files);
-
+  const uploadMaterialSetMutation = useMutation({
+    mutationFn: apiUploadMaterialSet,
+    onSuccess: (res) => {
       const jobId = res?.job_id ?? res?.jobId ?? null;
       const materialSetId = res?.material_set_id ?? res?.materialSetId ?? null;
       const pathId = res?.path_id ?? res?.pathId ?? null;
 
       if (jobId) {
-        setPaths((prev) => {
+        queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+          const list = Array.isArray(prev) ? prev : [];
           const placeholderId = pathId ? String(pathId) : `job:${jobId}`;
 
           const existing =
-            (prev || []).find((p) => p?.jobId === jobId) ||
-            (prev || []).find((p) => p?.id === placeholderId) ||
+            list.find((p) => p?.jobId === jobId) ||
+            list.find((p) => p?.id === placeholderId) ||
             null;
 
           const base =
@@ -640,20 +621,52 @@ export function PathProvider({ children }: PathProviderProps) {
             }
           );
 
-          return upsertById(prev || [], next);
+          return upsertById(list, next);
         });
       }
 
-      return res;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.materialFiles(), exact: true });
     },
-    []
+  });
+
+  const uploadMaterialSet = useCallback(
+    async (files: File[]) => {
+      if (!files || files.length === 0) {
+        throw new Error("uploadMaterialSet: no files provided");
+      }
+      return uploadMaterialSetMutation.mutateAsync(files);
+    },
+    [uploadMaterialSetMutation]
   );
+
+  const activePathQuery = useQuery({
+    queryKey: queryKeys.path(activePathId ?? ""),
+    enabled: isAuthenticated && Boolean(activePathId),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const id = String(activePathId || "");
+      if (!id) return null;
+      const fresh = await apiGetPath(id);
+      if (fresh?.id) {
+        queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          return upsertById(list, stripJobFields(fresh), { replace: true });
+        });
+      }
+      return fresh;
+    },
+  });
 
   const activePath = useMemo(() => {
     if (!activePathId) return null;
     const fromList = (paths || []).find((p) => String(p?.id || "") === String(activePathId));
-    return fromList || activePathOverride || null;
-  }, [activePathId, activePathOverride, paths]);
+    return fromList || activePathQuery.data || null;
+  }, [activePathId, activePathQuery.data, paths]);
+
+  const reload = useCallback(async () => {
+    if (!isAuthenticated) return;
+    await queryClient.refetchQueries({ queryKey: queryKeys.paths(), exact: true });
+  }, [isAuthenticated, queryClient]);
 
   const value = useMemo(
     () => ({
@@ -666,7 +679,7 @@ export function PathProvider({ children }: PathProviderProps) {
       setActivePath,
       clearActivePath,
       activatePath,
-      reload: loadPaths,
+      reload,
       getById,
       uploadMaterialSet,
     }),
@@ -680,7 +693,7 @@ export function PathProvider({ children }: PathProviderProps) {
       setActivePath,
       clearActivePath,
       activatePath,
-      loadPaths,
+      reload,
       getById,
       uploadMaterialSet,
     ]

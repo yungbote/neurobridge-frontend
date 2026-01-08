@@ -15,7 +15,20 @@ import { nbMotion } from "@/shared/motion/neurobridgeMotion";
 import App from "./App";
 import "@/styles/index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 15_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      retry: 1,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
@@ -48,7 +61,6 @@ createRoot(rootElement).render(
         </ViewportProvider>
       </MotionConfig>
     </LazyMotion>
-    <ReactQueryDevtools initialIsOpen={false} />
+    {import.meta.env.DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}
   </QueryClientProvider>
 );
-

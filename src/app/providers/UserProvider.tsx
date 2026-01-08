@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import {
@@ -8,6 +9,7 @@ import {
   changeAvatarColor as apiChangeAvatarColor,
   uploadAvatar as apiUploadAvatar,
 } from "@/shared/api/UserService";
+import { queryKeys } from "@/shared/query/queryKeys";
 import { UI_THEME_SET } from "@/shared/theme/uiThemes";
 import type {
   SseMessage,
@@ -57,39 +59,22 @@ interface UserProviderProps {
 export function UserProvider({ children }: UserProviderProps) {
   const { isAuthenticated } = useAuth();
   const { lastMessage } = useSSEContext();
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown | null>(null);
+  const queryClient = useQueryClient();
 
-  const loadUser = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const userQuery = useQuery({
+    queryKey: queryKeys.me(),
+    enabled: isAuthenticated,
+    queryFn: async () => {
       const { user } = await getMe();
-      setUser(user);
-    } catch (err) {
-      console.error("[UserProvider] Failed to load user:", err);
-      setError(err);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setUser(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    loadUser();
-  }, [isAuthenticated, loadUser]);
+      return user;
+    },
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     if (!lastMessage) return;
 
-    setUser((prev) => {
+    queryClient.setQueryData<UserProfile | null>(queryKeys.me(), (prev) => {
       if (!prev) return prev;
       if (lastMessage.channel !== prev.id) return prev;
 
@@ -103,7 +88,7 @@ export function UserProvider({ children }: UserProviderProps) {
             ...prev,
             firstName: payload.first_name ?? prev.firstName,
             lastName: payload.last_name ?? prev.lastName,
-            avatarUrl: payload.avatar_url ?? prev.avatarUrl,         // IMPORTANT
+            avatarUrl: payload.avatar_url ?? prev.avatarUrl,
           };
         }
 
@@ -111,9 +96,10 @@ export function UserProvider({ children }: UserProviderProps) {
           const payload = asObject<UserThemeChangedPayload>(data);
           if (!payload) return prev;
           const nextUiTheme = payload.preferred_ui_theme;
-          const resolvedUiTheme = nextUiTheme && UI_THEME_SET.has(nextUiTheme as UiTheme)
-            ? (nextUiTheme as UiTheme)
-            : prev.preferredUiTheme;
+          const resolvedUiTheme =
+            nextUiTheme && UI_THEME_SET.has(nextUiTheme as UiTheme)
+              ? (nextUiTheme as UiTheme)
+              : prev.preferredUiTheme;
           return {
             ...prev,
             preferredTheme: (payload.preferred_theme ?? prev.preferredTheme) as ThemePreference,
@@ -135,42 +121,135 @@ export function UserProvider({ children }: UserProviderProps) {
           return prev;
       }
     });
-  }, [lastMessage]);
+  }, [lastMessage, queryClient]);
 
-  const changeName = useCallback(async (data: ChangeNamePayload) => {
-    await apiChangeName(data);
-  }, []);
+  useEffect(() => {
+    if (isAuthenticated) return;
+    queryClient.removeQueries({ queryKey: queryKeys.me() });
+  }, [isAuthenticated, queryClient]);
 
-  const changeTheme = useCallback(async (preferredTheme: ThemePreference) => {
-    setUser((prev) => (prev ? { ...prev, preferredTheme } : prev));
-    await apiChangeTheme({ preferred_theme: preferredTheme });
-  }, []);
+  const reload = useCallback(async () => {
+    if (!isAuthenticated) return;
+    await queryClient.refetchQueries({ queryKey: queryKeys.me(), exact: true });
+  }, [isAuthenticated, queryClient]);
 
-  const changeUiTheme = useCallback(async (preferredUiTheme: UiTheme) => {
-    setUser((prev) => (prev ? { ...prev, preferredUiTheme } : prev));
-    await apiChangeTheme({ preferred_ui_theme: preferredUiTheme });
-  }, []);
+  const changeNameMutation = useMutation({
+    mutationFn: apiChangeName,
+    onMutate: async (data: ChangeNamePayload) => {
+      const prev = queryClient.getQueryData<UserProfile | null>(queryKeys.me()) ?? null;
+      if (!prev) return { prev: null };
+      queryClient.setQueryData<UserProfile | null>(queryKeys.me(), {
+        ...prev,
+        firstName: data.first_name ?? prev.firstName,
+        lastName: data.last_name ?? prev.lastName,
+      });
+      return { prev };
+    },
+    onError: (_err, _data, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.me(), ctx.prev);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me(), exact: true });
+    },
+  });
 
-  const changeAvatarColor = useCallback(async (avatarColor: string) => {
-    setUser((prev) => (prev ? { ...prev, avatarColor } : prev));
-    await apiChangeAvatarColor({ avatar_color: avatarColor });
-  }, []);
+  const changeThemeMutation = useMutation({
+    mutationFn: apiChangeTheme,
+    onMutate: async (data: Parameters<typeof apiChangeTheme>[0]) => {
+      const prev = queryClient.getQueryData<UserProfile | null>(queryKeys.me()) ?? null;
+      if (!prev) return { prev: null };
+      const nextUiThemeRaw = typeof data.preferred_ui_theme === "string" ? data.preferred_ui_theme : null;
+      const nextUiTheme =
+        nextUiThemeRaw && UI_THEME_SET.has(nextUiThemeRaw as UiTheme) ? (nextUiThemeRaw as UiTheme) : null;
 
-  const uploadAvatar = useCallback(async (file: File) => {
-    await apiUploadAvatar(file);
-  }, []);
+      queryClient.setQueryData<UserProfile | null>(queryKeys.me(), {
+        ...prev,
+        preferredTheme: (data.preferred_theme ?? prev.preferredTheme) as ThemePreference,
+        preferredUiTheme: nextUiTheme ?? prev.preferredUiTheme,
+      });
+      return { prev };
+    },
+    onError: (_err, _data, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.me(), ctx.prev);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me(), exact: true });
+    },
+  });
 
-  const value = {
-    user,
-    loading,
-    error,
-    reload: loadUser,
-    changeName,
-    changeTheme,
-    changeUiTheme,
-    changeAvatarColor,
-    uploadAvatar,
-  };
+  const changeAvatarColorMutation = useMutation({
+    mutationFn: apiChangeAvatarColor,
+    onMutate: async (data: Parameters<typeof apiChangeAvatarColor>[0]) => {
+      const prev = queryClient.getQueryData<UserProfile | null>(queryKeys.me()) ?? null;
+      if (!prev) return { prev: null };
+      const nextColor = typeof data.avatar_color === "string" ? data.avatar_color : null;
+      queryClient.setQueryData<UserProfile | null>(queryKeys.me(), {
+        ...prev,
+        avatarColor: nextColor ?? prev.avatarColor,
+      });
+      return { prev };
+    },
+    onError: (_err, _data, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.me(), ctx.prev);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me(), exact: true });
+    },
+  });
+
+  const uploadAvatarMutation = useMutation({
+    mutationFn: apiUploadAvatar,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me(), exact: true });
+    },
+  });
+
+  const changeName = useCallback(
+    async (data: ChangeNamePayload) => changeNameMutation.mutateAsync(data),
+    [changeNameMutation]
+  );
+
+  const changeTheme = useCallback(
+    async (preferredTheme: ThemePreference) =>
+      changeThemeMutation.mutateAsync({ preferred_theme: preferredTheme }),
+    [changeThemeMutation]
+  );
+
+  const changeUiTheme = useCallback(
+    async (preferredUiTheme: UiTheme) =>
+      changeThemeMutation.mutateAsync({ preferred_ui_theme: preferredUiTheme }),
+    [changeThemeMutation]
+  );
+
+  const changeAvatarColor = useCallback(
+    async (avatarColor: string) =>
+      changeAvatarColorMutation.mutateAsync({ avatar_color: avatarColor }),
+    [changeAvatarColorMutation]
+  );
+
+  const uploadAvatar = useCallback(
+    async (file: File) => uploadAvatarMutation.mutateAsync(file),
+    [uploadAvatarMutation]
+  );
+
+  const user = isAuthenticated ? (userQuery.data ?? null) : null;
+  const loading = Boolean(isAuthenticated && userQuery.isPending);
+  const error = isAuthenticated ? userQuery.error ?? null : null;
+
+  const value = useMemo<UserContextValue>(
+    () => ({
+      user,
+      loading,
+      error,
+      reload,
+      changeName,
+      changeTheme,
+      changeUiTheme,
+      changeAvatarColor,
+      uploadAvatar,
+    }),
+    [changeAvatarColor, changeName, changeTheme, changeUiTheme, error, loading, reload, uploadAvatar, user]
+  );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
@@ -178,7 +257,6 @@ export function UserProvider({ children }: UserProviderProps) {
 export function useUser() {
   return useContext(UserContext);
 }
-
 
 
 

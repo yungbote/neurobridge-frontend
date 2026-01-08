@@ -5,13 +5,14 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { listUserMaterialFiles } from "@/shared/api/MaterialService";
+import { queryKeys } from "@/shared/query/queryKeys";
 import type { JobEventPayload, MaterialFile, SseMessage } from "@/shared/types/models";
 
 interface MaterialContextValue {
@@ -49,52 +50,27 @@ export function MaterialProvider({ children }: MaterialProviderProps) {
   const { isAuthenticated } = useAuth();
   const { user } = useUser();
   const { connected, lastMessage } = useSSEContext();
+  const queryClient = useQueryClient();
 
-  const [files, setFiles] = useState<MaterialFile[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown | null>(null);
-
-  const requestSeq = useRef(0);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async () => {
     if (!isAuthenticated) return;
-    const seq = ++requestSeq.current;
-
-    setLoading(true);
-    setError(null);
-    try {
-      const loaded = await listUserMaterialFiles();
-      if (requestSeq.current !== seq) return;
-      const sorted = (loaded || []).slice().sort(byUpdatedDesc);
-      setFiles(sorted);
-    } catch (err) {
-      if (requestSeq.current !== seq) return;
-      setError(err);
-      setFiles([]);
-    } finally {
-      if (requestSeq.current !== seq) return;
-      setLoading(false);
-    }
-  }, [isAuthenticated]);
+    await queryClient.refetchQueries({ queryKey: queryKeys.materialFiles(), exact: true });
+  }, [isAuthenticated, queryClient]);
 
   const scheduleReload = useCallback(() => {
     if (reloadTimer.current) return;
     reloadTimer.current = setTimeout(() => {
       reloadTimer.current = null;
-      void reload();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.materialFiles(), exact: true });
     }, 250);
-  }, [reload]);
+  }, [queryClient]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      setFiles([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    void reload();
-  }, [isAuthenticated, reload]);
+    if (isAuthenticated) return;
+    queryClient.removeQueries({ queryKey: queryKeys.materialFiles() });
+  }, [isAuthenticated, queryClient]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -121,10 +97,19 @@ export function MaterialProvider({ children }: MaterialProviderProps) {
     scheduleReload();
   }, [connected, isAuthenticated, lastMessage, scheduleReload, user?.id]);
 
-  const getById = useCallback(
-    (id: string) => files.find((f) => String(f?.id || "") === String(id)) ?? null,
-    [files]
-  );
+  const filesQuery = useQuery({
+    queryKey: queryKeys.materialFiles(),
+    enabled: isAuthenticated,
+    queryFn: listUserMaterialFiles,
+    staleTime: 30_000,
+    select: (loaded) => (loaded || []).slice().sort(byUpdatedDesc),
+  });
+
+  const files = isAuthenticated ? (filesQuery.data ?? []) : [];
+  const loading = Boolean(isAuthenticated && filesQuery.isPending);
+  const error = isAuthenticated ? filesQuery.error ?? null : null;
+
+  const getById = useCallback((id: string) => files.find((f) => String(f?.id || "") === String(id)) ?? null, [files]);
 
   const value = useMemo(
     () => ({
@@ -143,4 +128,3 @@ export function MaterialProvider({ children }: MaterialProviderProps) {
 export function useMaterials() {
   return useContext(MaterialContext);
 }
-

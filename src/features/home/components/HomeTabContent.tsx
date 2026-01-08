@@ -26,25 +26,13 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/lib/utils";
 import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 import {
-  Atom,
-  Brain,
   ChevronLeft,
   ChevronRight,
-  CircleDashed,
-  Cpu,
   Filter,
-  FlaskConical,
-  HeartPulse,
-  Landmark,
-  Leaf,
-  ScrollText,
-  Sigma,
-  Sparkles,
-  TrendingUp,
-  type LucideIcon,
 } from "lucide-react";
 import type { LibraryTaxonomySnapshotV1, MaterialFile, Path } from "@/shared/types/models";
 import { listTaxonomyNodeItems } from "@/shared/api/LibraryService";
+import { getHomeSectionIcon } from "@/features/home/lib/homeSectionIcons";
 
 export type HomeTabKey = "home" | "in-progress" | "saved" | "completed" | "recently-viewed";
 
@@ -97,6 +85,44 @@ function itemUpdatedMs(item: HomeCardItem) {
 
 function byItemUpdatedDesc(a: HomeCardItem, b: HomeCardItem) {
   return itemUpdatedMs(b) - itemUpdatedMs(a);
+}
+
+function buildHomeItems(
+  sectionPaths: Path[],
+  filesByMaterialSetId: Map<string, MaterialFile[]>,
+  opts: { includeMaterials?: boolean } = {}
+): HomeCardItem[] {
+  const includeMaterials = opts.includeMaterials !== false;
+  const out: HomeCardItem[] = [];
+  const seen = new Set<string>();
+
+  for (const p of sectionPaths || []) {
+    const id = String(p?.id || "");
+    if (!id) continue;
+    const key = `path:${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: "path", id, path: p });
+  }
+
+  if (includeMaterials) {
+    for (const p of sectionPaths || []) {
+      const setId = String(p?.materialSetId || "");
+      if (!setId) continue;
+      const rows = filesByMaterialSetId.get(setId) ?? [];
+      for (const f of rows) {
+        const id = String(f?.id || "");
+        if (!id) continue;
+        const key = `material:${id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ kind: "material", id, file: f });
+      }
+    }
+  }
+
+  out.sort(byItemUpdatedDesc);
+  return out;
 }
 
 function getPathStatus(path: Path) {
@@ -182,6 +208,8 @@ interface HomeTabContentProps {
   materialsLoading?: boolean;
   taxonomySnapshot?: LibraryTaxonomySnapshotV1 | null;
   taxonomyLoading?: boolean;
+  homeTopicFocus?: { nodeId: string; title: string; iconKey?: string } | null;
+  onHomeTopicViewAll?: (focus: { nodeId: string; title: string; iconKey?: string }) => void;
 }
 
 type HomeCardItem =
@@ -211,54 +239,9 @@ const TOPIC_ANCHOR_KEY_ORDER = [
   "anchor_philosophy",
 ] as const;
 
-type HomeSectionIconConfig = {
-  icon: LucideIcon;
-};
-
-const HOME_SECTION_ICONS: Record<string, HomeSectionIconConfig> = {
-  generating: {
-    icon: CircleDashed,
-  },
-  new: {
-    icon: Sparkles,
-  },
-  anchor_physics: {
-    icon: Atom,
-  },
-  anchor_biology: {
-    icon: Leaf,
-  },
-  anchor_chemistry: {
-    icon: FlaskConical,
-  },
-  anchor_mathematics: {
-    icon: Sigma,
-  },
-  anchor_computer_science: {
-    icon: Cpu,
-  },
-  anchor_medicine_health: {
-    icon: HeartPulse,
-  },
-  anchor_psychology_neuroscience: {
-    icon: Brain,
-  },
-  anchor_economics_business: {
-    icon: TrendingUp,
-  },
-  anchor_history: {
-    icon: Landmark,
-  },
-  anchor_philosophy: {
-    icon: ScrollText,
-  },
-};
-
-function HomeSectionIcon({ iconKey, title }: { iconKey?: string; title: string }) {
-  const key = String(iconKey || "").trim();
-  const cfg = (key && HOME_SECTION_ICONS[key]) || null;
-  if (!cfg) return null;
-  const Icon = cfg.icon;
+function HomeSectionIcon({ iconKey }: { iconKey?: string }) {
+  const Icon = getHomeSectionIcon(iconKey);
+  if (!Icon) return null;
 
   return (
     <div
@@ -283,9 +266,23 @@ export function HomeTabContent({
   materialsLoading,
   taxonomySnapshot,
   taxonomyLoading,
+  homeTopicFocus,
+  onHomeTopicViewAll,
 }: HomeTabContentProps) {
   const isHome = activeTab === "home";
+  const focusedNodeId = isHome ? String(homeTopicFocus?.nodeId || "").trim() : "";
   const materialList = materialFiles ?? [];
+  const pathIdByMaterialSetId = useMemo(() => {
+    const out = new Map<string, string>();
+    const list = Array.isArray(paths) ? paths : [];
+    for (const p of list) {
+      const setId = String(p?.materialSetId || "").trim();
+      const pathId = String(p?.id || "").trim();
+      if (!setId || !pathId) continue;
+      if (!out.has(setId)) out.set(setId, pathId);
+    }
+    return out;
+  }, [paths]);
 
   const filesByMaterialSetId = useMemo(() => {
     const out = new Map<string, MaterialFile[]>();
@@ -310,40 +307,6 @@ export function HomeTabContent({
 
   const homeSections = useMemo<HomeRailSection[]>(() => {
     if (!isHome) return [];
-
-    const buildItems = (sectionPaths: Path[], opts: { includeMaterials?: boolean } = {}): HomeCardItem[] => {
-      const includeMaterials = opts.includeMaterials !== false;
-      const out: HomeCardItem[] = [];
-      const seen = new Set<string>();
-
-      for (const p of sectionPaths || []) {
-        const id = String(p?.id || "");
-        if (!id) continue;
-        const key = `path:${id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ kind: "path", id, path: p });
-      }
-
-      if (includeMaterials) {
-        for (const p of sectionPaths || []) {
-          const setId = String(p?.materialSetId || "");
-          if (!setId) continue;
-          const rows = filesByMaterialSetId.get(setId) ?? [];
-          for (const f of rows) {
-            const id = String(f?.id || "");
-            if (!id) continue;
-            const key = `material:${id}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            out.push({ kind: "material", id, file: f });
-          }
-        }
-      }
-
-      out.sort(byItemUpdatedDesc);
-      return out;
-    };
 
     const list = Array.isArray(paths) ? paths : [];
     const generating = list
@@ -387,14 +350,14 @@ export function HomeTabContent({
         id: "generating",
         title: "Generating",
         iconKey: "generating",
-        items: buildItems(generating, { includeMaterials: false }),
+        items: buildHomeItems(generating, filesByMaterialSetId, { includeMaterials: false }),
       });
     }
     sections.push({
       id: "new",
       title: "New",
       iconKey: "new",
-      items: buildItems(newPaths),
+      items: buildHomeItems(newPaths, filesByMaterialSetId),
     });
 
     const snapshot = taxonomySnapshot ?? null;
@@ -479,7 +442,7 @@ export function HomeTabContent({
         nodeId,
         title: node.name || "Untitled",
         iconKey: String(node.key || ""),
-        items: buildItems(ordered),
+        items: buildHomeItems(ordered, filesByMaterialSetId),
       });
     }
 
@@ -497,6 +460,27 @@ export function HomeTabContent({
 
     return sections;
   }, [filesByMaterialSetId, isHome, paths, taxonomySnapshot]);
+
+  if (isHome && focusedNodeId) {
+    const section =
+      homeSections.find((s) => String(s?.nodeId || "") === focusedNodeId) ??
+      homeSections.find((s) => String(s?.id || "") === focusedNodeId) ??
+      null;
+    const seedItems = section?.items ?? [];
+
+    return (
+      <HomeTopicFocusView
+        focusNodeId={focusedNodeId}
+        seedItems={seedItems}
+        focusTitle={section?.title || homeTopicFocus?.title || "Topic"}
+        focusIconKey={section?.iconKey || homeTopicFocus?.iconKey}
+        taxonomySnapshot={taxonomySnapshot ?? null}
+        paths={paths}
+        filesByMaterialSetId={filesByMaterialSetId}
+        pathIdByMaterialSetId={pathIdByMaterialSetId}
+      />
+    );
+  }
 
   if (isHome && (loading || taxonomyLoading || (materialsLoading && materialList.length === 0))) {
     return (
@@ -541,6 +525,11 @@ export function HomeTabContent({
             iconKey={section.iconKey}
             items={section.items}
             nodeId={section.nodeId}
+            onViewAll={
+              section.nodeId && onHomeTopicViewAll
+                ? () => onHomeTopicViewAll({ nodeId: section.nodeId || "", title: section.title, iconKey: section.iconKey })
+                : undefined
+            }
           />
         ))}
       </div>
@@ -567,16 +556,451 @@ export function HomeTabContent({
   );
 }
 
+function HomeTopicFocusView({
+  focusNodeId,
+  seedItems,
+  focusTitle,
+  focusIconKey,
+  taxonomySnapshot,
+  paths,
+  filesByMaterialSetId,
+  pathIdByMaterialSetId,
+}: {
+  focusNodeId: string;
+  seedItems: HomeCardItem[];
+  focusTitle: string;
+  focusIconKey?: string;
+  taxonomySnapshot: LibraryTaxonomySnapshotV1 | null;
+  paths: Path[];
+  filesByMaterialSetId: Map<string, MaterialFile[]>;
+  pathIdByMaterialSetId: Map<string, string>;
+}) {
+  const topicFacet = taxonomySnapshot?.facets?.topic ?? null;
+  const nodes = topicFacet?.nodes ?? [];
+  const edges = topicFacet?.edges ?? [];
+  const memberships = topicFacet?.memberships ?? [];
+
+  const nodesById = useMemo(() => {
+    const out = new Map<string, (typeof nodes)[number]>();
+    for (const n of nodes) {
+      const id = String(n?.id || "").trim();
+      if (!id) continue;
+      out.set(id, n);
+    }
+    return out;
+  }, [nodes]);
+
+  const membershipByNodeId = useMemo(() => {
+    const out = new Map<string, { path_id: string; weight: number }[]>();
+    for (const m of memberships) {
+      const id = String(m?.node_id || "").trim();
+      if (!id) continue;
+      const rows = Array.isArray(m?.paths) ? m.paths : [];
+      out.set(
+        id,
+        rows
+          .map((r) => ({
+            path_id: String(r?.path_id || "").trim(),
+            weight: typeof r?.weight === "number" ? r.weight : Number(r?.weight || 0),
+          }))
+          .filter((r) => Boolean(r.path_id))
+      );
+    }
+    return out;
+  }, [memberships]);
+
+  const childNodes = useMemo(() => {
+    const out = new Map<string, (typeof nodes)[number]>();
+    for (const e of edges) {
+      if (String(e?.kind || "").toLowerCase() !== "subsumes") continue;
+      if (String(e?.from_node_id || "").trim() !== focusNodeId) continue;
+      const toId = String(e?.to_node_id || "").trim();
+      if (!toId) continue;
+      const node = nodesById.get(toId);
+      if (!node) continue;
+      if (String(node?.kind || "").toLowerCase() !== "category") continue;
+      out.set(toId, node);
+    }
+    const list = Array.from(out.values());
+    list.sort((a, b) => {
+      const diff = (Number(b?.member_count || 0) || 0) - (Number(a?.member_count || 0) || 0);
+      if (diff !== 0) return diff;
+      return String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { sensitivity: "base" });
+    });
+    return list;
+  }, [edges, focusNodeId, nodesById]);
+
+  const focusPathIdSet = useMemo(() => {
+    const rows = membershipByNodeId.get(focusNodeId) ?? [];
+    const out = new Set<string>();
+    for (const r of rows) {
+      const pid = String(r?.path_id || "").trim();
+      if (pid) out.add(pid);
+    }
+    return out;
+  }, [focusNodeId, membershipByNodeId]);
+
+  const focusPaths = useMemo(() => {
+    const list = Array.isArray(paths) ? paths : [];
+    return list.filter((p) => {
+      const id = String(p?.id || "").trim();
+      if (!id) return false;
+      if (isBuildingPath(p)) return false;
+      return focusPathIdSet.has(id);
+    });
+  }, [focusPathIdSet, paths]);
+
+  const primaryChildByPathId = useMemo(() => {
+    const out = new Map<string, { nodeId: string; weight: number }>();
+    for (const child of childNodes) {
+      const nid = String(child?.id || "").trim();
+      if (!nid) continue;
+      const rows = membershipByNodeId.get(nid) ?? [];
+      for (const r of rows) {
+        const pid = String(r?.path_id || "").trim();
+        if (!pid) continue;
+        const weight = typeof r?.weight === "number" ? r.weight : Number(r?.weight || 0);
+        const prev = out.get(pid);
+        if (!prev || weight > prev.weight) out.set(pid, { nodeId: nid, weight });
+      }
+    }
+    return out;
+  }, [childNodes, membershipByNodeId]);
+
+  const focusView = useMemo(() => {
+    const childIdSet = new Set(childNodes.map((n) => String(n?.id || "").trim()).filter(Boolean));
+    const pathsByChildId = new Map<string, Path[]>();
+    const otherPaths: Path[] = [];
+
+    for (const p of focusPaths) {
+      const pid = String(p?.id || "").trim();
+      if (!pid) continue;
+      const primary = primaryChildByPathId.get(pid)?.nodeId ?? null;
+      if (primary && childIdSet.has(primary)) {
+        const arr = pathsByChildId.get(primary) ?? [];
+        arr.push(p);
+        pathsByChildId.set(primary, arr);
+      } else {
+        otherPaths.push(p);
+      }
+    }
+
+    const primaryForPathId = (pathId: string) => primaryChildByPathId.get(pathId)?.nodeId ?? null;
+
+    const allowForChild = (childId: string) => {
+      return (item: HomeCardItem) => {
+        if (item.kind === "path") {
+          const pid = String(item.id || "").trim();
+          if (!pid) return true;
+          const primary = primaryForPathId(pid);
+          if (!primary) return true;
+          return primary === childId;
+        }
+        const setId = String(item.file?.materialSetId || "").trim();
+        if (!setId) return true;
+        const pid = pathIdByMaterialSetId.get(setId);
+        if (!pid) return true;
+        const primary = primaryForPathId(pid);
+        if (!primary) return true;
+        return primary === childId;
+      };
+    };
+
+    const allowForOther = () => {
+      return (item: HomeCardItem) => {
+        if (item.kind === "path") return !primaryForPathId(String(item.id || "").trim());
+        const setId = String(item.file?.materialSetId || "").trim();
+        if (!setId) return true;
+        const pid = pathIdByMaterialSetId.get(setId);
+        if (!pid) return true;
+        return !primaryForPathId(pid);
+      };
+    };
+
+    const out: Array<{
+      id: string;
+      title: string;
+      iconKey?: string;
+      items: HomeCardItem[];
+      nodeId?: string;
+      allowItem?: (item: HomeCardItem) => boolean;
+    }> = [];
+
+    const subtopicSections = childNodes
+      .map((child) => {
+        const nid = String(child?.id || "").trim();
+        if (!nid) return null;
+        const assigned = (pathsByChildId.get(nid) ?? []).slice().sort(byUpdatedDesc);
+        if (assigned.length === 0) return null;
+        return {
+          id: nid,
+          title: String(child?.name || "Untitled"),
+          iconKey: String(child?.key || "") || undefined,
+          items: buildHomeItems(assigned, filesByMaterialSetId),
+          nodeId: nid,
+          allowItem: allowForChild(nid),
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      title: string;
+      iconKey?: string;
+      items: HomeCardItem[];
+      nodeId?: string;
+      allowItem?: (item: HomeCardItem) => boolean;
+      }>;
+
+    if (subtopicSections.length === 0) {
+      const ordered = focusPaths.slice().sort(byUpdatedDesc);
+      const allItems = ordered.length > 0 ? buildHomeItems(ordered, filesByMaterialSetId) : seedItems;
+      return { kind: "all" as const, items: allItems };
+    }
+
+    // Subtopics exist: show child sections, plus a catch-all for anchor-only items (if any).
+    out.push(...subtopicSections);
+
+    const otherOrdered = otherPaths.slice().sort(byUpdatedDesc);
+    if (otherOrdered.length > 0) {
+      out.push({
+        id: `other:${focusNodeId}`,
+        title: "Other",
+        items: buildHomeItems(otherOrdered, filesByMaterialSetId),
+        nodeId: focusNodeId,
+        allowItem: allowForOther(),
+      });
+    }
+
+    return { kind: "rails" as const, sections: out };
+  }, [
+    childNodes,
+    filesByMaterialSetId,
+    focusIconKey,
+    focusNodeId,
+    focusPaths,
+    pathIdByMaterialSetId,
+    primaryChildByPathId,
+    seedItems,
+  ]);
+
+  if (focusView.kind === "all") {
+    if ((focusView.items?.length ?? 0) === 0) {
+      const emptyTitle = focusTitle ? `Nothing in ${focusTitle}` : "Nothing here";
+      return (
+        <div className="w-full">
+          <EmptyContent
+            title={emptyTitle}
+            message="As you generate and save content, it will appear here."
+            helperText=""
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-full">
+        <HomeTopicAllGrid nodeId={focusNodeId} seedItems={focusView.items} />
+      </div>
+    );
+  }
+
+  const sections = focusView.sections;
+  const emptyTitle = focusTitle ? `Nothing in ${focusTitle}` : "Nothing here";
+  const hasAny = sections.some((s) => (s.items?.length ?? 0) > 0);
+
+  if (!hasAny) {
+    return (
+      <div className="w-full">
+        <EmptyContent title={emptyTitle} message="As you generate and save content, it will appear here." helperText="" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-12">
+      {sections.map((section) => (
+        <HomeRail
+          key={section.id}
+          title={section.title}
+          iconKey={section.iconKey}
+          items={section.items}
+          nodeId={section.nodeId}
+          allowItem={section.allowItem}
+        />
+      ))}
+    </div>
+  );
+}
+
+function HomeTopicAllGrid({ nodeId, seedItems }: { nodeId: string; seedItems: HomeCardItem[] }) {
+  const [loadedItems, setLoadedItems] = useState<HomeCardItem[]>(() => seedItems || []);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialFetched, setInitialFetched] = useState(false);
+  const sessionRef = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const mergeIntoLoaded = useMemo(() => {
+    return (prev: HomeCardItem[], incoming: HomeCardItem[]) => {
+      const byKey = new Map<string, HomeCardItem>();
+      for (const it of prev || []) {
+        const id = String(it?.id || "");
+        const kind = String(it?.kind || "");
+        if (!id || !kind) continue;
+        byKey.set(`${kind}:${id}`, it);
+      }
+      for (const it of incoming || []) {
+        const id = String(it?.id || "");
+        const kind = String(it?.kind || "");
+        if (!id || !kind) continue;
+        byKey.set(`${kind}:${id}`, it);
+      }
+      const out = Array.from(byKey.values());
+      out.sort((a, b) => {
+        const diff = itemUpdatedMs(b) - itemUpdatedMs(a);
+        if (diff !== 0) return diff;
+        const ar = a.kind === "material" ? 1 : 0;
+        const br = b.kind === "material" ? 1 : 0;
+        if (ar !== br) return ar - br;
+        return String(a.id || "").localeCompare(String(b.id || ""), undefined, { sensitivity: "base" });
+      });
+      return out;
+    };
+  }, []);
+
+  const fetchMore = useCallback(async () => {
+    const nid = String(nodeId || "").trim();
+    if (!nid) return;
+    if (loadingMoreRef.current) return;
+    if (initialFetched && !nextCursor) return;
+
+    const session = sessionRef.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+
+    try {
+      const { items: incoming, nextCursor: cursor } = await listTaxonomyNodeItems(nid, {
+        facet: "topic",
+        filter: "all",
+        limit: 60,
+        cursor: initialFetched ? nextCursor : null,
+      });
+      if (session !== sessionRef.current) return;
+      const mapped: HomeCardItem[] = incoming.map((it) => {
+        if (it.kind === "path") return { kind: "path", id: String(it.path.id), path: it.path };
+        return { kind: "material", id: String(it.file.id), file: it.file };
+      });
+      setLoadedItems((prev) => mergeIntoLoaded(prev, mapped));
+      setNextCursor(cursor);
+      setInitialFetched(true);
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      console.warn("[HomeTopicAllGrid] Failed to load items:", err);
+      setInitialFetched(true);
+      setNextCursor(null);
+    } finally {
+      if (session === sessionRef.current) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+    }
+  }, [initialFetched, mergeIntoLoaded, nextCursor, nodeId]);
+
+  useEffect(() => {
+    sessionRef.current += 1;
+    setLoadedItems(seedItems || []);
+    setNextCursor(null);
+    setInitialFetched(false);
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    return () => {
+      sessionRef.current += 1;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!seedItems || seedItems.length === 0) return;
+    setLoadedItems((prev) => mergeIntoLoaded(prev, seedItems));
+  }, [mergeIntoLoaded, seedItems]);
+
+  useEffect(() => {
+    if (!nodeId) return;
+    if (loadingMoreRef.current) return;
+    if (initialFetched) return;
+    void fetchMore();
+  }, [fetchMore, initialFetched, nodeId]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    if (typeof IntersectionObserver === "undefined") return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        void fetchMore();
+      },
+      { root: null, rootMargin: "900px 0px", threshold: 0.01 }
+    );
+
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [fetchMore]);
+
+  const showSkeletons = loadingMore || (!initialFetched && loadedItems.length === 0);
+
+  return (
+    <div className="w-full">
+      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+        {loadedItems.map((item) => (
+          <m.div
+            key={`${item.kind}:${item.id}`}
+            initial="initial"
+            animate="animate"
+            variants={nbFadeUp}
+            transition={nbTransitions.micro}
+            style={{ contentVisibility: "auto", containIntrinsicSize: "280px" }}
+          >
+            {item.kind === "material" ? <MaterialCardLarge file={item.file} /> : <PathCardLarge path={item.path} />}
+          </m.div>
+        ))}
+
+        {showSkeletons
+          ? Array.from({ length: 9 }).map((_, i) => (
+              <div
+                key={`topic-grid-skel:${i}`}
+                className="h-[280px] w-full max-w-[360px] rounded-xl border border-border/60 bg-muted/20 p-4"
+              >
+                <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                <div className="mt-4 space-y-2">
+                  <Skeleton className="h-4 w-3/4 bg-muted/30" />
+                  <Skeleton className="h-4 w-1/2 bg-muted/30" />
+                </div>
+              </div>
+            ))
+          : null}
+      </div>
+      <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
+    </div>
+  );
+}
+
 function HomeRail({
   title,
   iconKey,
   items,
   nodeId,
+  onViewAll,
+  allowItem,
 }: {
   title: string;
   iconKey?: string;
   items: HomeCardItem[];
   nodeId?: string;
+  onViewAll?: () => void;
+  allowItem?: (item: HomeCardItem) => boolean;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const pendingAnchorRef = useRef<{ key: string; within: number } | null>(null);
@@ -586,7 +1010,10 @@ function HomeRail({
   const [hasOverflow, setHasOverflow] = useState(false);
 
   const isPaginated = Boolean(nodeId);
-  const [loadedItems, setLoadedItems] = useState<HomeCardItem[]>(() => items || []);
+  const [loadedItems, setLoadedItems] = useState<HomeCardItem[]>(() => {
+    const base = items || [];
+    return allowItem ? base.filter(allowItem) : base;
+  });
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialFetched, setInitialFetched] = useState(false);
@@ -628,13 +1055,15 @@ function HomeRail({
 
   useEffect(() => {
     if (!isPaginated) return;
-    setLoadedItems((prev) => mergeIntoLoaded(prev, items || []));
-  }, [isPaginated, items, mergeIntoLoaded]);
+    const incoming = allowItem ? (items || []).filter(allowItem) : (items || []);
+    setLoadedItems((prev) => mergeIntoLoaded(prev, incoming));
+  }, [allowItem, isPaginated, items, mergeIntoLoaded]);
 
   useEffect(() => {
     if (!isPaginated) return;
     // When node changes, reset pagination state.
-    setLoadedItems(items || []);
+    const incoming = allowItem ? (items || []).filter(allowItem) : (items || []);
+    setLoadedItems(incoming);
     setNextCursor(null);
     setInitialFetched(false);
   }, [isPaginated, nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -702,7 +1131,8 @@ function HomeRail({
         if (it.kind === "path") return { kind: "path", id: String(it.path.id), path: it.path };
         return { kind: "material", id: String(it.file.id), file: it.file };
       });
-      setLoadedItems((prev) => mergeIntoLoaded(prev, mapped));
+      const accepted = allowItem ? mapped.filter(allowItem) : mapped;
+      setLoadedItems((prev) => mergeIntoLoaded(prev, accepted));
       setNextCursor(cursor);
       setInitialFetched(true);
     } catch (err) {
@@ -713,7 +1143,7 @@ function HomeRail({
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [initialFetched, mergeIntoLoaded, nextCursor, nodeId, stridePx, visibleItems]);
+  }, [allowItem, initialFetched, mergeIntoLoaded, nextCursor, nodeId, stridePx, visibleItems]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia === "undefined") return;
@@ -876,7 +1306,7 @@ function HomeRail({
     <section className="space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div className="flex items-end gap-3">
-          <HomeSectionIcon iconKey={iconKey} title={title} />
+          <HomeSectionIcon iconKey={iconKey} />
           <h2 className="font-brand text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             {title}
           </h2>
@@ -949,60 +1379,73 @@ function HomeRail({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {hasOverflow && (
-          <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
-                aria-label={`View all ${title}`}
-              >
-                View all
-              </Button>
-            </DialogTrigger>
-            <DialogContent ref={viewAllScrollRef} className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="font-brand text-2xl sm:text-3xl">
-                  {title}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
-                {visibleItems.slice(0, Math.max(0, viewAllRenderCount || 0)).map((item) => (
-                  <m.div
-                    key={`${item.kind}:${item.id}`}
-                    initial="initial"
-                    animate="animate"
-                    variants={nbFadeUp}
-                    transition={nbTransitions.micro}
-                    style={{ contentVisibility: "auto", containIntrinsicSize: "280px" }}
-                  >
-                    {item.kind === "material" ? (
-                      <MaterialCardLarge file={item.file} />
-                    ) : (
-                      <PathCardLarge path={item.path} />
-                    )}
-                  </m.div>
-                ))}
-                {(loadingMore || viewAllRenderCount < visibleItems.length) &&
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <div
-                      key={`viewall-skel:${i}`}
-                      className="h-[280px] w-full max-w-[360px] rounded-xl border border-border/60 bg-muted/20 p-4"
+        {hasOverflow ? (
+          onViewAll ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
+              onClick={onViewAll}
+              aria-label={`View all ${title}`}
+            >
+              View all
+            </Button>
+          ) : (
+            <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
+                  aria-label={`View all ${title}`}
+                >
+                  View all
+                </Button>
+              </DialogTrigger>
+              <DialogContent ref={viewAllScrollRef} className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="font-brand text-2xl sm:text-3xl">
+                    {title}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+                  {visibleItems.slice(0, Math.max(0, viewAllRenderCount || 0)).map((item) => (
+                    <m.div
+                      key={`${item.kind}:${item.id}`}
+                      initial="initial"
+                      animate="animate"
+                      variants={nbFadeUp}
+                      transition={nbTransitions.micro}
+                      style={{ contentVisibility: "auto", containIntrinsicSize: "280px" }}
                     >
-                      <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
-                      <div className="mt-4 space-y-2">
-                        <Skeleton className="h-4 w-3/4 bg-muted/30" />
-                        <Skeleton className="h-4 w-1/2 bg-muted/30" />
-                      </div>
-                    </div>
+                      {item.kind === "material" ? (
+                        <MaterialCardLarge file={item.file} />
+                      ) : (
+                        <PathCardLarge path={item.path} />
+                      )}
+                    </m.div>
                   ))}
-              </div>
-              <div ref={viewAllSentinelRef} aria-hidden="true" className="h-px w-full" />
-            </DialogContent>
-          </Dialog>
-        )}
+                  {(loadingMore || viewAllRenderCount < visibleItems.length) &&
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <div
+                        key={`viewall-skel:${i}`}
+                        className="h-[280px] w-full max-w-[360px] rounded-xl border border-border/60 bg-muted/20 p-4"
+                      >
+                        <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                        <div className="mt-4 space-y-2">
+                          <Skeleton className="h-4 w-3/4 bg-muted/30" />
+                          <Skeleton className="h-4 w-1/2 bg-muted/30" />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                <div ref={viewAllSentinelRef} aria-hidden="true" className="h-px w-full" />
+              </DialogContent>
+            </Dialog>
+          )
+        ) : null}
       </div>
 
       <div className="relative -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">

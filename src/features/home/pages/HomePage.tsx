@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavigationTabs } from "@/features/home/components/NavigationTabs";
 import { HomeTabContent } from "@/features/home/components/HomeTabContent";
 import { AnimatedChatbar } from "@/features/chat/components/AnimatedChatbar";
@@ -9,9 +10,11 @@ import { usePaths } from "@/app/providers/PathProvider";
 import { useMaterials } from "@/app/providers/MaterialProvider";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
-import { Clock, Bookmark, CheckCircle2, History } from "lucide-react";
+import { Bookmark, CheckCircle2, Clock, History, Home } from "lucide-react";
 import { Container } from "@/shared/layout/Container";
 import { getLibraryTaxonomySnapshot } from "@/shared/api/LibraryService";
+import { getHomeSectionIcon } from "@/features/home/lib/homeSectionIcons";
+import { queryKeys } from "@/shared/query/queryKeys";
 import type { HomeTabKey } from "@/features/home/components/HomeTabContent";
 import type { JobEventPayload, LibraryTaxonomySnapshotV1, SseMessage } from "@/shared/types/models";
 
@@ -20,9 +23,37 @@ function asJobPayload(value: SseMessage["data"]): JobEventPayload | null {
   return value as JobEventPayload;
 }
 
+type HomeTopicFocus = { nodeId: string; title: string; iconKey?: string };
+
+function HomeTabTopicIcon({
+  iconKey,
+  onReturnHome,
+}: {
+  iconKey?: string;
+  onReturnHome: () => void;
+}) {
+  const TopicIcon = getHomeSectionIcon(iconKey) ?? Home;
+
+  return (
+    <span
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onReturnHome();
+      }}
+      className="group/topic relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground"
+      title="Back to Home"
+    >
+      <TopicIcon className="h-5 w-5 opacity-100 nb-motion-fast motion-reduce:transition-none group-hover/topic:opacity-0" />
+      <Home className="absolute h-5 w-5 opacity-0 nb-motion-fast motion-reduce:transition-none group-hover/topic:opacity-100" />
+    </span>
+  );
+}
+
 export default function HomePage() {
   const { isAuthenticated } = useAuth();
   const { user, loading: userLoading } = useUser();
+  const queryClient = useQueryClient();
 
   const { paths, loading: pathsLoading } = usePaths();
   const { files: materialFiles, loading: materialsLoading } = useMaterials();
@@ -32,8 +63,6 @@ export default function HomePage() {
     if (typeof document === "undefined") return null;
     return document.getElementById("home-tabs-navbar-slot");
   });
-  const [taxonomySnapshot, setTaxonomySnapshot] = useState<LibraryTaxonomySnapshotV1 | null>(null);
-  const [taxonomyLoading, setTaxonomyLoading] = useState(false);
   const [homeChatbarSlotEl, setHomeChatbarSlotEl] = useState<HTMLDivElement | null>(null);
   const [homeTabsSlotEl, setHomeTabsSlotEl] = useState<HTMLDivElement | null>(null);
   const [navbarChatbarSlotEl, setNavbarChatbarSlotEl] = useState<HTMLElement | null>(null);
@@ -44,6 +73,9 @@ export default function HomePage() {
   const [tabsDocked, setTabsDocked] = useState(false);
 
   const [activeTab, setActiveTab] = useState<HomeTabKey>("home");
+  const [homeTopicFocus, setHomeTopicFocus] = useState<HomeTopicFocus | null>(null);
+  const homeContentTopRef = useRef<HTMLDivElement | null>(null);
+  const homeTopicReturnScrollYRef = useRef<number | null>(null);
 
   // Track dock state to preserve across tab changes
   const keepDockedRef = useRef<{ chatbar: boolean; tabs: boolean } | null>(null);
@@ -69,6 +101,10 @@ export default function HomePage() {
         keepDockedRef.current = null;
       }
 
+      if (nextTab !== "home") {
+        setHomeTopicFocus(null);
+        homeTopicReturnScrollYRef.current = null;
+      }
       setActiveTab(nextTab);
     },
     [activeTab, chatbarDocked, tabsDocked]
@@ -133,30 +169,22 @@ export default function HomePage() {
       .join("|");
   }, [paths]);
 
+  const taxonomyQuery = useQuery({
+    queryKey: queryKeys.libraryTaxonomySnapshot(),
+    enabled: isAuthenticated,
+    queryFn: getLibraryTaxonomySnapshot,
+    staleTime: 30_000,
+  });
+
+  const taxonomySnapshot: LibraryTaxonomySnapshotV1 | null = isAuthenticated
+    ? (taxonomyQuery.data ?? null)
+    : null;
+  const taxonomyLoading = Boolean(isAuthenticated && taxonomyQuery.isPending);
+
   useEffect(() => {
-    if (!isAuthenticated) {
-      setTaxonomySnapshot(null);
-      setTaxonomyLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      setTaxonomyLoading(true);
-      try {
-        const snap = await getLibraryTaxonomySnapshot();
-        if (!cancelled) setTaxonomySnapshot(snap);
-      } catch (err) {
-        console.error("[HomePage] Failed to load library taxonomy:", err);
-        if (!cancelled) setTaxonomySnapshot(null);
-      } finally {
-        if (!cancelled) setTaxonomyLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, taxonomyReloadKey]);
+    if (!isAuthenticated) return;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.libraryTaxonomySnapshot(), exact: true });
+  }, [isAuthenticated, queryClient, taxonomyReloadKey]);
 
   // Taxonomy updates are produced by async jobs; refresh the snapshot on taxonomy job completion.
   useEffect(() => {
@@ -174,24 +202,8 @@ export default function HomePage() {
     const jobType = String(payload.job_type ?? job?.job_type ?? job?.jobType ?? "").toLowerCase();
     if (jobType !== "library_taxonomy_route" && jobType !== "library_taxonomy_refine") return;
 
-    let cancelled = false;
-    const reload = async () => {
-      setTaxonomyLoading(true);
-      try {
-        const snap = await getLibraryTaxonomySnapshot();
-        if (!cancelled) setTaxonomySnapshot(snap);
-      } catch (err) {
-        console.error("[HomePage] Failed to refresh library taxonomy:", err);
-      } finally {
-        if (!cancelled) setTaxonomyLoading(false);
-      }
-    };
-    reload();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, lastMessage, user?.id]);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.libraryTaxonomySnapshot(), exact: true });
+  }, [isAuthenticated, lastMessage, queryClient, user?.id]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -366,12 +378,39 @@ export default function HomePage() {
       : user.email;
 
   const tabs: { id: HomeTabKey; label: string; icon?: React.ReactNode }[] = [
-    { id: "home", label: "Home" },
+    homeTopicFocus && activeTab === "home"
+      ? {
+          id: "home",
+          label: homeTopicFocus.title,
+          icon: (
+            <HomeTabTopicIcon
+              iconKey={homeTopicFocus.iconKey}
+              onReturnHome={() => {
+                setHomeTopicFocus(null);
+                const y = homeTopicReturnScrollYRef.current;
+                homeTopicReturnScrollYRef.current = null;
+                if (typeof window === "undefined" || y == null) return;
+                requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo({ top: y, behavior: "auto" })));
+              }}
+            />
+          ),
+        }
+      : { id: "home", label: "Home" },
     { id: "in-progress", label: "In Progress", icon: <Clock className="size-5" /> },
     { id: "saved", label: "Saved", icon: <Bookmark className="size-5" /> },
     { id: "completed", label: "Completed", icon: <CheckCircle2 className="size-5" /> },
     { id: "recently-viewed", label: "Recently Viewed", icon: <History className="size-5" /> },
   ];
+
+  const handleHomeTopicViewAll = useCallback((focus: HomeTopicFocus) => {
+    if (typeof window !== "undefined") {
+      homeTopicReturnScrollYRef.current = window.scrollY;
+    }
+    setHomeTopicFocus(focus);
+    requestAnimationFrame(() => {
+      homeContentTopRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+  }, []);
 
   return (
     <div className="page-surface">
@@ -437,6 +476,7 @@ export default function HomePage() {
             : undefined
         }
       >
+        <div ref={homeContentTopRef} className="scroll-mt-24" />
         <HomeTabContent
           activeTab={activeTab}
           paths={paths || []}
@@ -445,6 +485,8 @@ export default function HomePage() {
           materialsLoading={materialsLoading}
           taxonomySnapshot={taxonomySnapshot}
           taxonomyLoading={taxonomyLoading}
+          homeTopicFocus={activeTab === "home" ? homeTopicFocus : null}
+          onHomeTopicViewAll={handleHomeTopicViewAll}
         />
       </Container>
     </div>

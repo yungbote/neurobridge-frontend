@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, matchPath, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/shared/ui/button";
 import {
   Sidebar,
@@ -47,6 +48,7 @@ import { nbTransitions } from "@/shared/motion/presets";
 import { UserAvatar } from "@/features/user/components/UserAvatar";
 import { generatePathCover, listNodesForPath } from "@/shared/api/PathService";
 import { listChatThreads } from "@/shared/api/ChatService";
+import { queryKeys } from "@/shared/query/queryKeys";
 import { AVATAR_COLORS } from "@/features/user/components/ColorPicker";
 import {
   DropdownMenu,
@@ -65,6 +67,7 @@ import { getAccessToken } from "@/shared/services/StorageService";
 type JsonRecord = Record<string, unknown>;
 
 const SIDEBAR_YOUR_PATHS_OPEN_KEY = "nb:sidebar:your_paths_open";
+const SIDEBAR_YOUR_LESSONS_OPEN_KEY = "nb:sidebar:your_lessons_open";
 const SIDEBAR_YOUR_FILES_OPEN_KEY = "nb:sidebar:your_files_open";
 const SIDEBAR_YOUR_CHATS_OPEN_KEY = "nb:sidebar:your_chats_open";
 
@@ -269,11 +272,10 @@ export function AppSideBar() {
   const [coverLoadingId, setCoverLoadingId] = useState<string | null>(null);
   const [actionHoverId, setActionHoverId] = useState<string | null>(null);
   const [fileThumbErrors, setFileThumbErrors] = useState<Record<string, boolean>>({});
-  const [lessons, setLessons] = useState<PathNode[]>([]);
-  const [lessonsLoading, setLessonsLoading] = useState(false);
   const lastNormalRouteRef = useRef<string>("/");
 
   const [yourPathsOpen, setYourPathsOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_PATHS_OPEN_KEY) ?? true);
+  const [yourLessonsOpen, setYourLessonsOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_LESSONS_OPEN_KEY) ?? true);
   const [yourFilesOpen, setYourFilesOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_FILES_OPEN_KEY) ?? true);
   const [yourChatsOpen, setYourChatsOpen] = useState(() => readStoredBool(SIDEBAR_YOUR_CHATS_OPEN_KEY) ?? true);
 
@@ -282,15 +284,16 @@ export function AppSideBar() {
   }, [yourPathsOpen]);
 
   useEffect(() => {
+    writeStoredBool(SIDEBAR_YOUR_LESSONS_OPEN_KEY, yourLessonsOpen);
+  }, [yourLessonsOpen]);
+
+  useEffect(() => {
     writeStoredBool(SIDEBAR_YOUR_FILES_OPEN_KEY, yourFilesOpen);
   }, [yourFilesOpen]);
 
   useEffect(() => {
     writeStoredBool(SIDEBAR_YOUR_CHATS_OPEN_KEY, yourChatsOpen);
   }, [yourChatsOpen]);
-
-  const [chatThreads, setChatThreads] = useState<Array<{ id: string; title: string }>>([]);
-  const [chatThreadsLoading, setChatThreadsLoading] = useState(false);
 
   const showFooterName = isMobile ? openMobile : !isCollapsed;
 
@@ -397,76 +400,36 @@ export function AppSideBar() {
     else if (matchPath({ path: "/files", end: false }, p)) lastNormalRouteRef.current = "/files";
   }, [isPathMode, location.pathname]);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setLessons([]);
-      setLessonsLoading(false);
-      return;
-    }
-    if (isCollapsed) {
-      setLessonsLoading(false);
-      return;
-    }
-    if (!pathContextPathId) {
-      setLessons([]);
-      setLessonsLoading(false);
-      return;
-    }
+  const lessonsQuery = useQuery({
+    queryKey: queryKeys.pathNodes(String(pathContextPathId || "")),
+    enabled: Boolean(isAuthenticated && !isCollapsed && pathContextPathId),
+    staleTime: 60_000,
+    queryFn: () => listNodesForPath(String(pathContextPathId)),
+    select: (nodes) => (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
+  });
 
-    let cancelled = false;
-    const load = async () => {
-      setLessonsLoading(true);
-      setLessons([]);
-      try {
-        const nodes = await listNodesForPath(String(pathContextPathId));
-        if (cancelled) return;
-        const sorted = (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-        setLessons(sorted);
-      } catch (err) {
-        if (!cancelled) setLessons([]);
-      } finally {
-        if (!cancelled) setLessonsLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, isCollapsed, pathContextPathId]);
+  const lessons = lessonsQuery.data ?? [];
+  const lessonsLoading = Boolean(lessonsQuery.isPending);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setChatThreads([]);
-      setChatThreadsLoading(false);
-      return;
-    }
-    if (isCollapsed || isPathMode) {
-      setChatThreadsLoading(false);
-      return;
-    }
+  const chatThreadsLimit = isPathMode ? 60 : 30;
+  const chatThreadsQuery = useQuery({
+    queryKey: queryKeys.chatThreads({ limit: chatThreadsLimit }),
+    enabled: Boolean(isAuthenticated && !isCollapsed),
+    staleTime: 15_000,
+    queryFn: () => listChatThreads(chatThreadsLimit),
+  });
 
-    let cancelled = false;
-    const load = async () => {
-      setChatThreadsLoading(true);
-      try {
-        const threads = await listChatThreads(30);
-        if (cancelled) return;
-        const compact = (threads || []).map((t) => ({
-          id: String(t.id),
-          title: String(t.title || "").trim() || "Chat",
-        }));
-        setChatThreads(compact);
-      } catch (err) {
-        if (!cancelled) setChatThreads([]);
-      } finally {
-        if (!cancelled) setChatThreadsLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentThreadId, isAuthenticated, isCollapsed, isPathMode]);
+  const chatThreadsLoading = Boolean(chatThreadsQuery.isPending);
+  const chatThreads = useMemo(() => {
+    const threads = Array.isArray(chatThreadsQuery.data) ? chatThreadsQuery.data : [];
+    const filtered = isPathMode
+      ? threads.filter((t) => String(t?.pathId || "") === String(pathContextPathId || ""))
+      : threads;
+    return filtered.map((t) => ({
+      id: String(t.id),
+      title: String(t.title || "").trim() || "Chat",
+    }));
+  }, [chatThreadsQuery.data, isPathMode, pathContextPathId]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -478,6 +441,12 @@ export function AppSideBar() {
   }, [activePathId, activatePath, isAuthenticated, pathIdFromRoute]);
 
   const visibleFiles = useMemo(() => materialFiles || [], [materialFiles]);
+  const pathFiles = useMemo(() => {
+    if (!isPathMode) return [];
+    const materialSetId = String(activePath?.materialSetId || "");
+    if (!materialSetId) return [];
+    return visibleFiles.filter((f) => String(f?.materialSetId || "") === materialSetId);
+  }, [activePath?.materialSetId, isPathMode, visibleFiles]);
 
   const handleGenerateCover = async (path: Path, force: boolean) => {
     if (!path?.id) return;
@@ -723,69 +692,380 @@ export function AppSideBar() {
       <SidebarContent className={cn("pb-4 nb-scrollbar-sidebar", isCollapsed ? "px-0" : "px-3")}>
         {isPathMode ? (
           isCollapsed ? null : (
-            <SidebarGroup className="px-0 pt-4">
-              <SidebarGroupLabel>Your lessons</SidebarGroupLabel>
-              <SidebarMenuSub className="gap-2.5 mx-0 border-l-0 px-0 py-0">
-                {lessonsLoading && lessons.length === 0 ? (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <SidebarMenuSubItem key={`lesson-skel:${i}`}>
-                      <SidebarMenuSkeleton showIcon />
-                    </SidebarMenuSubItem>
-                  ))
-                ) : lessons.length === 0 ? (
-                  <SidebarMenuSubItem>
-                    <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-                      No lessons yet
-                    </div>
-                  </SidebarMenuSubItem>
-                ) : (
-                  lessons.map((n) => {
-                    const avatarUrl = getLessonAvatarUrl(n);
-                    const fallbackColor = pickPathColor(String(n?.id || n?.title || ""));
-                    const isActive =
-                      matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
-                    return (
-                      <SidebarMenuSubItem key={n.id}>
-                        <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={isActive}
-                            className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
-                          >
-                            <Link
-                              to={`/path-nodes/${n.id}`}
-                              aria-label={`Open ${n.title || "lesson"}`}
-                              onClick={() => {
-                                void activateLesson(String(n.id)).catch((err) => {
-                                  console.warn("[AppSideBar] Failed to activate lesson:", err);
-                                });
-                              }}
-                            >
-                              <span
-                                className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
-                                style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
-                                aria-hidden="true"
+            <>
+              <SidebarGroup className="px-0 pt-4">
+                <SidebarGroupLabel asChild>
+                  <button
+                    type="button"
+                    aria-expanded={yourLessonsOpen}
+                    aria-controls="sidebar-your-lessons"
+                    onClick={() => setYourLessonsOpen((v) => !v)}
+                    className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
+                  >
+                    <span>Your lessons</span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn(
+                        "transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
+                        yourLessonsOpen ? "rotate-0" : "-rotate-90"
+                      )}
+                    />
+                  </button>
+                </SidebarGroupLabel>
+
+                <AnimatePresence initial={false}>
+                  {yourLessonsOpen ? (
+                    <m.div
+                      key="sidebar-your-lessons"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{
+                        height: "auto",
+                        opacity: 1,
+                        transition: nbTransitions.default,
+                      }}
+                      exit={{ height: 0, opacity: 0, transition: nbTransitions.micro }}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <SidebarMenuSub
+                        id="sidebar-your-lessons"
+                        className="gap-2.5 mx-0 border-l-0 px-0 py-0"
+                      >
+                        {lessonsLoading && lessons.length === 0 ? (
+                          Array.from({ length: 6 }).map((_, i) => (
+                            <SidebarMenuSubItem key={`lesson-skel:${i}`}>
+                              <SidebarMenuSkeleton showIcon />
+                            </SidebarMenuSubItem>
+                          ))
+                        ) : lessons.length === 0 ? (
+                          <SidebarMenuSubItem>
+                            <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
+                              No lessons yet
+                            </div>
+                          </SidebarMenuSubItem>
+                        ) : (
+                          lessons.map((n) => {
+                            const avatarUrl = getLessonAvatarUrl(n);
+                            const fallbackColor = pickPathColor(String(n?.id || n?.title || ""));
+                            const isActive =
+                              matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
+                            return (
+                              <SidebarMenuSubItem key={n.id}>
+                                <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
+                                  <SidebarMenuSubButton
+                                    asChild
+                                    isActive={isActive}
+                                    className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
+                                  >
+                                    <Link
+                                      to={`/path-nodes/${n.id}`}
+                                      aria-label={`Open ${n.title || "lesson"}`}
+                                      onClick={() => {
+                                        void activateLesson(String(n.id)).catch((err) => {
+                                          console.warn("[AppSideBar] Failed to activate lesson:", err);
+                                        });
+                                      }}
+                                    >
+                                      <span
+                                        className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
+                                        style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
+                                        aria-hidden="true"
+                                      >
+                                        {avatarUrl ? (
+                                          <img
+                                            src={avatarUrl}
+                                            alt=""
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : null}
+                                      </span>
+                                      <span className="truncate">{n.title || "Lesson"}</span>
+                                    </Link>
+                                  </SidebarMenuSubButton>
+                                </div>
+                              </SidebarMenuSubItem>
+                            );
+                          })
+                        )}
+                      </SidebarMenuSub>
+                    </m.div>
+                  ) : null}
+                </AnimatePresence>
+              </SidebarGroup>
+
+              <SidebarGroup className="px-0">
+                <SidebarGroupLabel asChild>
+                  <button
+                    type="button"
+                    aria-expanded={yourFilesOpen}
+                    aria-controls="sidebar-your-files"
+                    onClick={() => setYourFilesOpen((v) => !v)}
+                    className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
+                  >
+                    <span>Your files</span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn(
+                        "transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
+                        yourFilesOpen ? "rotate-0" : "-rotate-90"
+                      )}
+                    />
+                  </button>
+                </SidebarGroupLabel>
+
+                <AnimatePresence initial={false}>
+                  {yourFilesOpen ? (
+                    <m.div
+                      key="sidebar-your-files"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{
+                        height: "auto",
+                        opacity: 1,
+                        transition: nbTransitions.default,
+                      }}
+                      exit={{ height: 0, opacity: 0, transition: nbTransitions.micro }}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <SidebarMenuSub
+                        id="sidebar-your-files"
+                        className="gap-2.5 mx-0 border-l-0 px-0 py-0"
+                      >
+                        {materialFilesLoading && pathFiles.length === 0 ? (
+                          Array.from({ length: 6 }).map((_, i) => (
+                            <SidebarMenuSubItem key={`file-skel:${i}`}>
+                              <SidebarMenuSkeleton showIcon />
+                            </SidebarMenuSubItem>
+                          ))
+                        ) : pathFiles.length === 0 ? (
+                          <SidebarMenuSubItem>
+                            <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
+                              No files for this path yet
+                            </div>
+                          </SidebarMenuSubItem>
+                        ) : (
+                          pathFiles.map((file) => {
+                            const Icon = fileIcon(file);
+                            const label = fileLabel(file);
+                            const thumbVersion = String(file?.updatedAt || file?.createdAt || "");
+                            const thumbUrl = buildFileThumbnailUrl(file.id, thumbVersion);
+                            const thumbKey = `${file.id}:${thumbVersion}`;
+                            const showThumb = Boolean(thumbUrl) && !fileThumbErrors[thumbKey];
+                            const actionKey = `file:${file.id}`;
+                            const isActionHover = actionHoverId === actionKey;
+                            return (
+                              <SidebarMenuSubItem
+                                key={file.id}
+                                style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
                               >
-                                {avatarUrl ? (
-                                  <img
-                                    src={avatarUrl}
-                                    alt=""
-                                    loading="lazy"
-                                    decoding="async"
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : null}
-                              </span>
-                              <span className="truncate">{n.title || "Lesson"}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </div>
-                      </SidebarMenuSubItem>
-                    );
-                  })
-                )}
-              </SidebarMenuSub>
-            </SidebarGroup>
+                                <div
+                                  className={cn(
+                                    "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
+                                    isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
+                                  )}
+                                >
+                                  <SidebarMenuSubButton
+                                    asChild
+                                    className={cn(
+                                      "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                      !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground"
+                                    )}
+                                  >
+                                    <a
+                                      href={buildFileViewUrl(file.id)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      aria-label={`Open ${label}`}
+                                    >
+                                      <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
+                                        {showThumb ? (
+                                          <img
+                                            src={thumbUrl}
+                                            alt=""
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="h-full w-full object-cover"
+                                            onError={() => {
+                                              setFileThumbErrors((prev) => ({ ...prev, [thumbKey]: true }));
+                                            }}
+                                          />
+                                        ) : (
+                                          <Icon className="h-4 w-4" />
+                                        )}
+                                      </span>
+                                      <span className="truncate">{label}</span>
+                                    </a>
+                                  </SidebarMenuSubButton>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className={cn(
+                                          "h-8 w-8 rounded-lg text-sidebar-foreground/70",
+                                          "pointer-events-none opacity-0",
+                                          "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
+                                          "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
+                                          "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                                        )}
+                                        aria-label={`Open file actions for ${label}`}
+                                        onMouseEnter={() => setActionHoverId(actionKey)}
+                                        onMouseLeave={() => setActionHoverId(null)}
+                                        onFocus={() => setActionHoverId(actionKey)}
+                                        onBlur={() => setActionHoverId(null)}
+                                      >
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" side="right" className="w-56">
+                                      <DropdownMenuItem
+                                        onSelect={() => {
+                                          const url = buildFileViewUrl(file.id);
+                                          window.open(url, "_blank", "noopener,noreferrer");
+                                        }}
+                                        className="gap-2"
+                                      >
+                                        <FileIcon className="h-4 w-4" />
+                                        Open file
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </SidebarMenuSubItem>
+                            );
+                          })
+                        )}
+                      </SidebarMenuSub>
+                    </m.div>
+                  ) : null}
+                </AnimatePresence>
+              </SidebarGroup>
+
+              <SidebarGroup className="px-0">
+                <SidebarGroupLabel asChild>
+                  <button
+                    type="button"
+                    aria-expanded={yourChatsOpen}
+                    aria-controls="sidebar-your-chats"
+                    onClick={() => setYourChatsOpen((v) => !v)}
+                    className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
+                  >
+                    <span>Your chats</span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn(
+                        "transition-transform nb-duration-micro nb-ease-out motion-reduce:transition-none",
+                        yourChatsOpen ? "rotate-0" : "-rotate-90"
+                      )}
+                    />
+                  </button>
+                </SidebarGroupLabel>
+
+                <AnimatePresence initial={false}>
+                  {yourChatsOpen ? (
+                    <m.div
+                      key="sidebar-your-chats"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{
+                        height: "auto",
+                        opacity: 1,
+                        transition: nbTransitions.default,
+                      }}
+                      exit={{ height: 0, opacity: 0, transition: nbTransitions.micro }}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <SidebarMenuSub
+                        id="sidebar-your-chats"
+                        className="gap-2.5 mx-0 border-l-0 px-0 py-0"
+                      >
+                        {chatThreadsLoading && chatThreads.length === 0 ? (
+                          Array.from({ length: 6 }).map((_, i) => (
+                            <SidebarMenuSubItem key={`chat-skel:${i}`}>
+                              <SidebarMenuSkeleton showIcon />
+                            </SidebarMenuSubItem>
+                          ))
+                        ) : chatThreads.length === 0 ? (
+                          <SidebarMenuSubItem>
+                            <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
+                              No chats for this path yet
+                            </div>
+                          </SidebarMenuSubItem>
+                        ) : (
+                          chatThreads.map((t) => {
+                            const isActive = currentThreadId != null && String(currentThreadId) === String(t.id);
+                            const actionKey = `chat:${t.id}`;
+                            const isActionHover = actionHoverId === actionKey;
+                            return (
+                              <SidebarMenuSubItem
+                                key={t.id}
+                                style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
+                              >
+                                <div
+                                  className={cn(
+                                    "flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none",
+                                    isActionHover ? "hover:bg-transparent" : "hover:bg-sidebar-accent/70"
+                                  )}
+                                >
+                                  <SidebarMenuSubButton
+                                    asChild
+                                    isActive={isActive}
+                                    className={cn(
+                                      "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                      !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
+                                      isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
+                                    )}
+                                  >
+                                    <Link to={`/chat/threads/${t.id}`} aria-label={`Open ${t.title}`}>
+                                      <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
+                                        <MessageSquare className="h-4 w-4" />
+                                      </span>
+                                      <span className="truncate">{t.title}</span>
+                                    </Link>
+                                  </SidebarMenuSubButton>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className={cn(
+                                          "h-8 w-8 rounded-lg text-sidebar-foreground/70",
+                                          "pointer-events-none opacity-0",
+                                          "group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100",
+                                          "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
+                                          "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                                        )}
+                                        aria-label={`Open chat actions for ${t.title}`}
+                                        onMouseEnter={() => setActionHoverId(actionKey)}
+                                        onMouseLeave={() => setActionHoverId(null)}
+                                        onFocus={() => setActionHoverId(actionKey)}
+                                        onBlur={() => setActionHoverId(null)}
+                                      >
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" side="right" className="w-56">
+                                      <DropdownMenuItem
+                                        onSelect={() => navigate(`/chat/threads/${t.id}`)}
+                                        className="gap-2"
+                                      >
+                                        <MessageSquare className="h-4 w-4" />
+                                        Open chat
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </SidebarMenuSubItem>
+                            );
+                          })
+                        )}
+                      </SidebarMenuSub>
+                    </m.div>
+                  ) : null}
+                </AnimatePresence>
+              </SidebarGroup>
+            </>
           )
 	        ) : (
 	          <>

@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   loginUser,
   logoutUser,
@@ -58,6 +59,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(!!getAccessToken());
   const refreshTimerId = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queryClient = useQueryClient();
 
   const clearSession = useCallback(() => {
     clearTokens();
@@ -65,8 +67,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearTimeout(refreshTimerId.current);
       refreshTimerId.current = null;
     }
+    queryClient.clear();
     setIsAuthenticated(false);
-  }, []);
+  }, [queryClient]);
 
   const refreshTokens = useCallback(async () => {
     try {
@@ -216,7 +219,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 export function useAuth() {
   return useContext(AuthContext);
 }
-
 
 
 
