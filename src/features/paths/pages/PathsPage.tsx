@@ -8,6 +8,7 @@ import { EmptyContent } from "@/shared/components/EmptyContent";
 import { Container } from "@/shared/layout/Container";
 import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 import type { Path } from "@/shared/types/models";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 type LegacyTimestampPath = { updated_at?: string | null; created_at?: string | null };
 
@@ -21,6 +22,7 @@ function byUpdatedDesc(a: Path, b: Path) {
 
 export default function PathsPage() {
   const { paths, loading } = usePaths();
+  const { t } = useI18n();
 
   const list = useMemo(() => {
     const rows = Array.isArray(paths) ? paths.slice() : [];
@@ -34,19 +36,19 @@ export default function PathsPage() {
       <Container size="app" className="page-pad">
         <div className="mb-10 space-y-3">
           <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Your paths
+            {t("sidebar.yourPaths")}
           </h1>
           <p className="text-pretty text-sm text-muted-foreground sm:text-base">
-            Jump back in or start a new path from your materials.
+            {t("paths.subtitle")}
           </p>
         </div>
 
         {loading && list.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Loading paths…</div>
+          <div className="text-sm text-muted-foreground">{t("paths.loading")}</div>
         ) : list.length === 0 ? (
           <EmptyContent
-            title="No paths yet"
-            message="Upload materials to generate your first learning path."
+            title={t("sidebar.emptyPaths")}
+            message={t("home.empty.default.description")}
             icon={<FolderOpen className="h-7 w-7" />}
           />
         ) : (

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AlertCircle, Maximize2, X } from "lucide-react";
 
 import { cn } from "@/shared/lib/utils";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 type ImageLightboxProps = {
   src: string;
@@ -21,6 +22,7 @@ export function ImageLightbox({
   frameClassName,
   imageClassName,
 }: ImageLightboxProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -54,25 +56,25 @@ export function ImageLightbox({
         <button
           type="button"
           className={cn(
-            "group relative w-full cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-muted/20 text-left",
+            "group relative w-full cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-muted/20 text-start",
             frameClassName
           )}
           onClick={() => setOpen(true)}
-          aria-label="Open image"
+          aria-label={t("media.openImage")}
         >
           {!loaded && !hasError ? (
             <div className="absolute inset-0 animate-pulse bg-muted" />
           ) : null}
           {hasError ? (
             <div className="flex h-48 items-center justify-center text-muted-foreground">
-              <AlertCircle className="mr-2 h-5 w-5" />
-              <span>Failed to load image</span>
+              <AlertCircle className="me-2 h-5 w-5" />
+              <span>{t("media.failedToLoadImage")}</span>
             </div>
           ) : (
             <>
               <img
                 src={src}
-                alt={alt || "Image"}
+                alt={alt || t("common.image")}
                 onLoad={() => setLoaded(true)}
                 onError={() => setHasError(true)}
                 loading="lazy"
@@ -100,15 +102,15 @@ export function ImageLightbox({
             >
               <button
                 type="button"
-                className="absolute right-4 top-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
+                className="absolute end-4 top-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
                 onClick={() => setOpen(false)}
-                aria-label="Close image"
+                aria-label={t("media.closeImage")}
               >
                 <X className="h-6 w-6" />
               </button>
               <img
                 src={src}
-                alt={alt || "Image"}
+                alt={alt || t("common.image")}
                 className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               />

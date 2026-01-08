@@ -33,6 +33,9 @@ import {
 import type { LibraryTaxonomySnapshotV1, MaterialFile, Path } from "@/shared/types/models";
 import { listTaxonomyNodeItems } from "@/shared/api/LibraryService";
 import { getHomeSectionIcon } from "@/features/home/lib/homeSectionIcons";
+import { useI18n } from "@/app/providers/I18nProvider";
+import type { MessageKey } from "@/shared/i18n/messages";
+import type { TemplateValues } from "@/shared/i18n/translate";
 
 export type HomeTabKey = "home" | "in-progress" | "saved" | "completed" | "recently-viewed";
 
@@ -170,32 +173,34 @@ function filterPathsByTab(paths: Path[], activeTab: HomeTabKey) {
   }
 }
 
-function emptyCopy(activeTab: HomeTabKey) {
+type TFn = (key: MessageKey, values?: TemplateValues) => string;
+
+function emptyCopy(activeTab: HomeTabKey, t: TFn) {
   switch (activeTab) {
     case "in-progress":
       return {
-        title: "No paths in progress",
-        description: "Upload materials to start a new path build.",
+        title: t("home.empty.inProgress.title"),
+        description: t("home.empty.inProgress.description"),
       };
     case "saved":
       return {
-        title: "No saved paths",
-        description: "Save a path to keep it handy here.",
+        title: t("home.empty.saved.title"),
+        description: t("home.empty.saved.description"),
       };
     case "completed":
       return {
-        title: "No ready paths yet",
-        description: "Completed path builds will show up here.",
+        title: t("home.empty.completed.title"),
+        description: t("home.empty.completed.description"),
       };
     case "recently-viewed":
       return {
-        title: "Nothing viewed recently",
-        description: "Open a path to see it appear here.",
+        title: t("home.empty.recent.title"),
+        description: t("home.empty.recent.description"),
       };
     default:
       return {
-        title: "No paths yet",
-        description: "Upload materials to generate your first learning path.",
+        title: t("home.empty.default.title"),
+        description: t("home.empty.default.description"),
       };
   }
 }
@@ -269,6 +274,7 @@ export function HomeTabContent({
   homeTopicFocus,
   onHomeTopicViewAll,
 }: HomeTabContentProps) {
+  const { t } = useI18n();
   const isHome = activeTab === "home";
   const focusedNodeId = isHome ? String(homeTopicFocus?.nodeId || "").trim() : "";
   const materialList = materialFiles ?? [];
@@ -348,14 +354,14 @@ export function HomeTabContent({
     if (generating.length > 0) {
       sections.push({
         id: "generating",
-        title: "Generating",
+        title: t("home.sections.generating"),
         iconKey: "generating",
         items: buildHomeItems(generating, filesByMaterialSetId, { includeMaterials: false }),
       });
     }
     sections.push({
       id: "new",
-      title: "New",
+      title: t("home.sections.new"),
       iconKey: "new",
       items: buildHomeItems(newPaths, filesByMaterialSetId),
     });
@@ -440,7 +446,7 @@ export function HomeTabContent({
       topicSections.push({
         id: node.id,
         nodeId,
-        title: node.name || "Untitled",
+        title: node.name || t("home.untitled"),
         iconKey: String(node.key || ""),
         items: buildHomeItems(ordered, filesByMaterialSetId),
       });
@@ -459,7 +465,7 @@ export function HomeTabContent({
     sections.push(...topicSections);
 
     return sections;
-  }, [filesByMaterialSetId, isHome, paths, taxonomySnapshot]);
+  }, [filesByMaterialSetId, isHome, paths, t, taxonomySnapshot]);
 
   if (isHome && focusedNodeId) {
     const section =
@@ -472,7 +478,7 @@ export function HomeTabContent({
       <HomeTopicFocusView
         focusNodeId={focusedNodeId}
         seedItems={seedItems}
-        focusTitle={section?.title || homeTopicFocus?.title || "Topic"}
+        focusTitle={section?.title || homeTopicFocus?.title || t("home.topicFallback")}
         focusIconKey={section?.iconKey || homeTopicFocus?.iconKey}
         taxonomySnapshot={taxonomySnapshot ?? null}
         paths={paths}
@@ -508,7 +514,7 @@ export function HomeTabContent({
 
   if (isHome) {
     if ((!paths || paths.length === 0) && materialList.length === 0) {
-      const copy = emptyCopy(activeTab);
+      const copy = emptyCopy(activeTab, t);
       return (
         <div className="w-full">
           <EmptyContent title={copy.title} message={copy.description} helperText="" />
@@ -537,7 +543,7 @@ export function HomeTabContent({
   }
 
   if (!filtered || filtered.length === 0) {
-    const copy = emptyCopy(activeTab);
+    const copy = emptyCopy(activeTab, t);
     return (
       <div className="w-full">
         <EmptyContent title={copy.title} message={copy.description} helperText="" />
@@ -575,6 +581,7 @@ function HomeTopicFocusView({
   filesByMaterialSetId: Map<string, MaterialFile[]>;
   pathIdByMaterialSetId: Map<string, string>;
 }) {
+  const { t } = useI18n();
   const topicFacet = taxonomySnapshot?.facets?.topic ?? null;
   const nodes = topicFacet?.nodes ?? [];
   const edges = topicFacet?.edges ?? [];
@@ -734,7 +741,7 @@ function HomeTopicFocusView({
         if (assigned.length === 0) return null;
         return {
           id: nid,
-          title: String(child?.name || "Untitled"),
+          title: String(child?.name || t("home.untitled")),
           iconKey: String(child?.key || "") || undefined,
           items: buildHomeItems(assigned, filesByMaterialSetId),
           nodeId: nid,
@@ -763,7 +770,7 @@ function HomeTopicFocusView({
     if (otherOrdered.length > 0) {
       out.push({
         id: `other:${focusNodeId}`,
-        title: "Other",
+        title: t("home.sections.other"),
         items: buildHomeItems(otherOrdered, filesByMaterialSetId),
         nodeId: focusNodeId,
         allowItem: allowForOther(),
@@ -780,16 +787,19 @@ function HomeTopicFocusView({
     pathIdByMaterialSetId,
     primaryChildByPathId,
     seedItems,
+    t,
   ]);
 
   if (focusView.kind === "all") {
     if ((focusView.items?.length ?? 0) === 0) {
-      const emptyTitle = focusTitle ? `Nothing in ${focusTitle}` : "Nothing here";
+      const emptyTitle = focusTitle
+        ? t("home.focus.emptyTitle.within", { title: focusTitle })
+        : t("home.focus.emptyTitle.generic");
       return (
         <div className="w-full">
           <EmptyContent
             title={emptyTitle}
-            message="As you generate and save content, it will appear here."
+            message={t("home.focus.emptyMessage")}
             helperText=""
           />
         </div>
@@ -804,13 +814,15 @@ function HomeTopicFocusView({
   }
 
   const sections = focusView.sections;
-  const emptyTitle = focusTitle ? `Nothing in ${focusTitle}` : "Nothing here";
+  const emptyTitle = focusTitle
+    ? t("home.focus.emptyTitle.within", { title: focusTitle })
+    : t("home.focus.emptyTitle.generic");
   const hasAny = sections.some((s) => (s.items?.length ?? 0) > 0);
 
   if (!hasAny) {
     return (
       <div className="w-full">
-        <EmptyContent title={emptyTitle} message="As you generate and save content, it will appear here." helperText="" />
+        <EmptyContent title={emptyTitle} message={t("home.focus.emptyMessage")} helperText="" />
       </div>
     );
   }
@@ -1002,11 +1014,12 @@ function HomeRail({
   onViewAll?: () => void;
   allowItem?: (item: HomeCardItem) => boolean;
 }) {
+  const { t } = useI18n();
   const railRef = useRef<HTMLDivElement | null>(null);
   const pendingAnchorRef = useRef<{ key: string; within: number } | null>(null);
   const [filter, setFilter] = useState<HomeRailFilterValue>("all");
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [canScrollPrev, setCanScrollPrev] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
 
   const isPaginated = Boolean(nodeId);
@@ -1106,18 +1119,18 @@ function HomeRail({
     if (loadingMoreRef.current) return;
     if (initialFetched && !nextCursor) return;
 
-    loadingMoreRef.current = true;
-    const el = railRef.current;
-    if (el && el.scrollLeft > 1 && visibleItems.length > 0) {
-      const idx = Math.max(0, Math.min(visibleItems.length - 1, Math.floor(el.scrollLeft / stridePx)));
-      const anchor = visibleItems[idx];
-      if (anchor) {
-        pendingAnchorRef.current = {
-          key: `${anchor.kind}:${anchor.id}`,
-          within: el.scrollLeft - idx * stridePx,
-        };
-      }
-    }
+	    loadingMoreRef.current = true;
+	    const el = railRef.current;
+	    if (el && el.scrollLeft > 1 && visibleItems.length > 0) {
+	      const idx = Math.max(0, Math.min(visibleItems.length - 1, Math.floor(el.scrollLeft / stridePx)));
+	      const anchor = visibleItems[idx];
+	      if (anchor) {
+	        pendingAnchorRef.current = {
+	          key: `${anchor.kind}:${anchor.id}`,
+	          within: el.scrollLeft - idx * stridePx,
+	        };
+	      }
+	    }
 
     setLoadingMore(true);
     try {
@@ -1181,15 +1194,15 @@ function HomeRail({
     if (!isPaginated) return;
     if (loadingMore) return;
     if (initialFetched && !nextCursor) return;
-    const el = railRef.current;
-    if (!el) return;
-    const count = visibleItems.length;
-    if (count <= 0) return;
-    const totalWidth = count * stridePx - gapPx;
-    if (el.scrollLeft + el.clientWidth >= totalWidth - stridePx * 2) {
-      void fetchMore();
-    }
-  };
+	    const el = railRef.current;
+	    if (!el) return;
+	    const count = visibleItems.length;
+	    if (count <= 0) return;
+	    const totalWidth = count * stridePx - gapPx;
+	    if (el.scrollLeft + el.clientWidth >= totalWidth - stridePx * 2) {
+	      void fetchMore();
+	    }
+	  };
 
   const scheduleUpdate = () => {
     if (rafRef.current != null) return;
@@ -1201,14 +1214,14 @@ function HomeRail({
     });
   };
 
-  const updateScrollState = () => {
-    const el = railRef.current;
-    if (!el) return;
-    const maxScrollLeft = el.scrollWidth - el.clientWidth;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft < maxScrollLeft - 4);
-    setHasOverflow(maxScrollLeft > 4);
-  };
+	  const updateScrollState = () => {
+	    const el = railRef.current;
+	    if (!el) return;
+	    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+	    setCanScrollPrev(el.scrollLeft > 4);
+	    setCanScrollNext(el.scrollLeft < maxScrollLeft - 4);
+	    setHasOverflow(maxScrollLeft > 4);
+	  };
 
   useEffect(() => {
     scheduleUpdate();
@@ -1224,21 +1237,21 @@ function HomeRail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleItems.length, cardWidth, isPaginated, nextCursor, loadingMore]);
 
-  const scrollByCards = (direction: -1 | 1) => {
-    const el = railRef.current;
-    if (!el) return;
-    const amount = Math.max(280, Math.floor(el.clientWidth * 0.85));
-    el.scrollBy({ left: direction * amount, behavior: "smooth" });
-  };
+	  const scrollByCards = (direction: -1 | 1) => {
+	    const el = railRef.current;
+	    if (!el) return;
+	    const amount = Math.max(280, Math.floor(el.clientWidth * 0.85));
+	    el.scrollBy({ left: direction * amount, behavior: "smooth" });
+	  };
 
-  useEffect(() => {
-    const el = railRef.current;
-    if (!el) return;
-    el.scrollTo({ left: 0, behavior: "auto" });
-    scheduleUpdate();
-    pendingAnchorRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+	  useEffect(() => {
+	    const el = railRef.current;
+	    if (!el) return;
+	    el.scrollTo({ left: 0, behavior: "auto" });
+	    scheduleUpdate();
+	    pendingAnchorRef.current = null;
+	    // eslint-disable-next-line react-hooks/exhaustive-deps
+	  }, [filter]);
 
   useEffect(() => {
     scheduleUpdate();
@@ -1291,14 +1304,14 @@ function HomeRail({
     const el = railRef.current;
     if (!pending || !el) return;
     const idx = visibleItems.findIndex((it) => `${it.kind}:${it.id}` === pending.key);
-    pendingAnchorRef.current = null;
-    if (idx < 0) return;
-    // Avoid jumping the user when they're at the very start.
-    if (el.scrollLeft <= 1) return;
-    el.scrollLeft = idx * stridePx + pending.within;
-    scheduleUpdate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleItems.length, stridePx]);
+	    pendingAnchorRef.current = null;
+	    if (idx < 0) return;
+	    // Avoid jumping the user when they're at the very start.
+	    if (el.scrollLeft <= 1) return;
+	    el.scrollLeft = idx * stridePx + pending.within;
+	    scheduleUpdate();
+	    // eslint-disable-next-line react-hooks/exhaustive-deps
+	  }, [visibleItems.length, stridePx]);
 
   if (!allItems || allItems.length === 0) return null;
 
@@ -1316,67 +1329,73 @@ function HomeRail({
               <button
                 type="button"
                 className={cn(
-                  "group ml-1 inline-flex h-8 items-center justify-center transition-colors",
+                  "group ms-1 inline-flex h-8 items-center justify-center transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
                   filter === "all"
                     ? "w-8 rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted/40 hover:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
                     : "rounded-full p-0 text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
-                )}
-                aria-label={
-                  filter === "paths"
-                    ? "Filter: paths"
-                    : filter === "files"
-                      ? "Filter: files"
-                      : "Filter cards"
-                }
-                title={filter === "all" ? "Filter" : filter === "paths" ? "Showing paths" : "Showing files"}
-              >
-                {filter === "paths" ? (
-                  <Badge
+	                )}
+	                aria-label={
+	                  filter === "paths"
+	                    ? t("home.filter.aria.paths")
+	                    : filter === "files"
+	                      ? t("home.filter.aria.files")
+	                      : t("home.filter.aria.cards")
+	                }
+	                title={
+	                  filter === "all"
+	                    ? t("home.filter.title.filter")
+	                    : filter === "paths"
+	                      ? t("home.filter.title.showingPaths")
+	                      : t("home.filter.title.showingFiles")
+	                }
+	              >
+	                {filter === "paths" ? (
+	                  <Badge
                     className={cn(
                       "pointer-events-none transition-colors",
                       "group-hover:bg-muted/40 group-hover:text-foreground",
                       "group-data-[state=open]:bg-muted/50 group-data-[state=open]:text-foreground"
-                    )}
-                  >
-                    Path
-                  </Badge>
-                ) : filter === "files" ? (
-                  <Badge
+	                    )}
+	                  >
+	                    {t("home.filter.badge.path")}
+	                  </Badge>
+	                ) : filter === "files" ? (
+	                  <Badge
                     className={cn(
                       "pointer-events-none transition-colors",
                       "group-hover:bg-muted/40 group-hover:text-foreground",
                       "group-data-[state=open]:bg-muted/50 group-data-[state=open]:text-foreground"
-                    )}
-                  >
-                    File
-                  </Badge>
-                ) : (
-                  <Filter className="h-4 w-4" />
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" sideOffset={8} className="w-48">
-              <DropdownMenuLabel>Show</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup
-                value={filter}
-                onValueChange={(v) => setFilter((v as HomeRailFilterValue) || "all")}
-              >
-                <DropdownMenuRadioItem value="all">
-                  All
-                  <DropdownMenuShortcut>{counts.total}</DropdownMenuShortcut>
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="paths" disabled={counts.paths === 0}>
-                  Paths
-                  <DropdownMenuShortcut>{counts.paths}</DropdownMenuShortcut>
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="files" disabled={counts.files === 0}>
-                  Files
-                  <DropdownMenuShortcut>{counts.files}</DropdownMenuShortcut>
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
+	                    )}
+	                  >
+	                    {t("home.filter.badge.file")}
+	                  </Badge>
+	                ) : (
+	                  <Filter className="h-4 w-4" />
+	                )}
+	              </button>
+	            </DropdownMenuTrigger>
+	            <DropdownMenuContent align="start" sideOffset={8} className="w-48">
+	              <DropdownMenuLabel>{t("home.filter.label.show")}</DropdownMenuLabel>
+	              <DropdownMenuSeparator />
+	              <DropdownMenuRadioGroup
+	                value={filter}
+	                onValueChange={(v) => setFilter((v as HomeRailFilterValue) || "all")}
+	              >
+	                <DropdownMenuRadioItem value="all">
+	                  {t("common.all")}
+	                  <DropdownMenuShortcut>{counts.total}</DropdownMenuShortcut>
+	                </DropdownMenuRadioItem>
+	                <DropdownMenuRadioItem value="paths" disabled={counts.paths === 0}>
+	                  {t("nav.paths")}
+	                  <DropdownMenuShortcut>{counts.paths}</DropdownMenuShortcut>
+	                </DropdownMenuRadioItem>
+	                <DropdownMenuRadioItem value="files" disabled={counts.files === 0}>
+	                  {t("nav.files")}
+	                  <DropdownMenuShortcut>{counts.files}</DropdownMenuShortcut>
+	                </DropdownMenuRadioItem>
+	              </DropdownMenuRadioGroup>
+	            </DropdownMenuContent>
           </DropdownMenu>
         </div>
         {hasOverflow ? (
@@ -1384,26 +1403,26 @@ function HomeRail({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
-              className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
-              onClick={onViewAll}
-              aria-label={`View all ${title}`}
-            >
-              View all
-            </Button>
-          ) : (
-            <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
-                  aria-label={`View all ${title}`}
-                >
-                  View all
-                </Button>
-              </DialogTrigger>
+	              size="sm"
+	              className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
+	              onClick={onViewAll}
+	              aria-label={t("home.viewAll.aria", { title })}
+	            >
+	              {t("home.viewAll")}
+	            </Button>
+	          ) : (
+	            <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
+	              <DialogTrigger asChild>
+	                <Button
+	                  type="button"
+	                  variant="ghost"
+	                  size="sm"
+	                  className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
+	                  aria-label={t("home.viewAll.aria", { title })}
+	                >
+	                  {t("home.viewAll")}
+	                </Button>
+	              </DialogTrigger>
               <DialogContent ref={viewAllScrollRef} className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="font-brand text-2xl sm:text-3xl">
@@ -1454,8 +1473,8 @@ function HomeRail({
           className="scrollbar-none flex gap-6 overflow-x-auto overscroll-x-contain pb-1 scroll-smooth snap-x snap-proximity"
           style={{
             WebkitOverflowScrolling: "touch",
-            paddingLeft: Math.max(0, range.start) * stridePx,
-            paddingRight: Math.max(0, displayCount - range.end) * stridePx,
+            paddingInlineStart: Math.max(0, range.start) * stridePx,
+            paddingInlineEnd: Math.max(0, displayCount - range.end) * stridePx,
           }}
           onWheel={(e) => {
             const el = e.currentTarget;
@@ -1504,36 +1523,36 @@ function HomeRail({
         <div
           className={cn(
             "pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background to-transparent transition-opacity",
-            canScrollLeft ? "opacity-100" : "opacity-0"
+            canScrollPrev ? "opacity-100" : "opacity-0"
           )}
         />
         <div
           className={cn(
             "pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent transition-opacity",
-            canScrollRight ? "opacity-100" : "opacity-0"
+            canScrollNext ? "opacity-100" : "opacity-0"
           )}
         />
 
-        {canScrollLeft && (
+        {canScrollPrev && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-border bg-background/80 shadow-sm backdrop-blur-sm"
-            aria-label={`Scroll ${title} left`}
+            aria-label={t("home.scroll.prev", { title })}
             onClick={() => scrollByCards(-1)}
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
         )}
 
-        {canScrollRight && (
+        {canScrollNext && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-border bg-background/80 shadow-sm backdrop-blur-sm"
-            aria-label={`Scroll ${title} right`}
+            aria-label={t("home.scroll.next", { title })}
             onClick={() => scrollByCards(1)}
           >
             <ChevronRight className="h-5 w-5" />

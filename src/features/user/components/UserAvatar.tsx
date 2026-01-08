@@ -11,6 +11,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { Ampersand, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/app/providers/AuthProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { useUserDialogs, USER_DIALOG_OPEN_EVENT } from "@/app/providers/UserDialogProvider";
 import { ColorPicker, AVATAR_COLORS } from "@/features/user/components/ColorPicker";
@@ -18,19 +19,19 @@ import { cn } from "@/shared/lib/utils";
 import type { UserProfile } from "@/shared/types/models";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
-function formatDisplayName(user: UserProfile | null | undefined) {
-  if (!user) return "User";
+function formatDisplayName(user: UserProfile | null | undefined, fallbackName = "User") {
+  if (!user) return fallbackName;
   const first = String(user.firstName || "").trim();
   const last = String(user.lastName || "").trim();
   const cap = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : "");
   const full = [cap(first), cap(last)].filter(Boolean).join(" ").trim();
-  return full || "User";
+  return full || fallbackName;
 }
 
-function formatFirstName(user: UserProfile | null | undefined) {
-  if (!user) return "User";
+function formatFirstName(user: UserProfile | null | undefined, fallbackName = "User") {
+  if (!user) return fallbackName;
   const first = String(user.firstName || "").trim();
-  if (!first) return "User";
+  if (!first) return fallbackName;
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
@@ -65,6 +66,7 @@ export function UserAvatar({
   menuClassName,
 }: UserAvatarProps) {
   const { isAuthenticated } = useAuth();
+  const { t } = useI18n();
   const { user, loading: userLoading, changeAvatarColor } = useUser();
   const { openProfile, openSettings, openLogout } = useUserDialogs();
 
@@ -95,8 +97,9 @@ export function UserAvatar({
     ).toUpperCase();
   }, [user]);
 
-  const displayName = useMemo(() => formatDisplayName(user), [user]);
-  const firstNameLabel = useMemo(() => formatFirstName(user), [user]);
+  const fallbackName = t("user.fallbackName");
+  const displayName = useMemo(() => formatDisplayName(user, fallbackName), [fallbackName, user]);
+  const firstNameLabel = useMemo(() => formatFirstName(user, fallbackName), [fallbackName, user]);
   const showTooltip = !showName && Boolean(firstNameLabel);
 
   const onPickColor = useCallback(
@@ -228,7 +231,7 @@ export function UserAvatar({
           </Avatar>
           <div className="min-w-0 leading-tight">
             <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
-            <div className="text-xs text-muted-foreground">View profile</div>
+            <div className="text-xs text-muted-foreground">{t("user.viewProfile")}</div>
           </div>
         </DropdownMenuItem>
 
@@ -244,7 +247,7 @@ export function UserAvatar({
             }}
           >
             <Ampersand className="size-4 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-sm font-medium">Personalization</span>
+            <span className="text-sm font-medium">{t("settings.personalization")}</span>
           </DropdownMenuItem>
 
           <DropdownMenuItem
@@ -256,7 +259,7 @@ export function UserAvatar({
             }}
           >
             <Settings className="size-4 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-sm font-medium">Settings</span>
+            <span className="text-sm font-medium">{t("settings.title")}</span>
           </DropdownMenuItem>
         </DropdownMenuGroup>
 
@@ -273,7 +276,7 @@ export function UserAvatar({
             }}
           >
             <LogOut className="size-4" />
-            <span className="text-sm font-medium">Log out</span>
+            <span className="text-sm font-medium">{t("user.logout")}</span>
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

@@ -5,6 +5,7 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import type { ChatRole } from "@/shared/types/models"
 import { cn } from "@/shared/lib/utils"
+import { useI18n } from "@/app/providers/I18nProvider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip"
 import {
   Copy,
@@ -393,7 +394,7 @@ function CodeBlock({ children, language, filename, showLineNumbers = false, high
           )}
         </button>
       </div>
-      <div className="overflow-x-auto">
+      <div dir="ltr" className="overflow-x-auto">
         <pre className="p-4 text-[13px] leading-relaxed">
           <code className="font-mono text-foreground">
             {showLineNumbers ? (
@@ -432,6 +433,7 @@ function InlineCode({ children }: InlineCodeProps) {
 }
 
 function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
+  const { t } = useI18n()
   const [isExpanded, setIsExpanded] = React.useState(false)
   const [isLoaded, setIsLoaded] = React.useState(false)
   const [hasError, setHasError] = React.useState(false)
@@ -455,24 +457,24 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
       <figure className="my-4">
         <button
           type="button"
-          aria-label="Open image"
+          aria-label={t("media.openImage")}
           className={cn(
             "relative w-full overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-sm",
-            "cursor-pointer group text-left",
+            "cursor-pointer group text-start",
           )}
           onClick={() => setIsExpanded(true)}
         >
           {!isLoaded && !hasError && <div className="absolute inset-0 animate-pulse bg-muted" />}
           {hasError ? (
             <div className="flex items-center justify-center h-48 text-muted-foreground">
-              <AlertCircle className="h-8 w-8 mr-2" />
-              <span>Failed to load image</span>
+              <AlertCircle className="h-8 w-8 me-2" />
+              <span>{t("media.failedToLoadImage")}</span>
             </div>
           ) : (
             <>
               <img
                 src={src || "/placeholder.svg"}
-                alt={alt || "Image"}
+                alt={alt || t("common.image")}
                 width={width}
                 height={height}
                 onLoad={() => setIsLoaded(true)}
@@ -501,20 +503,20 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
             >
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Close image"
-                    className="absolute top-4 right-4 rounded-full p-2 text-white/90 nb-motion-fast motion-reduce:transition-none hover:bg-white/10"
-                    onClick={() => setIsExpanded(false)}
-                  >
+	                  <button
+	                    type="button"
+	                    aria-label={t("media.closeImage")}
+	                    className="absolute top-4 end-4 rounded-full p-2 text-white/90 nb-motion-fast motion-reduce:transition-none hover:bg-white/10"
+	                    onClick={() => setIsExpanded(false)}
+	                  >
                     <X className="h-6 w-6" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="left" shortcut="Esc">Close</TooltipContent>
+                <TooltipContent side="left" shortcut="Esc">{t("common.close")}</TooltipContent>
               </Tooltip>
               <img
                 src={src || "/placeholder.svg"}
-                alt={alt || "Image"}
+                alt={alt || t("common.image")}
                 className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               />
@@ -527,6 +529,7 @@ function ImageBlock({ src, alt, caption, width, height }: ImageBlockProps) {
 }
 
 function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, muted = true }: VideoBlockProps) {
+  const { t } = useI18n()
   const videoRef = React.useRef<HTMLVideoElement | null>(null)
   const expandedRef = React.useRef<HTMLVideoElement | null>(null)
   const [isPlaying, setIsPlaying] = React.useState(autoPlay)
@@ -677,7 +680,7 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    aria-label={isPlaying ? "Pause video" : "Play video"}
+                    aria-label={isPlaying ? t("media.pauseVideo") : t("media.playVideo")}
                     onClick={togglePlay}
                     className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
                   >
@@ -685,14 +688,14 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" shortcut="Space">
-                  {isPlaying ? "Pause" : "Play"}
+                  {isPlaying ? t("media.pause") : t("media.play")}
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    aria-label={isMuted ? "Unmute video" : "Mute video"}
+                    aria-label={isMuted ? t("media.unmuteVideo") : t("media.muteVideo")}
                     onClick={toggleMute}
                     className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
                   >
@@ -700,7 +703,7 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" shortcut="M">
-                  {isMuted ? "Unmute" : "Mute"}
+                  {isMuted ? t("media.unmute") : t("media.mute")}
                 </TooltipContent>
               </Tooltip>
               <div className="flex-1" />
@@ -708,14 +711,14 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Fullscreen"
+                    aria-label={t("common.openFullscreen")}
                     onClick={openExpanded}
                     className="rounded p-1.5 text-white transition-colors hover:bg-white/20"
                   >
                     <Maximize2 className="h-5 w-5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top" shortcut="F">Fullscreen</TooltipContent>
+                <TooltipContent side="top" shortcut="F">{t("common.openFullscreen")}</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -732,16 +735,16 @@ function VideoBlock({ src, poster, caption, autoPlay = false, loop = false, mute
               >
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Close video"
-                      className="absolute right-4 top-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
-                      onClick={closeExpanded}
-                    >
+	                    <button
+	                      type="button"
+	                      aria-label={t("media.closeVideo")}
+	                      className="absolute end-4 top-4 rounded-full p-2 text-white/90 transition-colors hover:bg-white/10"
+	                      onClick={closeExpanded}
+	                    >
                       <X className="h-6 w-6" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="left" shortcut="Esc">Close</TooltipContent>
+                  <TooltipContent side="left" shortcut="Esc">{t("common.close")}</TooltipContent>
                 </Tooltip>
                 <div
                   className="w-full max-w-5xl"
@@ -845,18 +848,18 @@ function Table({ headers = [], rows = [], caption }: TableProps) {
   return (
     <div className="my-4 overflow-hidden rounded-xl border border-border/60 shadow-sm">
       <table className="w-full text-sm">
-        {caption && (
-          <caption className="border-b border-border/60 bg-muted/30 px-4 py-2 text-left text-muted-foreground">
-            {caption}
-          </caption>
-        )}
+	        {caption && (
+	          <caption className="border-b border-border/60 bg-muted/30 px-4 py-2 text-start text-muted-foreground">
+	            {caption}
+	          </caption>
+	        )}
         <thead>
           <tr className="bg-muted/30">
             {headers.map((header, i) => (
-              <th
-                key={i}
-                className="border-b border-border/60 px-4 py-3 text-left font-medium text-foreground"
-              >
+	              <th
+	                key={i}
+	                className="border-b border-border/60 px-4 py-3 text-start font-medium text-foreground"
+	              >
                 {header}
               </th>
             ))}
@@ -990,7 +993,7 @@ function ThinkingContent({
         <span>Thought for {duration || "a few seconds"}</span>
       </button>
       {isExpanded && (
-        <div className="mt-2 border-l border-border/60 pl-3 text-sm text-muted-foreground leading-relaxed">
+        <div className="mt-2 border-s border-border/60 ps-3 text-sm text-muted-foreground leading-relaxed">
           {children}
         </div>
       )}
@@ -999,24 +1002,25 @@ function ThinkingContent({
 }
 
 function ActionBar({ onCopy, onLike, onDislike, onShare, onRegenerate }: ActionBarProps) {
+  const { t } = useI18n()
   return (
     <div className="mt-3 flex items-center gap-1.5">
-      <ActionButton onClick={onCopy} aria-label="Copy" shortcut="Cmd/Ctrl+C">
+      <ActionButton onClick={onCopy} aria-label={t("common.copy")} shortcut="Cmd/Ctrl+C">
         <Copy className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onLike} aria-label="Like" shortcut="L">
+      <ActionButton onClick={onLike} aria-label={t("common.like")} shortcut="L">
         <ThumbsUp className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onDislike} aria-label="Dislike" shortcut="D">
+      <ActionButton onClick={onDislike} aria-label={t("common.dislike")} shortcut="D">
         <ThumbsDown className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onShare} aria-label="Share" shortcut="S">
+      <ActionButton onClick={onShare} aria-label={t("common.share")} shortcut="S">
         <Share className="h-4 w-4" />
       </ActionButton>
-      <ActionButton onClick={onRegenerate} aria-label="Regenerate" shortcut="R">
+      <ActionButton onClick={onRegenerate} aria-label={t("common.regenerate")} shortcut="R">
         <RotateCcw className="h-4 w-4" />
       </ActionButton>
-      <ActionButton aria-label="More options" shortcut="M">
+      <ActionButton aria-label={t("navbar.moreOptions")} shortcut="M">
         <MoreHorizontal className="h-4 w-4" />
       </ActionButton>
     </div>
@@ -1085,21 +1089,21 @@ const ChatMessage: ChatMessageComponent = ({
   const isUser = variant === "user"
 
   if (isUser) {
-    return (
-      <div className={cn("flex w-full justify-end py-3", className)}>
-        <div
-          className={cn(
-            "border border-border/60 bg-muted/70 text-foreground shadow-sm backdrop-blur-sm",
-            "rounded-3xl px-5 py-2.5",
-            "max-w-[85%] sm:max-w-[75%] md:max-w-[70%]",
-            "min-h-[44px] flex items-center",
-          )}
-        >
-          <div className="text-[15px] leading-relaxed">{children}</div>
-        </div>
-      </div>
-    )
-  }
+	    return (
+	      <div className={cn("flex w-full justify-end py-3", className)}>
+	        <div
+	          className={cn(
+	            "border border-border/60 bg-muted/70 text-foreground shadow-sm backdrop-blur-sm",
+	            "rounded-3xl px-5 py-2.5",
+	            "max-w-[85%] sm:max-w-[75%] md:max-w-[70%]",
+	            "min-h-[44px] flex items-center",
+	          )}
+	        >
+	          <div dir="auto" className="text-[15px] leading-relaxed">{children}</div>
+	        </div>
+	      </div>
+	    )
+	  }
 
   return (
     <div className={cn("w-full py-4", className)}>
@@ -1118,28 +1122,29 @@ const ChatMessage: ChatMessageComponent = ({
             </ThinkingContent>
           )}
 
-          <div
-            className={cn(
-              "text-[15px] leading-relaxed",
-              "[&>p]:my-3 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0",
-              "[&>ul]:my-3 [&>ol]:my-3",
-              "[&>ul]:pl-5 [&>ol]:pl-5",
-              "[&>ul>li]:my-1.5 [&>ol>li]:my-1.5",
-              "[&_ul]:list-disc [&_ol]:list-decimal",
-              "[&_li]:pl-1",
-              "[&_ul_ul]:my-1 [&_ol_ol]:my-1 [&_ul_ol]:my-1 [&_ol_ul]:my-1",
-              "[&>h1]:text-2xl [&>h1]:font-semibold [&>h1]:mt-8 [&>h1]:mb-4 [&>h1:first-child]:mt-0",
-              "[&>h2]:text-xl [&>h2]:font-semibold [&>h2]:mt-6 [&>h2]:mb-3 [&>h2:first-child]:mt-0",
-              "[&>h3]:text-lg [&>h3]:font-semibold [&>h3]:mt-5 [&>h3]:mb-2 [&>h3:first-child]:mt-0",
-              "[&>h4]:text-base [&>h4]:font-semibold [&>h4]:mt-4 [&>h4]:mb-2 [&>h4:first-child]:mt-0",
-              "[&>blockquote]:border-l-4 [&>blockquote]:border-border [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&>blockquote]:my-4",
-              "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-primary/80",
-              "[&_strong]:font-semibold",
-              "[&_mark]:bg-accent/70 [&_mark]:px-1 [&_mark]:rounded",
-            )}
-          >
-            {children}
-          </div>
+	          <div
+	            dir="auto"
+	            className={cn(
+	              "text-[15px] leading-relaxed",
+	              "[&>p]:my-3 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0",
+	              "[&>ul]:my-3 [&>ol]:my-3",
+	              "[&>ul]:ps-5 [&>ol]:ps-5",
+	              "[&>ul>li]:my-1.5 [&>ol>li]:my-1.5",
+	              "[&_ul]:list-disc [&_ol]:list-decimal",
+	              "[&_li]:ps-1",
+	              "[&_ul_ul]:my-1 [&_ol_ol]:my-1 [&_ul_ol]:my-1 [&_ol_ul]:my-1",
+	              "[&>h1]:text-2xl [&>h1]:font-semibold [&>h1]:mt-8 [&>h1]:mb-4 [&>h1:first-child]:mt-0",
+	              "[&>h2]:text-xl [&>h2]:font-semibold [&>h2]:mt-6 [&>h2]:mb-3 [&>h2:first-child]:mt-0",
+	              "[&>h3]:text-lg [&>h3]:font-semibold [&>h3]:mt-5 [&>h3]:mb-2 [&>h3:first-child]:mt-0",
+	              "[&>h4]:text-base [&>h4]:font-semibold [&>h4]:mt-4 [&>h4]:mb-2 [&>h4:first-child]:mt-0",
+	              "[&>blockquote]:border-s-4 [&>blockquote]:border-border [&>blockquote]:ps-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&>blockquote]:my-4",
+	              "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-primary/80",
+	              "[&_strong]:font-semibold",
+	              "[&_mark]:bg-accent/70 [&_mark]:px-1 [&_mark]:rounded",
+	            )}
+	          >
+	            {children}
+	          </div>
 
           {showActions && (
             <ActionBar

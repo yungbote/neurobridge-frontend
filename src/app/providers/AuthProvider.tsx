@@ -25,6 +25,7 @@ import {
   setExpiresAt,
   getExpiresAt,
 } from "@/shared/services/StorageService";
+import { queryKeys } from "@/shared/query/queryKeys";
 import {
   getAppleIdTokenWithNonce,
   getFallbackNameFromIdToken,
@@ -92,6 +93,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setExpiresAt(expiresAt);
       setIsAuthenticated(true);
 
+      // If we refreshed the token (or logged in), ensure any auth-gated queries that may have
+      // previously failed with 401/403 get a chance to refetch with the new credentials.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me(), exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.paths(), exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.materialFiles(), exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.libraryTaxonomySnapshot(), exact: true });
+      void queryClient.invalidateQueries({ queryKey: ["chatThreads"] as const, exact: false });
+
       // Clear any existing timer
       if (refreshTimerId.current) {
         clearTimeout(refreshTimerId.current);
@@ -104,7 +113,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         refreshTokens();
       }, safeDelay);
     },
-    [refreshTokens]
+    [queryClient, refreshTokens]
   );
 
   const login = useCallback(
@@ -219,7 +228,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 export function useAuth() {
   return useContext(AuthContext);
 }
-
 
 
 

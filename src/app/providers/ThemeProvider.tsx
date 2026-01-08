@@ -4,6 +4,7 @@ import { IconButton } from "@/shared/ui/icon-button";
 import { Moon, Sun } from "lucide-react";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { ThemePreference, UiTheme } from "@/shared/types/models";
 import { UI_THEME_SET } from "@/shared/theme/uiThemes";
 
@@ -144,6 +145,7 @@ export function useTheme() {
 
 export function ThemeToggle() {
   const { effectiveTheme, setTheme } = useTheme();
+  const { t } = useI18n();
   const isDark = effectiveTheme === "dark";
   
   function handleClick() {
@@ -155,7 +157,7 @@ export function ThemeToggle() {
       variant="outline"
       size="icon"
       onClick={handleClick}
-      label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      label={isDark ? t("theme.switchToLight") : t("theme.switchToDark")}
       shortcut="T"
       className="rounded-3xl"
     >
@@ -163,7 +165,6 @@ export function ThemeToggle() {
     </IconButton>
   );
 }
-
 
 
 

@@ -2,14 +2,18 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 
+import { useI18n } from "@/app/providers/I18nProvider";
 import { cn } from "@/shared/lib/utils";
 
 const Breadcrumb = React.forwardRef<
   HTMLElement,
   React.ComponentPropsWithoutRef<"nav">
->((props, ref) => (
-  <nav ref={ref} aria-label="breadcrumb" data-slot="breadcrumb" {...props} />
-));
+>(({ "aria-label": ariaLabelProp, ...props }, ref) => {
+  const { t } = useI18n();
+  return (
+    <nav ref={ref} aria-label={ariaLabelProp ?? t("breadcrumbs.aria")} data-slot="breadcrumb" {...props} />
+  );
+});
 Breadcrumb.displayName = "Breadcrumb";
 
 const BreadcrumbList = React.forwardRef<

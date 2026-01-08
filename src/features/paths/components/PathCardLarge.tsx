@@ -14,6 +14,7 @@ import { restartJob } from "@/shared/api/JobService";
 import { deletePath } from "@/shared/api/PathService";
 import { useMaterials } from "@/app/providers/MaterialProvider";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { cn } from "@/shared/lib/utils";
 import type { Path } from "@/shared/types/models";
@@ -72,6 +73,7 @@ function getPathAvatarUrl(path: Path | null | undefined, meta: JsonRecord | null
 export function PathCardLarge({ path }: PathCardLargeProps) {
   if (!path) return null;
 
+  const { t } = useI18n();
   const { activePathId, clearActivePath, reload } = usePaths();
   const { reload: reloadMaterials } = useMaterials();
   const [action, setAction] = useState<"retry" | "trash" | null>(null);
@@ -104,12 +106,12 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
 
   const titleText = showGen
     ? isFailed
-      ? "Generation failed"
-      : stageLabel(jobStage) || "Generating path…"
-    : path.title || "Untitled Path";
+      ? t("paths.generation.failed")
+      : stageLabel(jobStage) || t("paths.generation.generating")
+    : path.title || t("paths.untitled");
 
   const subText = showGen
-    ? path.jobMessage || (isFailed ? "Unknown error" : null)
+    ? path.jobMessage || (isFailed ? t("common.unknownError") : null)
     : path.description || null;
 
   const meta = safeParseMetadata(path.metadata);
@@ -162,16 +164,16 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
       <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity nb-duration-micro nb-ease-out group-hover:opacity-100 group-focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-              aria-label="Path options"
-              title="Options"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-            >
+	            <button
+	              type="button"
+	              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+	              aria-label={t("paths.options")}
+	              title={t("common.options")}
+	              onClick={(e) => {
+	                e.preventDefault();
+	                e.stopPropagation();
+	              }}
+	            >
               <Ellipsis className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
@@ -184,10 +186,10 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
                     e.preventDefault();
                     void handleRetry();
                   }}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Retry
-                </DropdownMenuItem>
+	                >
+	                  <RotateCcw className="h-4 w-4" />
+	                  {t("common.retry")}
+	                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
@@ -196,19 +198,19 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
                     e.preventDefault();
                     void handleTrash();
                   }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Trash
-                </DropdownMenuItem>
+	                >
+	                  <Trash2 className="h-4 w-4" />
+	                  {t("common.trash")}
+	                </DropdownMenuItem>
               </>
             ) : (
               <DropdownMenuItem
                 disabled
                 onSelect={(e) => e.preventDefault()}
-              >
-                More actions soon
-              </DropdownMenuItem>
-            )}
+	              >
+	                {t("common.moreActionsSoon")}
+	              </DropdownMenuItem>
+	            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -216,10 +218,10 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
         <div className="space-y-3">
           <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
-              <div className="flex items-center justify-start gap-2">
-                <Badge>Path</Badge>
-                {isFailed && <Badge variant="destructive">Failed</Badge>}
-              </div>
+	              <div className="flex items-center justify-start gap-2">
+	                <Badge>{t("paths.path")}</Badge>
+	                {isFailed && <Badge variant="destructive">{t("common.failed")}</Badge>}
+	              </div>
               <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">
                 {titleText}
               </CardTitle>
@@ -279,7 +281,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
                   {showCover && coverUrl ? (
                     <img
                       src={coverUrl}
-                      alt={`Cover for ${path.title || "learning path"}`}
+                      alt={t("paths.coverFor", { title: path.title || t("paths.untitled") })}
                       loading="lazy"
                       decoding="async"
                       className="h-full w-full object-cover transform-gpu transition-transform nb-duration nb-ease-out motion-reduce:transition-none group-hover:scale-[1.02]"
@@ -291,11 +293,11 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
                         "h-full w-full flex items-center justify-center",
                         "bg-gradient-to-br from-muted/60 via-muted/30 to-background/60"
                       )}
-                      aria-label="No cover available"
+                      aria-label={t("paths.noCoverAvailable")}
                     >
                       <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-background/60 px-3 py-2 shadow-sm">
                         <BookOpen className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs font-medium text-muted-foreground">PATH</span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("paths.path").toUpperCase()}</span>
                       </div>
                     </div>
                   )}
@@ -320,7 +322,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     <Link
       to={to}
       className="block cursor-pointer !no-underline !text-foreground"
-      aria-label={`Open path ${path.title || "path"}`}
+      aria-label={t("paths.openPath.aria", { title: path.title || t("paths.untitled") })}
     >
       {card}
     </Link>

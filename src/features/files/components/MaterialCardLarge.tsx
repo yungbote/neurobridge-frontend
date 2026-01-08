@@ -11,6 +11,7 @@ import {
 import type { MaterialFile } from "@/shared/types/models";
 import { getAccessToken } from "@/shared/services/StorageService";
 import { cn } from "@/shared/lib/utils";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 interface MaterialCardLargeProps {
   file?: MaterialFile | null;
@@ -103,6 +104,7 @@ function fileTypeBadgeLabel(file: MaterialFile | null | undefined) {
 }
 
 export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
+  const { t } = useI18n();
   const [thumbError, setThumbError] = useState(false);
   const [splitExtToSecondLine, setSplitExtToSecondLine] = useState(false);
   const titleWrapRef = useRef<HTMLDivElement | null>(null);
@@ -131,7 +133,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
 
   if (!file) return null;
 
-  const titleText = file.originalName || "Untitled file";
+  const titleText = file.originalName || t("common.untitledFile");
   const titleParts = useMemo(() => splitFileNameExt(titleText), [titleText]);
   const typeText = fileTypeLabel(file);
   const typeBadgeText = fileTypeBadgeLabel(file);
@@ -202,8 +204,8 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
             <button
               type="button"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-              aria-label="File options"
-              title="Options"
+              aria-label={t("files.options")}
+              title={t("common.options")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -214,7 +216,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={10} className="w-44">
             <DropdownMenuItem disabled onSelect={(e) => e.preventDefault()}>
-              More actions soon
+              {t("common.moreActionsSoon")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -224,7 +226,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
           <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
               <div className="flex items-center justify-start gap-2">
-                <Badge>File</Badge>
+                <Badge>{t("common.file")}</Badge>
                 <Badge variant="subtle">{typeBadgeText}</Badge>
               </div>
               <div ref={titleWrapRef} className="relative">
@@ -258,7 +260,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
                 {showThumb ? (
                   <img
                     src={thumbUrl}
-                    alt={`Thumbnail for ${titleText}`}
+                    alt={t("files.thumbnailFor", { title: titleText })}
                     loading="lazy"
                     decoding="async"
                     className="h-full w-full object-cover transform-gpu transition-transform nb-duration nb-ease-out motion-reduce:transition-none group-hover:scale-[1.02]"
@@ -270,7 +272,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
                       "h-full w-full flex items-center justify-center",
                       "bg-gradient-to-br from-muted/60 via-muted/30 to-background/60"
                     )}
-                    aria-label="No thumbnail available"
+                    aria-label={t("files.noThumbnailAvailable")}
                   >
                     <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-background/60 px-3 py-2 shadow-sm">
                       <Icon className="h-4 w-4 text-muted-foreground" />
@@ -296,7 +298,7 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
       target="_blank"
       rel="noreferrer"
       className="block cursor-pointer !no-underline !text-foreground"
-      aria-label={`Open file ${titleText}`}
+      aria-label={t("files.openFile.aria", { title: titleText })}
     >
       {card}
     </a>

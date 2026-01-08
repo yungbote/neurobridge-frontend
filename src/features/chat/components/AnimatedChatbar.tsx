@@ -8,6 +8,7 @@ import { cn } from "@/shared/lib/utils";
 import { FileUploadCard } from "@/shared/components/FileUploadCard";
 import { usePaths } from "@/app/providers/PathProvider";
 import type { BackendMaterialUploadResponse } from "@/shared/types/backend";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 const examplePrompts = [
   "Teach me how to study effectively.",
@@ -81,6 +82,7 @@ export const AnimatedChatbar = ({
   variant = "default",
 }: AnimatedChatbarProps) => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { uploadMaterialSet } = usePaths();
   const [value, setValue] = useState("");
   const [placeholder, setPlaceholder] = useState("");
@@ -106,8 +108,8 @@ export const AnimatedChatbar = ({
   const activeRef = useRef(false);
   const filesStripRef = useRef<HTMLDivElement | null>(null);
   const dragFilesRef = useRef<DragState>({ active: false, startX: 0, scrollLeft: 0, pointerId: null });
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [canScrollPrev, setCanScrollPrev] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(false);
   const [isDraggingFilesStrip, setIsDraggingFilesStrip] = useState(false);
 
   const isCancelMode = String(submitMode || "").toLowerCase() === "cancel";
@@ -120,10 +122,10 @@ export const AnimatedChatbar = ({
   const updateFilesScroll = useCallback(() => {
     const el = filesStripRef.current;
     if (!el) return;
-    const max = el.scrollWidth - el.clientWidth;
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
     const x = el.scrollLeft;
-    setCanScrollLeft(x > 2);
-    setCanScrollRight(x < max - 2);
+    setCanScrollPrev(x > 2);
+    setCanScrollNext(x < max - 2);
   }, []);
 
   useEffect(() => {
@@ -158,10 +160,10 @@ export const AnimatedChatbar = ({
     };
   }, [updateFilesScroll]);
 
-  const scrollFilesBy = useCallback((dir: number) => {
+  const scrollFilesBy = useCallback((delta: number) => {
     const el = filesStripRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir * 280, behavior: "smooth" });
+    el.scrollTo({ left: el.scrollLeft + delta * 280, behavior: "smooth" });
   }, []);
 
   const onFilesPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -308,16 +310,16 @@ export const AnimatedChatbar = ({
       const m = machineRef.current;
       m.charIndex = 0;
       m.phase = "typing";
-      m.placeholder = "Ask anything";
+      m.placeholder = isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask");
       m.swapFade = false;
       m.nextAt = 0;
 
       setCharIndex(0);
       setPhase("typing");
-      setPlaceholder("Ask anything");
+      setPlaceholder(isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask"));
       setSwapFade(false);
     }
-  }, [shouldReduceMotion, showGhost, stopAnim]);
+  }, [isCancelMode, shouldReduceMotion, showGhost, stopAnim, t]);
 
   useEffect(() => {
     if (!showGhost) {
@@ -712,13 +714,13 @@ export const AnimatedChatbar = ({
               ))}
             </div>
 
-            {canScrollLeft && (
+            {canScrollPrev && (
               <IconButton
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
-                label="Scroll files left"
+                className="absolute start-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
+                label={t("chat.files.scroll.prev")}
                 shortcut="Left"
                 onClick={() => scrollFilesBy(-1)}
               >
@@ -726,20 +728,25 @@ export const AnimatedChatbar = ({
               </IconButton>
             )}
 
-            {canScrollRight && (
+            {canScrollNext && (
               <>
                 <IconButton
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
-                  label="Scroll files right"
+                  className="absolute end-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
+                  label={t("chat.files.scroll.next")}
                   shortcut="Right"
                   onClick={() => scrollFilesBy(1)}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </IconButton>
-                <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent" />
+                <div
+                  className={cn(
+                    "pointer-events-none absolute inset-y-0 end-0 w-10 from-background to-transparent",
+                    "bg-gradient-to-l"
+                  )}
+                />
               </>
             )}
           </div>
@@ -754,7 +761,7 @@ export const AnimatedChatbar = ({
                 "rounded-full shrink-0 hover:bg-muted",
                 isNavbar ? "h-8 w-8" : "h-8 w-8 sm:h-9"
               )}
-              label="Attach file"
+              label={t("chat.files.attach")}
               shortcut="Cmd/Ctrl+O"
               onClick={() => fileInputRef.current?.click()}
             >
@@ -789,7 +796,7 @@ export const AnimatedChatbar = ({
                 </span>
                 <span
                   className={cn(
-                    "ml-1 inline-block w-[2px] h-[1.05em] rounded-full bg-current align-[-0.125em]",
+                    "ms-1 inline-block w-[2px] h-[1.05em] rounded-full bg-current align-[-0.125em]",
                     phase === "typing" ? "text-foreground/60" : "text-muted-foreground/70"
                   )}
                   style={{
@@ -805,19 +812,25 @@ export const AnimatedChatbar = ({
                     boxShadow: !reducedMotion && phase === "typing" ? "0 0 10px currentColor" : "none",
                   }}
                 />
-                <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent" />
+                <div
+                  className={cn(
+                    "pointer-events-none absolute inset-y-0 end-0 w-10 from-background to-transparent",
+                    "bg-gradient-to-l"
+                  )}
+                />
               </div>
             </div>
             <Input
               ref={inputRef}
+              dir="auto"
               type="text"
               value={value}
               disabled={isCancelMode || isGenerating}
               onChange={(e) => setValue(e.target.value)}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              placeholder={isCancelMode ? "Generating… press send to cancel" : "Ask anything"}
-              aria-label="Chat input"
+              placeholder={isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask")}
+              aria-label={t("chat.input.aria")}
               className={cn(
                 "w-full !bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground",
                 "border-0 outline-none",
@@ -841,7 +854,7 @@ export const AnimatedChatbar = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 sm:h-9 rounded-full hover:bg-muted"
-                label="Voice input"
+                label={t("chat.voiceInput")}
                 shortcut="V"
               >
                 <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -859,7 +872,7 @@ export const AnimatedChatbar = ({
                 ),
                 sendDisabled && "text-muted-foreground/40 hover:bg-transparent"
               )}
-              label={isCancelMode ? "Cancel generation" : "Send message"}
+              label={isCancelMode ? t("chat.cancelGeneration") : t("chat.send")}
               shortcut={isCancelMode ? "Esc" : "Enter"}
             >
               {isGenerating || isCancelMode ? (

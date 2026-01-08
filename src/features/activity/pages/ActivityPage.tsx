@@ -12,6 +12,7 @@ import { listActivitiesForNode } from "@/shared/api/PathNodeService";
 import { Container } from "@/shared/layout/Container";
 import { usePaths } from "@/app/providers/PathProvider";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { Activity, NodeActivity, Path, PathNode } from "@/shared/types/models";
 
 type ActivityBlock = {
@@ -52,6 +53,7 @@ export default function ActivityPage() {
   const { id: activityId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { setActivePath } = usePaths();
+  const { t } = useI18n();
 
   const [activity, setActivity] = useState<Activity | null>(null);
   const [path, setPath] = useState<Path | null>(null);
@@ -160,7 +162,7 @@ export default function ActivityPage() {
           <div key={index}>
             <ImageLightbox
               src={block.url || ""}
-              alt={block.alt || "Activity image"}
+              alt={block.alt || t("activity.imageAlt")}
               caption={block.caption}
               frameClassName="bg-muted/30"
             />
@@ -175,7 +177,7 @@ export default function ActivityPage() {
     return (
       <div className="page-surface">
         <Container size="2xl" className="page-pad-compact text-sm text-muted-foreground">
-          Loading…
+          {t("common.loading")}
         </Container>
       </div>
     );
@@ -185,7 +187,7 @@ export default function ActivityPage() {
     return (
       <div className="page-surface">
         <Container size="2xl" className="page-pad-compact text-sm text-muted-foreground">
-          Activity not found.
+          {t("activity.notFound")}
         </Container>
       </div>
     );
@@ -204,14 +206,14 @@ export default function ActivityPage() {
                 onClick={() => navigate(`/activities/${prevActivity.id}`)}
               >
                 <ChevronLeft className="h-4 w-4" />
-                <span className="text-sm">Previous</span>
+                <span className="text-sm">{t("common.previous")}</span>
               </Button>
             )}
           </div>
 
           <div className="flex-1 text-center">
             <p className="text-xs font-medium text-muted-foreground">
-              {path?.title ? path.title : "Path"}
+              {path?.title ? path.title : t("paths.path")}
               {node?.title ? ` · ${node.title}` : ""}
             </p>
           </div>
@@ -224,7 +226,7 @@ export default function ActivityPage() {
                 className="gap-1.5 text-muted-foreground hover:text-foreground"
                 onClick={() => navigate(`/activities/${nextActivity.id}`)}
               >
-                <span className="text-sm">Next</span>
+                <span className="text-sm">{t("common.next")}</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             )}
@@ -270,16 +272,16 @@ export default function ActivityPage() {
               {completed ? (
                 <>
                   <Check className="h-4 w-4" />
-                  <span>Completed</span>
+                  <span>{t("activity.completed")}</span>
                 </>
               ) : (
-                <span>Mark as Complete</span>
+                <span>{t("activity.markComplete")}</span>
               )}
             </Button>
 
             {nextActivity && !completed && (
               <Button variant="outline" onClick={() => navigate(`/activities/${nextActivity.id}`)}>
-                Continue
+                {t("common.continue")}
               </Button>
             )}
           </div>

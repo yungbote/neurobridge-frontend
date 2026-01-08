@@ -7,10 +7,12 @@ import { cn } from "@/shared/lib/utils";
 import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
 import { AnimatePresence, m } from "framer-motion";
 import { nbPanelRight, nbTransitions } from "@/shared/motion/presets";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 export function ActivityPanel() {
   const isMobile = useIsMobile();
   const { open, setOpen, width, setWidth, items } = useActivityPanel();
+  const { t } = useI18n();
 
   const isResizing = useRef(false);
   const minWidth = 280;
@@ -51,13 +53,13 @@ export function ActivityPanel() {
   const Content = (
     <div className="flex h-full flex-col">
       <div className="h-14 flex items-center justify-between border-b border-border px-5 py-4">
-        <h1 className="text-sm font-medium text-foreground">Activity</h1>
+        <h1 className="text-sm font-medium text-foreground">{t("nav.activity")}</h1>
         <IconButton
           type="button"
           variant="ghost"
           size="icon"
           className="h-8 w-8 rounded-full"
-          label="Close activity"
+          label={t("activity.close")}
           shortcut="Esc"
           onClick={() => setOpen(false)}
         >
@@ -102,7 +104,7 @@ export function ActivityPanel() {
             </div>
           ))}
           {(!items || items.length === 0) && (
-            <div className="text-sm text-muted-foreground">No activity yet.</div>
+            <div className="text-sm text-muted-foreground">{t("activity.empty")}</div>
           )}
         </div>
       </div>
@@ -114,7 +116,7 @@ export function ActivityPanel() {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="p-0 w-[92vw] sm:w-[420px]">
           <SheetHeader className="sr-only">
-            <SheetTitle>Activity</SheetTitle>
+            <SheetTitle>{t("nav.activity")}</SheetTitle>
           </SheetHeader>
           {Content}
         </SheetContent>
@@ -149,8 +151,4 @@ export function ActivityPanel() {
     </AnimatePresence>
   );
 }
-
-
-
-
 

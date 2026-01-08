@@ -4,6 +4,7 @@ import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
+import { useI18n } from "@/app/providers/I18nProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { ColorPicker, AVATAR_COLORS } from "@/features/user/components/ColorPicker";
 
@@ -28,6 +29,7 @@ function splitDisplayName(value: string) {
 
 export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
   const { user, changeName, changeAvatarColor, uploadAvatar } = useUser();
+  const { t } = useI18n();
 
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -111,14 +113,14 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
         // SSE will update the rest of the app (and avatarUrl)
       } catch (e) {
         console.error("[UserNameDialog] live changeName failed:", e);
-        setError("Couldn't update name live. Check connection and try again.");
+        setError(t("user.profile.error.updateNameLive"));
       }
     }, 450);
 
     return () => {
       if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
     };
-  }, [draftFirst, draftLast, open, changeName]);
+  }, [draftFirst, draftLast, open, changeName, t]);
 
   // LIVE SAVE: color (debounced)
   useEffect(() => {
@@ -139,14 +141,14 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
         // SSE will update avatarUrl + avatarColor
       } catch (e) {
         console.error("[UserNameDialog] live changeAvatarColor failed:", e);
-        setError("Couldn't update avatar color live. Check connection and try again.");
+        setError(t("user.profile.error.updateAvatarColorLive"));
       }
     }, 250);
 
     return () => {
       if (colorTimerRef.current) clearTimeout(colorTimerRef.current);
     };
-  }, [draftColor, open, changeAvatarColor]);
+  }, [draftColor, open, changeAvatarColor, t]);
 
   const clearTimers = () => {
     if (nameTimerRef.current) {
@@ -231,7 +233,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
       // SSE should update avatarUrl
     } catch (err) {
       console.error("[UserNameDialog] uploadAvatar failed:", err);
-      setError("Couldn't upload avatar. Please try again.");
+      setError(t("user.profile.error.uploadAvatar"));
     } finally {
       setSubmitting(false);
     }
@@ -243,7 +245,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-5 border-b border-border/60 sm:px-8 sm:pt-8 sm:pb-6">
-          <DialogTitle className="text-2xl font-semibold text-foreground">Edit profile</DialogTitle>
+          <DialogTitle className="text-2xl font-semibold text-foreground">{t("user.profile.title")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col items-center gap-4 px-6 pb-6 sm:px-8">
@@ -251,7 +253,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
             <div className="h-24 w-24 rounded-full overflow-hidden border border-border/60 sm:h-32 sm:w-32">
               <img
                 src={user.avatarUrl || "/placeholder.svg"}
-                alt="User avatar"
+                alt={t("user.profile.avatarAlt")}
                 className="h-full w-full object-cover"
               />
             </div>
@@ -269,7 +271,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
             <button
               type="button"
               className="absolute bottom-0 right-0 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background/80 shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none group-hover:bg-muted/60"
-              aria-label="Upload profile picture"
+              aria-label={t("user.profile.uploadPicture")}
               onClick={handlePickUpload}
               disabled={submitting}
             >
@@ -289,14 +291,14 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
         <div className="px-6 pb-6 space-y-5 sm:px-8">
           <div className="space-y-2">
             <Label htmlFor="displayName" className="text-sm font-medium text-foreground">
-              Display name
+              {t("user.profile.displayName.label")}
             </Label>
             <Input
               id="displayName"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="h-11 text-base border-input bg-background focus-visible:ring-1 focus-visible:ring-ring"
-              placeholder="Your name"
+              placeholder={t("user.profile.displayName.placeholder")}
               autoCapitalize="words"
               disabled={submitting}
             />
@@ -304,13 +306,13 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
 
           <div className="space-y-2">
             <Label htmlFor="username" className="text-sm font-medium text-foreground">
-              Username
+              {t("user.profile.username.label")}
             </Label>
             <Input
               id="username"
               value={username}
               className="h-11 text-base border-input bg-muted/30 text-muted-foreground"
-              placeholder="Username"
+              placeholder={t("user.profile.username.placeholder")}
               disabled
             />
           </div>
@@ -318,7 +320,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
 
         <div className="px-6 pb-6 sm:px-8">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Changes apply live while editing. Cancel will revert.
+            {t("user.profile.helper.liveChanges")}
           </p>
         </div>
 
@@ -335,7 +337,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
             className="h-10 w-full px-6 text-sm font-medium border-input hover:bg-accent hover:text-accent-foreground bg-transparent sm:w-auto"
             disabled={submitting}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
 
           <Button
@@ -343,7 +345,7 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
             className="h-10 w-full px-6 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 sm:w-auto"
             disabled={submitting}
           >
-            Done
+            {t("common.done")}
           </Button>
         </div>
       </DialogContent>

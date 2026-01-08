@@ -26,6 +26,7 @@ import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { DrillPayloadV1 } from "@/shared/types/drillPayloadV1";
 import type { BackendJob } from "@/shared/types/backend";
 import type {
@@ -91,6 +92,7 @@ interface DrillProps {
 }
 
 function FlashcardsDrill({ drill }: DrillProps) {
+  const { t } = useI18n();
   const cards = Array.isArray(drill?.cards) ? drill.cards : [];
   const [idx, setIdx] = useState(0);
   const [showBack, setShowBack] = useState(false);
@@ -101,7 +103,7 @@ function FlashcardsDrill({ drill }: DrillProps) {
   }, [drill]);
 
   if (cards.length === 0) {
-    return <div className="text-sm text-muted-foreground">No flashcards generated.</div>;
+    return <div className="text-sm text-muted-foreground">{t("pathNode.drills.flashcards.empty")}</div>;
   }
 
   const card = cards[Math.min(Math.max(idx, 0), cards.length - 1)] || {};
@@ -112,14 +114,14 @@ function FlashcardsDrill({ drill }: DrillProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
-          Card {idx + 1} / {cards.length}
+          {t("pathNode.drills.flashcards.count", { current: idx + 1, total: cards.length })}
         </div>
         <button
           type="button"
           className="underline underline-offset-4 hover:text-foreground"
           onClick={() => setShowBack((v) => !v)}
         >
-          {showBack ? "Show front" : "Show back"}
+          {showBack ? t("pathNode.drills.flashcards.showFront") : t("pathNode.drills.flashcards.showBack")}
         </button>
       </div>
 
@@ -143,7 +145,7 @@ function FlashcardsDrill({ drill }: DrillProps) {
           }}
           disabled={idx <= 0}
         >
-          Previous
+          {t("common.previous")}
         </Button>
         <Button
           onClick={() => {
@@ -152,7 +154,7 @@ function FlashcardsDrill({ drill }: DrillProps) {
           }}
           disabled={idx >= cards.length - 1}
         >
-          Next
+          {t("common.next")}
         </Button>
       </div>
     </div>
@@ -160,6 +162,7 @@ function FlashcardsDrill({ drill }: DrillProps) {
 }
 
 function QuizDrill({ drill }: DrillProps) {
+  const { t } = useI18n();
   const questions = Array.isArray(drill?.questions) ? drill.questions : [];
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -172,7 +175,7 @@ function QuizDrill({ drill }: DrillProps) {
   }, [drill]);
 
   if (questions.length === 0) {
-    return <div className="text-sm text-muted-foreground">No quiz generated.</div>;
+    return <div className="text-sm text-muted-foreground">{t("pathNode.drills.quiz.empty")}</div>;
   }
 
   const q = questions[Math.min(Math.max(idx, 0), questions.length - 1)] || {};
@@ -208,13 +211,13 @@ function QuizDrill({ drill }: DrillProps) {
     setRevealed(false);
   };
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div>
-          Question {idx + 1} / {questions.length}
-        </div>
-      </div>
+	  return (
+	    <div className="space-y-4">
+	      <div className="flex items-center justify-between text-xs text-muted-foreground">
+	        <div>
+	          {t("pathNode.drills.quiz.count", { current: idx + 1, total: questions.length })}
+	        </div>
+	      </div>
 
       <div className="rounded-xl border border-border bg-muted/30 p-4">
         <div className="text-[15px] leading-relaxed text-foreground/90">
@@ -232,7 +235,7 @@ function QuizDrill({ drill }: DrillProps) {
               type="button"
               onClick={() => select(opt.id)}
               className={cn(
-                "w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors",
+                "w-full text-start rounded-lg border px-3 py-2 text-sm transition-colors",
                 "border-border hover:bg-muted/40",
                 isCorrect && "border-success/50 bg-success/10",
                 isWrong && "border-destructive/50 bg-destructive/10"
@@ -244,38 +247,39 @@ function QuizDrill({ drill }: DrillProps) {
         })}
       </div>
 
-      {revealed ? (
-        <div className="rounded-xl border border-border bg-background p-4">
-          <div className="text-xs font-medium text-muted-foreground">Explanation</div>
-          <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{String(q.explanation_md ?? "")}</ReactMarkdown>
-          </div>
-        </div>
-      ) : null}
+	      {revealed ? (
+	        <div className="rounded-xl border border-border bg-background p-4">
+	          <div className="text-xs font-medium text-muted-foreground">{t("pathNode.drills.quiz.explanation")}</div>
+	          <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
+	            <ReactMarkdown remarkPlugins={[remarkGfm]}>{String(q.explanation_md ?? "")}</ReactMarkdown>
+	          </div>
+	        </div>
+	      ) : null}
 
       <div className="flex items-center justify-between pt-1">
-        <Button
-          variant="outline"
-          onClick={() => {
-            setIdx((v) => Math.max(0, v - 1));
-            setSelected(null);
-            setRevealed(false);
-          }}
-          disabled={idx <= 0}
-        >
-          Previous
-        </Button>
-        <Button onClick={next} disabled={idx >= questions.length - 1}>
-          Next
-        </Button>
-      </div>
-    </div>
-  );
-}
+	        <Button
+	          variant="outline"
+	          onClick={() => {
+	            setIdx((v) => Math.max(0, v - 1));
+	            setSelected(null);
+	            setRevealed(false);
+	          }}
+	          disabled={idx <= 0}
+	        >
+	          {t("common.previous")}
+	        </Button>
+	        <Button onClick={next} disabled={idx >= questions.length - 1}>
+	          {t("common.next")}
+	        </Button>
+	      </div>
+	    </div>
+	  );
+	}
 
 export default function PathNodePage() {
   const { id: nodeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { lastMessage, connected } = useSSEContext();
   const { user } = useUser();
   const { activatePath } = usePaths();
@@ -583,10 +587,10 @@ export default function PathNodePage() {
       ? "regen_media"
       : "rewrite";
 
-    if (action === "rewrite" && !String(regenInstruction || "").trim()) {
-      setRegenError("Add a short note about what should change.");
-      return;
-    }
+	    if (action === "rewrite" && !String(regenInstruction || "").trim()) {
+	      setRegenError(t("pathNode.regen.error.missingInstruction"));
+	      return;
+	    }
 
     setRegenSubmitting(true);
     setRegenError("");
@@ -609,12 +613,12 @@ export default function PathNodePage() {
       setPendingBlocks((prev) => ({ ...prev, [blockId]: jobId || true }));
       if (jobId) pendingJobsRef.current[jobId] = blockId;
       setRegenDialogOpen(false);
-    } catch (err) {
-      setRegenError(getErrorMessage(err, "Failed to enqueue regen"));
-    } finally {
-      setRegenSubmitting(false);
-    }
-  }, [nodeId, regenBlock, regenInstruction, regenPolicy]);
+	    } catch (err) {
+	      setRegenError(getErrorMessage(err, t("pathNode.regen.error.enqueueFailed")));
+	    } finally {
+	      setRegenSubmitting(false);
+	    }
+	  }, [nodeId, regenBlock, regenInstruction, regenPolicy, t]);
 
   const buildBlockContext = useCallback((block: DocBlock) => {
     if (!block) return "";
@@ -652,21 +656,23 @@ export default function PathNodePage() {
 
   const submitChat = useCallback(async () => {
     if (!chatBlock || !nodeId) return;
-    const question = String(chatQuestion || "").trim();
-    if (!question) {
-      setChatError("Add a question or point of confusion.");
-      return;
-    }
+	    const question = String(chatQuestion || "").trim();
+	    if (!question) {
+	      setChatError(t("pathNode.chat.error.missingQuestion"));
+	      return;
+	    }
     setChatSubmitting(true);
     setChatError("");
-    try {
-      const thread = await createChatThread({
-        title: `Doc block: ${String(chatBlock?.type || "note")}`,
-        pathId: node?.pathId ?? path?.id ?? null,
-      });
-      if (!thread?.id) {
-        throw new Error("Failed to create thread");
-      }
+	    try {
+	      const fallbackBlockType = t("pathNode.chat.threadTypeFallback");
+	      const blockType = String(chatBlock?.type || fallbackBlockType);
+	      const thread = await createChatThread({
+	        title: t("pathNode.chat.threadTitle", { type: blockType }),
+	        pathId: node?.pathId ?? path?.id ?? null,
+	      });
+	      if (!thread?.id) {
+	        throw new Error(t("pathNode.chat.error.createThreadFailed"));
+	      }
       const context = buildBlockContext(chatBlock);
       const prompt = [
         "We are reviewing a generated learning doc block.",
@@ -686,12 +692,12 @@ export default function PathNodePage() {
       if (chatBlock?.type) params.set("blockType", String(chatBlock.type));
       const qs = params.toString();
       navigate(`/chat/threads/${thread.id}${qs ? `?${qs}` : ""}`);
-    } catch (err) {
-      setChatError(getErrorMessage(err, "Failed to start chat"));
-    } finally {
-      setChatSubmitting(false);
-    }
-  }, [chatBlock, chatQuestion, nodeId, node?.pathId, path?.id, buildBlockContext, navigate]);
+	    } catch (err) {
+	      setChatError(getErrorMessage(err, t("pathNode.chat.error.startFailed")));
+	    } finally {
+	      setChatSubmitting(false);
+	    }
+	  }, [chatBlock, chatQuestion, nodeId, node?.pathId, path?.id, buildBlockContext, navigate, t]);
 
   const handleUndo = useCallback(
     async (block: DocBlock) => {
@@ -729,26 +735,26 @@ export default function PathNodePage() {
     [nodeId]
   );
 
-  const openDrill = useCallback(
-    async (kind: string, label?: string) => {
-      if (!nodeId) return;
-      setDrawerOpen(true);
-      setDrawerKind(kind);
-      setDrawerTitle(label || "Drill");
-      setDrawerLoading(true);
-      setDrawerError("");
-      setDrawerDrill(null);
-      try {
-        const out = await generateDrillForNode(nodeId, kind);
-        setDrawerDrill(out);
-      } catch (e) {
-        setDrawerError(getErrorMessage(e, "Failed to generate drill"));
-      } finally {
-        setDrawerLoading(false);
-      }
-    },
-    [nodeId]
-  );
+	  const openDrill = useCallback(
+	    async (kind: string, label?: string) => {
+	      if (!nodeId) return;
+	      setDrawerOpen(true);
+	      setDrawerKind(kind);
+	      setDrawerTitle(label || t("pathNode.drill.titleFallback"));
+	      setDrawerLoading(true);
+	      setDrawerError("");
+	      setDrawerDrill(null);
+	      try {
+	        const out = await generateDrillForNode(nodeId, kind);
+	        setDrawerDrill(out);
+	      } catch (e) {
+	        setDrawerError(getErrorMessage(e, t("pathNode.drill.error.generateFailed")));
+	      } finally {
+	        setDrawerLoading(false);
+	      }
+	    },
+	    [nodeId, t]
+	  );
 
   const drillPayload = drawerDrill && typeof drawerDrill === "object" ? drawerDrill : null;
 
@@ -756,19 +762,19 @@ export default function PathNodePage() {
     <div className="page-surface">
       <Container size="2xl" className="page-pad">
         <div className="mx-auto max-w-3xl">
-          <div className="mb-8 space-y-3">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}>
-                Back
-              </Button>
+	          <div className="mb-8 space-y-3">
+	            <div className="flex items-center gap-2">
+	              <Button variant="ghost" size="sm" onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}>
+	                {t("common.back")}
+	              </Button>
               {path?.title ? (
                 <div className="text-xs text-muted-foreground truncate">{path.title}</div>
               ) : null}
             </div>
 
-            <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground">
-              {node?.title || (loading ? "Loading node…" : "Node")}
-            </h1>
+	            <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground">
+	              {node?.title || (loading ? t("pathNode.loading") : t("pathNode.node"))}
+	            </h1>
 
             {conceptKeys.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 pt-1">
@@ -784,20 +790,20 @@ export default function PathNodePage() {
             ) : null}
           </div>
 
-          {err ? (
-            <div className="mb-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-              Failed to load node.
-            </div>
-          ) : null}
+	          {err ? (
+	            <div className="mb-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+	              {t("pathNode.loadFailed")}
+	            </div>
+	          ) : null}
 
-          {drills.length > 0 ? (
-            <div className="mb-8 rounded-2xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-foreground">Recommended drills</div>
-                  <div className="text-xs text-muted-foreground">Launch practice tools inline.</div>
-                </div>
-              </div>
+	          {drills.length > 0 ? (
+	            <div className="mb-8 rounded-2xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur">
+	              <div className="flex items-center justify-between gap-3">
+	                <div>
+	                  <div className="text-sm font-medium text-foreground">{t("pathNode.drills.recommended")}</div>
+	                  <div className="text-xs text-muted-foreground">{t("pathNode.drills.subtitle")}</div>
+	                </div>
+	              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {drills.map((d) => (
                   <Button
@@ -834,46 +840,46 @@ export default function PathNodePage() {
 
           <Separator className="my-10" />
 
-          <div className="text-xs text-muted-foreground">
-            Drills are generated on-demand and grounded in your uploaded materials.
-          </div>
-        </div>
-      </Container>
+	          <div className="text-xs text-muted-foreground">
+	            {t("pathNode.drills.helper")}
+	          </div>
+	        </div>
+	      </Container>
 
-      <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Regenerate block</DialogTitle>
-            <DialogDescription>
-              Describe what should change. The more specific, the better.
-            </DialogDescription>
-          </DialogHeader>
+	      <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
+	        <DialogContent>
+	          <DialogHeader>
+	            <DialogTitle>{t("pathNode.regen.dialog.title")}</DialogTitle>
+	            <DialogDescription>
+	              {t("pathNode.regen.dialog.description")}
+	            </DialogDescription>
+	          </DialogHeader>
 
           <div className="space-y-4">
-            <Textarea
-              value={regenInstruction}
-              onChange={(e) => setRegenInstruction(e.target.value)}
-              placeholder="What is unclear or should be improved?"
-              rows={5}
-            />
+	            <Textarea
+	              value={regenInstruction}
+	              onChange={(e) => setRegenInstruction(e.target.value)}
+	              placeholder={t("pathNode.regen.placeholder")}
+	              rows={5}
+	            />
             {String(regenBlock?.type || "").toLowerCase() !== "figure" &&
-            String(regenBlock?.type || "").toLowerCase() !== "video" ? (
-              <div className="space-y-1.5">
-                <div className="text-xs font-medium text-muted-foreground">Citations</div>
-                <Select
-                  value={regenPolicy}
-                  onValueChange={(value) => setRegenPolicy(value as "reuse_only" | "allow_new")}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Citation policy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="reuse_only">Reuse existing citations only</SelectItem>
-                    <SelectItem value="allow_new">Allow new sources from your materials</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
+	            String(regenBlock?.type || "").toLowerCase() !== "video" ? (
+	              <div className="space-y-1.5">
+	                <div className="text-xs font-medium text-muted-foreground">{t("pathNode.regen.citations.label")}</div>
+	                <Select
+	                  value={regenPolicy}
+	                  onValueChange={(value) => setRegenPolicy(value as "reuse_only" | "allow_new")}
+	                >
+	                  <SelectTrigger className="w-full">
+	                    <SelectValue placeholder={t("pathNode.regen.citations.placeholder")} />
+	                  </SelectTrigger>
+	                  <SelectContent>
+	                    <SelectItem value="reuse_only">{t("pathNode.regen.citations.reuseOnly")}</SelectItem>
+	                    <SelectItem value="allow_new">{t("pathNode.regen.citations.allowNew")}</SelectItem>
+	                  </SelectContent>
+	                </Select>
+	              </div>
+	            ) : null}
             {regenError ? (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 {regenError}
@@ -881,48 +887,48 @@ export default function PathNodePage() {
             ) : null}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRegenDialogOpen(false)} disabled={regenSubmitting}>
-              Cancel
-            </Button>
-            <Button onClick={submitRegen} disabled={regenSubmitting}>
-              {regenSubmitting ? "Submitting…" : "Regenerate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+	          <DialogFooter>
+	            <Button variant="outline" onClick={() => setRegenDialogOpen(false)} disabled={regenSubmitting}>
+	              {t("common.cancel")}
+	            </Button>
+	            <Button onClick={submitRegen} disabled={regenSubmitting}>
+	              {regenSubmitting ? t("common.submitting") : t("common.regenerate")}
+	            </Button>
+	          </DialogFooter>
+	        </DialogContent>
+	      </Dialog>
 
-      <Dialog open={chatDialogOpen} onOpenChange={(open) => !chatSubmitting && setChatDialogOpen(open)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Ask about this block</DialogTitle>
-            <DialogDescription>
-              Ask clarifying questions to refine what should change before regenerating.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Textarea
-              value={chatQuestion}
-              onChange={(e) => setChatQuestion(e.target.value)}
-              placeholder="What doesn’t make sense or what do you want changed?"
-              rows={5}
-            />
+	      <Dialog open={chatDialogOpen} onOpenChange={(open) => !chatSubmitting && setChatDialogOpen(open)}>
+	        <DialogContent>
+	          <DialogHeader>
+	            <DialogTitle>{t("pathNode.chat.dialog.title")}</DialogTitle>
+	            <DialogDescription>
+	              {t("pathNode.chat.dialog.description")}
+	            </DialogDescription>
+	          </DialogHeader>
+	          <div className="space-y-4">
+	            <Textarea
+	              value={chatQuestion}
+	              onChange={(e) => setChatQuestion(e.target.value)}
+	              placeholder={t("pathNode.chat.placeholder")}
+	              rows={5}
+	            />
             {chatError ? (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 {chatError}
               </div>
             ) : null}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setChatDialogOpen(false)} disabled={chatSubmitting}>
-              Cancel
-            </Button>
-            <Button onClick={submitChat} disabled={chatSubmitting}>
-              {chatSubmitting ? "Starting…" : "Start chat"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+	          <DialogFooter>
+	            <Button variant="outline" onClick={() => setChatDialogOpen(false)} disabled={chatSubmitting}>
+	              {t("common.cancel")}
+	            </Button>
+	            <Button onClick={submitChat} disabled={chatSubmitting}>
+	              {chatSubmitting ? t("common.starting") : t("pathNode.chat.start")}
+	            </Button>
+	          </DialogFooter>
+	        </DialogContent>
+	      </Dialog>
 
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent side="right" className="w-[92vw] sm:w-[520px]">
@@ -930,10 +936,10 @@ export default function PathNodePage() {
             <SheetTitle>{drawerTitle}</SheetTitle>
           </SheetHeader>
 
-          <div className="mt-4">
-            {drawerLoading ? (
-              <div className="text-sm text-muted-foreground">Generating…</div>
-            ) : drawerError ? (
+	          <div className="mt-4">
+	            {drawerLoading ? (
+	              <div className="text-sm text-muted-foreground">{t("common.generating")}</div>
+	            ) : drawerError ? (
               <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
                 {drawerError}
               </div>
@@ -942,12 +948,12 @@ export default function PathNodePage() {
                 {drawerKind === "flashcards" ? <FlashcardsDrill drill={drillPayload} /> : null}
                 {drawerKind === "quiz" ? <QuizDrill drill={drillPayload} /> : null}
               </>
-            ) : (
-              <div className="text-sm text-muted-foreground">No drill loaded.</div>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
+	            ) : (
+	              <div className="text-sm text-muted-foreground">{t("pathNode.drill.noneLoaded")}</div>
+	            )}
+	          </div>
+	        </SheetContent>
+	      </Sheet>
     </div>
   );
 }

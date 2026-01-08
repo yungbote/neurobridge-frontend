@@ -12,9 +12,12 @@ import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
 import { Bookmark, CheckCircle2, Clock, History, Home } from "lucide-react";
 import { Container } from "@/shared/layout/Container";
+import { Button } from "@/shared/ui/button";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { getLibraryTaxonomySnapshot } from "@/shared/api/LibraryService";
 import { getHomeSectionIcon } from "@/features/home/lib/homeSectionIcons";
 import { queryKeys } from "@/shared/query/queryKeys";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { HomeTabKey } from "@/features/home/components/HomeTabContent";
 import type { JobEventPayload, LibraryTaxonomySnapshotV1, SseMessage } from "@/shared/types/models";
 
@@ -32,6 +35,7 @@ function HomeTabTopicIcon({
   iconKey?: string;
   onReturnHome: () => void;
 }) {
+  const { t } = useI18n();
   const TopicIcon = getHomeSectionIcon(iconKey) ?? Home;
 
   return (
@@ -42,7 +46,7 @@ function HomeTabTopicIcon({
         onReturnHome();
       }}
       className="group/topic relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground"
-      title="Back to Home"
+      title={t("home.backToHome")}
     >
       <TopicIcon className="h-5 w-5 opacity-100 nb-motion-fast motion-reduce:transition-none group-hover/topic:opacity-0" />
       <Home className="absolute h-5 w-5 opacity-0 nb-motion-fast motion-reduce:transition-none group-hover/topic:opacity-100" />
@@ -51,9 +55,10 @@ function HomeTabTopicIcon({
 }
 
 export default function HomePage() {
-  const { isAuthenticated } = useAuth();
-  const { user, loading: userLoading } = useUser();
+  const { isAuthenticated, logout } = useAuth();
+  const { user, loading: userLoading, reload: reloadUser } = useUser();
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   const { paths, loading: pathsLoading } = usePaths();
   const { files: materialFiles, loading: materialsLoading } = useMaterials();
@@ -109,6 +114,16 @@ export default function HomePage() {
     },
     [activeTab, chatbarDocked, tabsDocked]
   );
+
+  const handleHomeTopicViewAll = useCallback((focus: HomeTopicFocus) => {
+    if (typeof window !== "undefined") {
+      homeTopicReturnScrollYRef.current = window.scrollY;
+    }
+    setHomeTopicFocus(focus);
+    requestAnimationFrame(() => {
+      homeContentTopRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+  }, []);
 
   // After tab change, restore dock state (runs synchronously before paint)
   useLayoutEffect(() => {
@@ -364,8 +379,48 @@ export default function HomePage() {
     return () => setChatbarDocked(false);
   }, [setChatbarDocked]);
 
-  if (!isAuthenticated || userLoading || !user) {
-    return null;
+  if (!isAuthenticated) return null;
+
+  if (userLoading) {
+    return (
+      <div className="page-surface">
+        <Container size="app" className="page-pad">
+          <div className="flex flex-col gap-3 items-center text-center">
+            <Skeleton className="h-12 w-[min(560px,85vw)] rounded-2xl bg-muted/30" />
+            <Skeleton className="h-5 w-[min(720px,92vw)] rounded-full bg-muted/30" />
+          </div>
+        </Container>
+        <Container size="app" className="page-pad">
+          <div className="space-y-4">
+            <Skeleton className="h-14 w-full rounded-3xl bg-muted/20" />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-36 w-full rounded-2xl bg-muted/20" />
+              ))}
+            </div>
+          </div>
+        </Container>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="page-surface">
+        <Container size="app" className="page-pad">
+          <div className="mx-auto max-w-xl space-y-4">
+            <div className="text-lg font-semibold text-foreground">{t("common.failed")}</div>
+            <div className="text-sm text-muted-foreground">{t("common.errorGeneric")}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => void reloadUser()}>{t("common.retry")}</Button>
+              <Button variant="outline" onClick={() => void logout()}>
+                {t("user.logout")}
+              </Button>
+            </div>
+          </div>
+        </Container>
+      </div>
+    );
   }
 
   const handleSubmit = (message: string) => {
@@ -395,33 +450,22 @@ export default function HomePage() {
             />
           ),
         }
-      : { id: "home", label: "Home" },
-    { id: "in-progress", label: "In Progress", icon: <Clock className="size-5" /> },
-    { id: "saved", label: "Saved", icon: <Bookmark className="size-5" /> },
-    { id: "completed", label: "Completed", icon: <CheckCircle2 className="size-5" /> },
-    { id: "recently-viewed", label: "Recently Viewed", icon: <History className="size-5" /> },
+      : { id: "home", label: t("nav.home") },
+    { id: "in-progress", label: t("home.tabs.inProgress"), icon: <Clock className="size-5" /> },
+    { id: "saved", label: t("home.tabs.saved"), icon: <Bookmark className="size-5" /> },
+    { id: "completed", label: t("home.tabs.completed"), icon: <CheckCircle2 className="size-5" /> },
+    { id: "recently-viewed", label: t("home.tabs.recentlyViewed"), icon: <History className="size-5" /> },
   ];
-
-  const handleHomeTopicViewAll = useCallback((focus: HomeTopicFocus) => {
-    if (typeof window !== "undefined") {
-      homeTopicReturnScrollYRef.current = window.scrollY;
-    }
-    setHomeTopicFocus(focus);
-    requestAnimationFrame(() => {
-      homeContentTopRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
-    });
-  }, []);
 
   return (
     <div className="page-surface">
       <Container size="app" className="page-pad">
         <div className="flex flex-col gap-3 items-center text-center">
           <h1 className="font-brand text-balance break-words text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Welcome, {firstName}.
+            {t("home.welcome", { name: firstName })}
           </h1>
           <p className="max-w-xl text-pretty text-base font-medium text-foreground/80 sm:text-lg">
-            Your workspace is ready. We&apos;ll keep adapting your resources and
-            recommendations as you learn.
+            {t("home.subtitle")}
           </p>
         </div>
       </Container>

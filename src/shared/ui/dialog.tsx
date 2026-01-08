@@ -59,7 +59,7 @@ const DialogContent = React.forwardRef<
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="ring-offset-background focus:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground absolute top-4 right-4 rounded-full p-1 opacity-70 transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-muted hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="ring-offset-background focus:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground absolute top-4 end-4 rounded-full p-1 opacity-70 transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-muted hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>
@@ -74,7 +74,7 @@ DialogContent.displayName = DialogPrimitive.Content.displayName;
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     data-slot="dialog-header"
-    className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+    className={cn("flex flex-col gap-2 text-center sm:text-start", className)}
     {...props}
   />
 );

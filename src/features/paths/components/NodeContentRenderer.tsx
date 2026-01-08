@@ -76,10 +76,10 @@ function markdownComponents({ compact = false }: { compact?: boolean } = {}): Co
       );
     },
     ul({ children }: { children?: React.ReactNode }) {
-      return <ul className="list-disc pl-5 space-y-2 text-foreground/90">{children}</ul>;
+      return <ul className="list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;
     },
     ol({ children }: { children?: React.ReactNode }) {
-      return <ol className="list-decimal pl-5 space-y-2 text-foreground/90">{children}</ol>;
+      return <ol className="list-decimal ps-5 space-y-2 text-foreground/90">{children}</ol>;
     },
     li({ children }: { children?: React.ReactNode }) {
       return <li className="leading-relaxed">{children}</li>;
@@ -182,7 +182,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
 
         if (kind === "paragraph") {
           return (
-            <div key={i} className="text-[15px] leading-relaxed text-foreground/90">
+            <div key={i} dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()}>
                 {md}
               </ReactMarkdown>
@@ -193,7 +193,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
         if (kind === "callout") {
           return (
             <div key={i} className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-              <div className="text-[15px] leading-relaxed text-foreground/90">
+              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()}>
                   {md}
                 </ReactMarkdown>
@@ -204,7 +204,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
 
         if (kind === "bullets") {
           return (
-            <ul key={i} className="list-disc pl-5 space-y-2">
+            <ul key={i} className="list-disc ps-5 space-y-2">
               {items.map((it, idx) => (
                 <li key={idx} className="text-[15px] leading-relaxed text-foreground/90">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents({ compact: true })}>
@@ -218,7 +218,7 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
 
         if (kind === "steps") {
           return (
-            <ol key={i} className="list-decimal pl-5 space-y-2">
+            <ol key={i} className="list-decimal ps-5 space-y-2">
               {items.map((it, idx) => (
                 <li key={idx} className="text-[15px] leading-relaxed text-foreground/90">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents({ compact: true })}>

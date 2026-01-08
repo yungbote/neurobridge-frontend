@@ -63,6 +63,7 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
 import { getAccessToken } from "@/shared/services/StorageService";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -258,6 +259,7 @@ export function AppSideBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { t } = useI18n();
   const { files: materialFiles, loading: materialFilesLoading } = useMaterials();
   const {
     paths,
@@ -514,11 +516,11 @@ export function AppSideBar() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon" className={sidebarGhost} asChild>
-                        <SidebarTrigger aria-label="Expand sidebar" style={{ cursor: "e-resize" }} />
+                        <SidebarTrigger aria-label={t("sidebar.expand")} style={{ cursor: "e-resize" }} />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="right" shortcut={sidebarShortcut}>
-                      Expand sidebar
+                      {t("sidebar.expand")}
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -526,9 +528,9 @@ export function AppSideBar() {
             ) : (
               <div className="group relative shrink-0 min-w-max">
                 <div className="transition-opacity duration-150 opacity-100 group-hover:opacity-0">
-                  <Tooltip>
+                    <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className={sidebarGhost} asChild aria-label="Neurobridge">
+                      <Button variant="ghost" size="icon" className={sidebarGhost} asChild aria-label={t("nav.goHome")}>
                         <div className="flex items-center justify-center">
                           <AppLogo className="shrink-0" />
                         </div>
@@ -541,11 +543,11 @@ export function AppSideBar() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon" className={sidebarGhost} asChild>
-                        <SidebarTrigger aria-label="Expand sidebar" style={{ cursor: "e-resize" }} />
+                        <SidebarTrigger aria-label={t("sidebar.expand")} style={{ cursor: "e-resize" }} />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="right" shortcut={sidebarShortcut}>
-                      Expand sidebar
+                      {t("sidebar.expand")}
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -562,7 +564,7 @@ export function AppSideBar() {
                     variant="ghost"
                     size="icon"
                     className={sidebarGhost}
-                    aria-label={`Switch path (${pathLabel(activePath)})`}
+                    aria-label={t("sidebar.switchPath.aria", { title: pathLabel(activePath) })}
                   >
                     <div className="flex items-center justify-center" style={{ cursor: "pointer" }}>
                       <span
@@ -598,7 +600,7 @@ export function AppSideBar() {
                   className="w-[264px] overflow-hidden p-2"
                 >
                   <div className="px-2 pb-2 text-xs font-medium text-muted-foreground">
-                    Switch path
+                    {t("sidebar.switchPath")}
                   </div>
                   <div className="scrollbar-none grid max-h-[240px] grid-cols-5 justify-items-center gap-2 overflow-y-auto px-1 pb-1">
                     <DropdownMenuItem
@@ -608,7 +610,7 @@ export function AppSideBar() {
                         clearActivePath();
                         navigate(lastNormalRouteRef.current || "/");
                       }}
-                      aria-label="Return to Neurobridge"
+                      aria-label={t("nav.goHome")}
                     >
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -636,7 +638,7 @@ export function AppSideBar() {
                               });
                               navigate(`/paths/${p.id}`);
                             }}
-                            aria-label={`Switch to ${name}`}
+                            aria-label={t("sidebar.switchTo", { title: name })}
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -664,9 +666,9 @@ export function AppSideBar() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Tooltip>
+                <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className={sidebarGhost} asChild aria-label="Neurobridge">
+                  <Button variant="ghost" size="icon" className={sidebarGhost} asChild aria-label={t("nav.goHome")}>
                     <div className="flex items-center justify-center" style={{ cursor: "pointer" }}>
                       <AppLogo className="shrink-0" />
                     </div>
@@ -678,11 +680,14 @@ export function AppSideBar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className={sidebarGhost} asChild>
-                  <SidebarTrigger aria-label="Collapse sidebar" style={{ cursor: "w-resize" }} />
+                  <SidebarTrigger
+                    aria-label={t("sidebar.collapse")}
+                    style={{ cursor: "w-resize" }}
+                  />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" shortcut={sidebarShortcut}>
-                Collapse sidebar
+                {t("sidebar.collapse")}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -702,7 +707,7 @@ export function AppSideBar() {
                     onClick={() => setYourLessonsOpen((v) => !v)}
                     className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
                   >
-                    <span>Your lessons</span>
+                    <span>{t("sidebar.yourLessons")}</span>
                     <ChevronDown
                       aria-hidden="true"
                       className={cn(
@@ -739,7 +744,7 @@ export function AppSideBar() {
                         ) : lessons.length === 0 ? (
                           <SidebarMenuSubItem>
                             <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-                              No lessons yet
+                              {t("sidebar.emptyLessons")}
                             </div>
                           </SidebarMenuSubItem>
                         ) : (
@@ -754,7 +759,7 @@ export function AppSideBar() {
                                   <SidebarMenuSubButton
                                     asChild
                                     isActive={isActive}
-                                    className="flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
+                                    className="flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
                                   >
                                     <Link
                                       to={`/path-nodes/${n.id}`}
@@ -803,7 +808,7 @@ export function AppSideBar() {
                     onClick={() => setYourFilesOpen((v) => !v)}
                     className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
                   >
-                    <span>Your files</span>
+                    <span>{t("sidebar.yourFiles")}</span>
                     <ChevronDown
                       aria-hidden="true"
                       className={cn(
@@ -867,7 +872,7 @@ export function AppSideBar() {
                                   <SidebarMenuSubButton
                                     asChild
                                     className={cn(
-                                      "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                      "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground",
                                       !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground"
                                     )}
                                   >
@@ -951,7 +956,7 @@ export function AppSideBar() {
                     onClick={() => setYourChatsOpen((v) => !v)}
                     className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
                   >
-                    <span>Your chats</span>
+                    <span>{t("sidebar.yourChats")}</span>
                     <ChevronDown
                       aria-hidden="true"
                       className={cn(
@@ -992,13 +997,13 @@ export function AppSideBar() {
                             </div>
                           </SidebarMenuSubItem>
                         ) : (
-                          chatThreads.map((t) => {
-                            const isActive = currentThreadId != null && String(currentThreadId) === String(t.id);
-                            const actionKey = `chat:${t.id}`;
+                          chatThreads.map((thread) => {
+                            const isActive = currentThreadId != null && String(currentThreadId) === String(thread.id);
+                            const actionKey = `chat:${thread.id}`;
                             const isActionHover = actionHoverId === actionKey;
                             return (
                               <SidebarMenuSubItem
-                                key={t.id}
+                                key={thread.id}
                                 style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
                               >
                                 <div
@@ -1011,16 +1016,19 @@ export function AppSideBar() {
                                     asChild
                                     isActive={isActive}
                                     className={cn(
-                                      "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                      "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground",
                                       !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
                                       isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
                                     )}
                                   >
-                                    <Link to={`/chat/threads/${t.id}`} aria-label={`Open ${t.title}`}>
+                                    <Link
+                                      to={`/chat/threads/${thread.id}`}
+                                      aria-label={t("sidebar.chats.open", { title: thread.title })}
+                                    >
                                       <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
                                         <MessageSquare className="h-4 w-4" />
                                       </span>
-                                      <span className="truncate">{t.title}</span>
+                                      <span className="truncate">{thread.title}</span>
                                     </Link>
                                   </SidebarMenuSubButton>
                                   <DropdownMenu>
@@ -1036,7 +1044,7 @@ export function AppSideBar() {
                                           "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
                                           "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                                         )}
-                                        aria-label={`Open chat actions for ${t.title}`}
+                                        aria-label={t("sidebar.chats.actions", { title: thread.title })}
                                         onMouseEnter={() => setActionHoverId(actionKey)}
                                         onMouseLeave={() => setActionHoverId(null)}
                                         onFocus={() => setActionHoverId(actionKey)}
@@ -1047,11 +1055,11 @@ export function AppSideBar() {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" side="right" className="w-56">
                                       <DropdownMenuItem
-                                        onSelect={() => navigate(`/chat/threads/${t.id}`)}
+                                        onSelect={() => navigate(`/chat/threads/${thread.id}`)}
                                         className="gap-2"
                                       >
                                         <MessageSquare className="h-4 w-4" />
-                                        Open chat
+                                        {t("sidebar.openChat")}
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
@@ -1073,49 +1081,49 @@ export function AppSideBar() {
                 "sticky top-0 z-20 bg-sidebar/95 backdrop-blur-sm pt-4",
                 !isCollapsed && "-mx-3 px-3"
               )}>
-	              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-	              <SidebarMenu className={cn(isCollapsed ? "items-center gap-2.5" : "gap-2.5")}>
-	                <SidebarMenuItem>
+		              <SidebarGroupLabel>{t("sidebar.navigation")}</SidebarGroupLabel>
+		              <SidebarMenu className={cn(isCollapsed ? "items-center gap-2.5" : "gap-2.5")}>
+		                <SidebarMenuItem>
+		                  <SidebarMenuButton
+	                    asChild
+	                    isActive={activeTab === "home"}
+	                    tooltip={t("nav.home")}
+	                    tooltipShortcut={homeShortcut}
+	                  >
+	                    <Link to="/" aria-label={t("nav.home")}>
+	                      <Home />
+	                      <span>{t("nav.home")}</span>
+	                    </Link>
+	                  </SidebarMenuButton>
+	                </SidebarMenuItem>
+
+                <SidebarMenuItem>
 	                  <SidebarMenuButton
-                    asChild
-                    isActive={activeTab === "home"}
-                    tooltip="Home"
-                    tooltipShortcut={homeShortcut}
-                  >
-                    <Link to="/" aria-label="Home">
-                      <Home />
-                      <span>Home</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+	                    asChild
+	                    isActive={activeTab === "paths"}
+	                    tooltip={t("nav.paths")}
+	                    tooltipShortcut={pathsShortcut}
+	                  >
+	                    <Link to="/paths" aria-label={t("nav.paths")}>
+	                      <Library />
+	                      <span>{t("nav.paths")}</span>
+	                    </Link>
+	                  </SidebarMenuButton>
+	                </SidebarMenuItem>
 
                 <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={activeTab === "paths"}
-                    tooltip="Paths"
-                    tooltipShortcut={pathsShortcut}
-                  >
-                    <Link to="/paths" aria-label="Paths">
-                      <Library />
-                      <span>Paths</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={activeTab === "files"}
-                    tooltip="Files"
-                    tooltipShortcut={filesShortcut}
-                  >
-                    <Link to="/files" aria-label="Files">
-                      <Files />
-                      <span>Files</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+	                  <SidebarMenuButton
+	                    asChild
+	                    isActive={activeTab === "files"}
+	                    tooltip={t("nav.files")}
+	                    tooltipShortcut={filesShortcut}
+	                  >
+	                    <Link to="/files" aria-label={t("nav.files")}>
+	                      <Files />
+	                      <span>{t("nav.files")}</span>
+	                    </Link>
+	                  </SidebarMenuButton>
+	                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroup>
 
@@ -1130,7 +1138,7 @@ export function AppSideBar() {
 	                      onClick={() => setYourPathsOpen((v) => !v)}
 	                      className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
 	                    >
-	                      <span>Your paths</span>
+	                      <span>{t("sidebar.yourPaths")}</span>
 	                      <ChevronDown
 	                        aria-hidden="true"
 	                        className={cn(
@@ -1164,22 +1172,22 @@ export function AppSideBar() {
 	                          <SidebarMenuSkeleton showIcon />
                         </SidebarMenuSubItem>
                       ))
-                    ) : !hasAnySidebarPaths ? (
-                      <SidebarMenuSubItem>
-                        <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-                          No paths yet
-                        </div>
-                      </SidebarMenuSubItem>
-                    ) : (
-                      <>
-                        {generatingPaths.length > 0 && (
-                          <>
-                            <SidebarMenuSubItem className="pl-2 -mb-1">
-                              <div className="flex h-7 items-center gap-2 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
-                                <CornerDownRight className="h-4 w-4 text-sidebar-foreground/50" aria-hidden="true" />
-                                <span>Generating</span>
-                              </div>
-                            </SidebarMenuSubItem>
+	                    ) : !hasAnySidebarPaths ? (
+	                      <SidebarMenuSubItem>
+	                        <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
+	                          {t("sidebar.emptyPaths")}
+	                        </div>
+	                      </SidebarMenuSubItem>
+	                    ) : (
+	                      <>
+	                        {generatingPaths.length > 0 && (
+	                          <>
+                            <SidebarMenuSubItem className="ps-2 -mb-1">
+	                              <div className="flex h-7 items-center gap-2 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+	                                <CornerDownRight className="h-4 w-4 text-sidebar-foreground/50" aria-hidden="true" />
+	                                <span>{t("home.sections.generating")}</span>
+	                              </div>
+	                            </SidebarMenuSubItem>
 
                             {generatingPaths.map((p) => {
                               const coverUrl = getPathAvatarUrl(p);
@@ -1195,7 +1203,7 @@ export function AppSideBar() {
                               return (
                                 <SidebarMenuSubItem
                                   key={p.id}
-                                  className="pl-2"
+                                  className="ps-2"
                                   style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
                                 >
                                   <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
@@ -1205,7 +1213,7 @@ export function AppSideBar() {
                                       isActive={currentPathId === p.id}
                                       aria-disabled={!href}
                                       className={cn(
-                                        "flex-1 pl-9 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                        "flex-1 ps-9 pe-2 hover:bg-transparent hover:text-sidebar-foreground",
                                         "group-hover/menu-sub-item:text-sidebar-accent-foreground",
                                         !href && "cursor-default opacity-80"
                                       )}
@@ -1301,7 +1309,7 @@ export function AppSideBar() {
                                   asChild
                                   isActive={currentPathId === p.id}
                                   className={cn(
-                                    "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                    "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground",
                                     !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
                                     isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
                                   )}
@@ -1396,7 +1404,7 @@ export function AppSideBar() {
 	                      onClick={() => setYourFilesOpen((v) => !v)}
 	                      className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
 	                    >
-	                      <span>Your files</span>
+	                      <span>{t("sidebar.yourFiles")}</span>
 	                      <ChevronDown
 	                        aria-hidden="true"
 	                        className={cn(
@@ -1433,7 +1441,7 @@ export function AppSideBar() {
                     ) : visibleFiles.length === 0 ? (
                       <SidebarMenuSubItem>
                         <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-                          No files yet
+                          {t("sidebar.emptyFiles")}
                         </div>
                       </SidebarMenuSubItem>
                     ) : (
@@ -1460,7 +1468,7 @@ export function AppSideBar() {
                               <SidebarMenuSubButton
                                 asChild
                                 className={cn(
-                                  "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+                                  "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground",
                                   !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground"
                                 )}
                               >
@@ -1544,7 +1552,7 @@ export function AppSideBar() {
 		                      onClick={() => setYourChatsOpen((v) => !v)}
 		                      className="w-full gap-1.5 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
 		                    >
-		                      <span>Your chats</span>
+		                      <span>{t("sidebar.yourChats")}</span>
 		                      <ChevronDown
 		                        aria-hidden="true"
 		                        className={cn(
@@ -1581,17 +1589,17 @@ export function AppSideBar() {
 		                          ) : chatThreads.length === 0 ? (
 		                            <SidebarMenuSubItem>
 		                              <div className="px-3 py-2 text-xs text-sidebar-foreground/50">
-		                                No chats yet
+		                                {t("sidebar.emptyChats")}
 		                              </div>
 		                            </SidebarMenuSubItem>
 		                          ) : (
-		                            chatThreads.map((t) => {
-		                              const isActive = currentThreadId != null && String(currentThreadId) === String(t.id);
-		                              const actionKey = `chat:${t.id}`;
+		                            chatThreads.map((thread) => {
+		                              const isActive = currentThreadId != null && String(currentThreadId) === String(thread.id);
+		                              const actionKey = `chat:${thread.id}`;
 		                              const isActionHover = actionHoverId === actionKey;
 		                              return (
 		                                <SidebarMenuSubItem
-		                                  key={t.id}
+		                                  key={thread.id}
 		                                  style={{ contentVisibility: "auto", containIntrinsicSize: "44px" }}
 		                                >
 		                                  <div
@@ -1604,16 +1612,19 @@ export function AppSideBar() {
 		                                      asChild
 		                                      isActive={isActive}
 		                                      className={cn(
-		                                        "flex-1 pr-2 hover:bg-transparent hover:text-sidebar-foreground",
+		                                        "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground",
 		                                        !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
 		                                        isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
 		                                      )}
 		                                    >
-		                                      <Link to={`/chat/threads/${t.id}`} aria-label={`Open ${t.title}`}>
+		                                      <Link
+		                                        to={`/chat/threads/${thread.id}`}
+		                                        aria-label={t("sidebar.chats.open", { title: thread.title })}
+		                                      >
 		                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
 		                                          <MessageSquare className="h-4 w-4" />
 		                                        </span>
-		                                        <span className="truncate">{t.title}</span>
+		                                        <span className="truncate">{thread.title}</span>
 		                                      </Link>
 		                                    </SidebarMenuSubButton>
 		                                    <DropdownMenu>
@@ -1629,7 +1640,7 @@ export function AppSideBar() {
 		                                            "group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100",
 		                                            "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
 		                                          )}
-		                                          aria-label={`Open chat actions for ${t.title}`}
+		                                          aria-label={t("sidebar.chats.actions", { title: thread.title })}
 		                                          onMouseEnter={() => setActionHoverId(actionKey)}
 		                                          onMouseLeave={() => setActionHoverId(null)}
 		                                          onFocus={() => setActionHoverId(actionKey)}
@@ -1640,11 +1651,11 @@ export function AppSideBar() {
 		                                      </DropdownMenuTrigger>
 		                                      <DropdownMenuContent align="end" side="right" className="w-56">
 		                                        <DropdownMenuItem
-		                                          onSelect={() => navigate(`/chat/threads/${t.id}`)}
+		                                          onSelect={() => navigate(`/chat/threads/${thread.id}`)}
 		                                          className="gap-2"
 		                                        >
 		                                          <MessageSquare className="h-4 w-4" />
-		                                          Open chat
+		                                          {t("sidebar.openChat")}
 		                                        </DropdownMenuItem>
 		                                      </DropdownMenuContent>
 		                                    </DropdownMenu>

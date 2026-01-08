@@ -8,9 +8,11 @@ import { Container } from "@/shared/layout/Container";
 import type { MaterialFile } from "@/shared/types/models";
 import { MaterialCardLarge } from "@/features/files/components/MaterialCardLarge";
 import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 export default function FilesPage() {
   const { files, loading } = useMaterials();
+  const { t } = useI18n();
 
   const visible = useMemo(() => {
     const sorted = (files || []).slice().sort((a: MaterialFile, b: MaterialFile) => {
@@ -26,19 +28,19 @@ export default function FilesPage() {
       <Container size="app" className="page-pad">
         <div className="mb-10 space-y-3">
           <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Your files
+            {t("sidebar.yourFiles")}
           </h1>
           <p className="text-pretty text-sm text-muted-foreground sm:text-base">
-            Open original uploads in a new tab.
+            {t("files.subtitle")}
           </p>
         </div>
 
         {loading && visible.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Loading files…</div>
+          <div className="text-sm text-muted-foreground">{t("files.loading")}</div>
         ) : visible.length === 0 ? (
           <EmptyContent
-            title="No files yet"
-            message="Upload materials to see your files here."
+            title={t("sidebar.emptyFiles")}
+            message={t("files.empty.message")}
             icon={<Files className="h-7 w-7" />}
           />
         ) : (

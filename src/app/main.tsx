@@ -4,6 +4,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { domAnimation, LazyMotion, MotionConfig } from "framer-motion";
 import { ViewportProvider } from "@/app/providers/ViewportProvider";
 import { ThemeProvider, ThemeSync } from "@/app/providers/ThemeProvider";
+import { I18nProvider } from "@/app/providers/I18nProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
 import { HomeChatbarDockProvider } from "@/app/providers/HomeChatbarDockProvider";
 import { SSEGate } from "@/app/providers/SSEProvider";
@@ -40,24 +41,26 @@ createRoot(rootElement).render(
     <LazyMotion features={domAnimation}>
       <MotionConfig reducedMotion="user" transition={nbMotion.transition}>
         <ViewportProvider>
-          <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
-            <AuthProvider>
-              <SSEGate>
-                <UserProvider>
-                  <ThemeSync />
-                  <PathProvider>
-                    <MaterialProvider>
-                      <LessonProvider>
-                        <HomeChatbarDockProvider>
-                          <App />
-                        </HomeChatbarDockProvider>
-                      </LessonProvider>
-                    </MaterialProvider>
-                  </PathProvider>
-                </UserProvider>
-              </SSEGate>
-            </AuthProvider>
-          </ThemeProvider>
+          <I18nProvider>
+            <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
+              <AuthProvider>
+                <SSEGate>
+                  <UserProvider>
+                    <ThemeSync />
+                    <PathProvider>
+                      <MaterialProvider>
+                        <LessonProvider>
+                          <HomeChatbarDockProvider>
+                            <App />
+                          </HomeChatbarDockProvider>
+                        </LessonProvider>
+                      </MaterialProvider>
+                    </PathProvider>
+                  </UserProvider>
+                </SSEGate>
+              </AuthProvider>
+            </ThemeProvider>
+          </I18nProvider>
         </ViewportProvider>
       </MotionConfig>
     </LazyMotion>

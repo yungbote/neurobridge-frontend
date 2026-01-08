@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/shared/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from "@/shared/ui/field";
 import { Input } from "@/shared/ui/input";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 function splitName(fullName: string) {
   const trimmed = fullName.trim();
@@ -28,23 +29,25 @@ interface SignupDialogProps extends React.ComponentPropsWithoutRef<typeof Dialog
 
 export function SignupDialog({
   className,
-  triggerLabel = "Sign up",
+  triggerLabel,
   onSwitchToLogin,
   ...props
 }: SignupDialogProps) {
   const { register, loginWithApple, loginWithGoogle } = useAuth();
+  const { t } = useI18n();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const resolvedTriggerLabel = triggerLabel ?? t("auth.signup");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError(t("auth.signup.error.passwordMismatch"));
       return;
     }
     const { first_name, last_name } = splitName(fullName);
@@ -55,7 +58,7 @@ export function SignupDialog({
       });
     } catch (err) {
       console.error("[SignupDialog] Signup failed:", err);
-      setError("Signup failed. Please check your details and try again");
+      setError(t("auth.signup.error.generic"));
     } finally {
       setSubmitting(false);
     }
@@ -71,8 +74,8 @@ export function SignupDialog({
       const msg = err instanceof Error ? err.message : "";
       setError(
         msg
-          ? `Apple sign in failed (${msg}). Check your Apple Service ID / redirect URI.`
-          : "Apple sign up failed. Please try again."
+          ? t("auth.apple.error.withMessage", { msg })
+          : t("auth.apple.error.signup")
       );
     } finally {
       setSubmitting(false);
@@ -90,8 +93,8 @@ export function SignupDialog({
       const origin = window.location.origin;
       setError(
         msg
-          ? `Google sign in failed (${msg}). If running locally, add ${origin} to Google OAuth Authorized JavaScript origins.`
-          : "Google sign up failed. Please try again."
+          ? t("auth.google.error.withMessage", { msg, origin })
+          : t("auth.google.error.signup")
       );
     } finally {
       setSubmitting(false);
@@ -101,16 +104,16 @@ export function SignupDialog({
   return (
     <Dialog {...props}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="rounded-3xl">{triggerLabel}</Button>
+        <Button variant="outline" className="rounded-3xl">{resolvedTriggerLabel}</Button>
       </DialogTrigger>
 
       <DialogContent className={cn("max-w-md", className)}>
         <div className="flex flex-col gap-6">
           <Card className="bg-transparent border-none shadow-none">
             <CardHeader className="text-center">
-              <CardTitle className="text-xl">Create your account</CardTitle>
+              <CardTitle className="text-xl">{t("auth.signup.title")}</CardTitle>
               <CardDescription>
-                Enter your details below to create your account
+                {t("auth.signup.subtitle")}
               </CardDescription>
             </CardHeader>
 
@@ -122,10 +125,10 @@ export function SignupDialog({
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                         <path
                           d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
-                          fill="currentColor"
+                      fill="currentColor"
                         />
                       </svg>
-                      Sign up with Apple
+                      {t("auth.signup.withApple")}
                     </Button>
 
                     <Button variant="outline" type="button" onClick={handleSignupWithGoogle} disabled={submitting} className="w-full justify-center gap-2">
@@ -135,42 +138,42 @@ export function SignupDialog({
                           fill="currentColor"
                         />
                       </svg>
-                      Sign up with Google
+                      {t("auth.signup.withGoogle")}
                     </Button>
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="fullName">Full Name</FieldLabel>
-                    <Input id="fullName" type="text" placeholder="John Doe" required value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={submitting} />
+                    <FieldLabel htmlFor="fullName">{t("auth.fullName")}</FieldLabel>
+                    <Input id="fullName" type="text" placeholder={t("auth.fullName.placeholder")} required value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={submitting} />
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="email">Email</FieldLabel>
-                    <Input id="email" type="email" placeholder="me@example.com" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting} />
+                    <FieldLabel htmlFor="email">{t("auth.email")}</FieldLabel>
+                    <Input id="email" type="email" placeholder={t("auth.email.placeholder")} required value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting} />
                   </Field>
 
                   <Field>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <Field>
-                        <FieldLabel htmlFor="password">Password</FieldLabel>
+                        <FieldLabel htmlFor="password">{t("auth.password")}</FieldLabel>
                         <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={submitting} />
                       </Field>
                       <Field>
-                        <FieldLabel htmlFor="confirm-password">Confirm Password</FieldLabel>
+                        <FieldLabel htmlFor="confirm-password">{t("auth.confirmPassword")}</FieldLabel>
                         <Input id="confirm-password" type="password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={submitting} />
                       </Field>
                     </div>
-                    <FieldDescription>Must be at least 8 characters long </FieldDescription>
+                    <FieldDescription>{t("auth.password.requirements")}</FieldDescription>
                   </Field>
 
                   <Field>
                     <Button type="submit" disabled={submitting} className="w-full">
-                      {submitting ? "Creating account..." : "Create Account"}
+                      {submitting ? t("auth.signup.submitting") : t("auth.signup.action")}
                     </Button>
                     <FieldDescription className="mt-2 text-center">
-                      Already have an account?{" "}
+                      {t("auth.signup.haveAccount")}{" "}
                       <button type="button" className="underline underline-offset-4" onClick={() => { onSwitchToLogin?.(); }}>
-                        Sign in
+                        {t("auth.signin")}
                       </button>
                     </FieldDescription>
                   </Field>
@@ -188,13 +191,13 @@ export function SignupDialog({
           </Card>
 
           <FieldDescription className="px-6 text-center text-xs">
-            By clicking continue, you agree to our {" "}
+            {t("auth.legal.prefix")}{" "}
             <a href="#" className="underline underline-offset-4">
-              Terms of Service
+              {t("auth.legal.terms")}
             </a>{" "}
-            and{" "}
+            {t("auth.legal.and")}{" "}
             <a href="#" className="underline underline-offset-4">
-              Privacy Policy
+              {t("auth.legal.privacy")}
             </a>
             .
           </FieldDescription>
@@ -203,6 +206,5 @@ export function SignupDialog({
     </Dialog>
   );
 }
-
 
 

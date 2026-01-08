@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "@/app/providers/ThemeProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import { useUser } from "@/app/providers/UserProvider";
+import { buildPlannedLanguageOptions, catalogKeyForLocale } from "@/shared/i18n/languages";
 import { UI_THEME_OPTIONS } from "@/shared/theme/uiThemes";
-import { X, Settings, Bell, Smile, User, Check, type LucideIcon } from "lucide-react";
+import { X, Settings, Bell, Smile, User, Check, ChevronDown, Search, type LucideIcon } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
-import { Dialog, DialogContent } from "@/shared/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Separator } from "@/shared/ui/separator";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/shared/ui/accordion";
@@ -23,6 +26,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: SettingsDialogProps) {
   const { theme, setTheme, uiTheme, setUiTheme } = useTheme();
   const { user, changeTheme, changeUiTheme } = useUser();
+  const { t } = useI18n();
   const currentTheme = (user?.preferredTheme ?? theme) as ThemePreference;
   const currentUiTheme = (user?.preferredUiTheme ?? uiTheme) as UiTheme;
 
@@ -34,17 +38,17 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
 
   const navItems = useMemo(
     (): Array<{ id: SettingsTab; label: string; icon: LucideIcon }> => [
-      { id: "general", label: "General", icon: Settings },
-      { id: "notifications", label: "Notifications", icon: Bell },
-      { id: "personalization", label: "Personalization", icon: Smile },
-      { id: "account", label: "Account", icon: User },
+      { id: "general", label: t("settings.general"), icon: Settings },
+      { id: "notifications", label: t("settings.notifications"), icon: Bell },
+      { id: "personalization", label: t("settings.personalization"), icon: Smile },
+      { id: "account", label: t("settings.account"), icon: User },
     ],
-    []
+    [t]
   );
 
   const title = useMemo(() => {
     const found = navItems.find((n) => n.id === activeTab);
-    return found?.label ?? "Settings";
+    return found?.label ?? t("settings.title");
   }, [activeTab, navItems]);
 
   return (
@@ -66,7 +70,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               size="icon"
               className="rounded-xl hover:bg-muted/60"
               onClick={() => onOpenChange?.(false)}
-              label="Close settings"
+              label={t("settings.close")}
               shortcut="Esc"
             >
               <X className="size-5 text-foreground/80" />
@@ -98,13 +102,13 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
           </div>
 
           {/* Desktop sidebar */}
-          <div className="hidden w-64 shrink-0 bg-muted/30 border-r border-border/60 p-3 sm:flex sm:flex-col">
+          <div className="hidden w-64 shrink-0 bg-muted/30 border-e border-border/60 p-3 sm:flex sm:flex-col">
             <IconButton
               variant="ghost"
               size="icon"
               className="self-start mb-4 rounded-xl hover:bg-muted/60"
               onClick={() => onOpenChange?.(false)}
-              label="Close settings"
+              label={t("settings.close")}
               shortcut="Esc"
             >
               <X className="size-5 text-foreground/80" />
@@ -158,9 +162,9 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                   }}
                 />
               )}
-              {activeTab === "notifications" && <PlaceholderTab label="Notifications" />}
+              {activeTab === "notifications" && <PlaceholderTab label={t("settings.notifications")} />}
               {activeTab === "personalization" && <PersonalizationTab />}
-              {activeTab === "account" && <PlaceholderTab label="Account" />}
+              {activeTab === "account" && <PlaceholderTab label={t("settings.account")} />}
             </div>
           </div>
         </div>
@@ -177,28 +181,67 @@ interface GeneralTabProps {
 }
 
 function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiTheme }: GeneralTabProps) {
+  const { t, localePreference, locale, setLocalePreference, languageOptions } = useI18n();
   const [uiThemeOpen, setUiThemeOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const [langQuery, setLangQuery] = useState("");
   const currentUiOption = useMemo(
     () => UI_THEME_OPTIONS.find((option) => option.id === currentUiTheme) ?? UI_THEME_OPTIONS[0],
     [currentUiTheme]
   );
+  const plannedLanguageOptions = useMemo(() => buildPlannedLanguageOptions(locale), [locale]);
+
+  const currentLanguageLabel = useMemo(() => {
+    const tag = localePreference === "auto" ? locale : String(localePreference);
+    const normalized = String(tag).trim();
+    const exact = languageOptions.find((o) => o.tag.toLowerCase() === normalized.toLowerCase());
+    const catalogKey = catalogKeyForLocale(normalized);
+    const byCatalogKey = catalogKey ? languageOptions.find((o) => o.tag.toLowerCase() === catalogKey.toLowerCase()) : undefined;
+    const base = exact?.label || byCatalogKey?.label || normalized;
+    if (localePreference === "auto") return `${t("settings.language.auto")} • ${base}`;
+    return base;
+  }, [languageOptions, locale, localePreference, t]);
+
+  const filteredAvailableLanguages = useMemo(() => {
+    const q = langQuery.trim().toLowerCase();
+    if (!q) return languageOptions;
+    return languageOptions.filter((o) => {
+      return (
+        o.tag.toLowerCase().includes(q) ||
+        o.label.toLowerCase().includes(q) ||
+        o.nativeLabel.toLowerCase().includes(q)
+      );
+    });
+  }, [langQuery, languageOptions]);
+
+  const filteredPlannedLanguages = useMemo(() => {
+    const q = langQuery.trim().toLowerCase();
+    if (!q) return plannedLanguageOptions;
+    return plannedLanguageOptions.filter((o) => {
+      return (
+        o.tag.toLowerCase().includes(q) ||
+        o.label.toLowerCase().includes(q) ||
+        o.nativeLabel.toLowerCase().includes(q)
+      );
+    });
+  }, [langQuery, plannedLanguageOptions]);
 
   return (
     <div className="space-y-6">
       <div className="space-y-5 pb-6 border-b border-border/60">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-sm font-medium text-foreground">Mode</div>
-            <div className="text-xs text-muted-foreground">Light, dark, or system.</div>
+            <div className="text-sm font-medium text-foreground">{t("settings.mode.label")}</div>
+            <div className="text-xs text-muted-foreground">{t("settings.mode.help")}</div>
           </div>
           <Select value={currentTheme} onValueChange={onChangeTheme}>
             <SelectTrigger className="w-32 border-0 bg-transparent hover:bg-muted rounded-xl">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="light">Light</SelectItem>
-              <SelectItem value="dark">Dark</SelectItem>
-              <SelectItem value="system">System</SelectItem>
+              <SelectItem value="light">{t("settings.mode.light")}</SelectItem>
+              <SelectItem value="dark">{t("settings.mode.dark")}</SelectItem>
+              <SelectItem value="system">{t("settings.mode.system")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -212,8 +255,8 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
           <AccordionItem value="ui-theme" className="border-b-0">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-sm font-medium text-foreground">UI theme</div>
-                <div className="text-xs text-muted-foreground">Choose a palette and surface feel.</div>
+                <div className="text-sm font-medium text-foreground">{t("settings.uiTheme.label")}</div>
+                <div className="text-xs text-muted-foreground">{t("settings.uiTheme.help")}</div>
               </div>
               <AccordionTrigger
                 className={[
@@ -248,7 +291,7 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
                         setUiThemeOpen(false);
                       }}
                       className={[
-                        "w-full rounded-2xl border px-3 py-3 text-left nb-motion-fast motion-reduce:transition-none",
+                        "w-full rounded-2xl border px-3 py-3 text-start nb-motion-fast motion-reduce:transition-none",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         isActive
                           ? "border-foreground/40 bg-muted/40 shadow-sm"
@@ -287,23 +330,153 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
       </div>
 
       <div className="flex items-center justify-between pb-6">
-        <label className="text-sm font-normal text-foreground">Language</label>
-        <Select defaultValue="auto">
-          <SelectTrigger className="w-40 border-0 bg-transparent hover:bg-muted rounded-xl">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto">Auto-detect</SelectItem>
-            <SelectItem value="en">English</SelectItem>
-            <SelectItem value="es">Spanish</SelectItem>
-            <SelectItem value="fr">French</SelectItem>
-          </SelectContent>
-        </Select>
+        <label className="text-sm font-normal text-foreground">{t("settings.language.label")}</label>
+        <button
+          type="button"
+          onClick={() => setLangOpen(true)}
+          className={[
+            "w-56 inline-flex items-center justify-between gap-2 rounded-xl px-3 py-2",
+            "border border-transparent bg-transparent text-sm text-foreground/90",
+            "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+          ].join(" ")}
+          aria-label={t("settings.language.label")}
+        >
+          <span className="truncate">{currentLanguageLabel}</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </button>
       </div>
+
+      <Dialog
+        open={langOpen}
+        onOpenChange={(next) => {
+          setLangOpen(next);
+          if (!next) setLangQuery("");
+        }}
+      >
+        <DialogContent className="sm:max-w-xl" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>{t("settings.language.dialog.title")}</DialogTitle>
+            <DialogDescription>{t("settings.language.dialog.subtitle")}</DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <Input
+              value={langQuery}
+              onChange={(e) => setLangQuery(e.target.value)}
+              placeholder={t("common.search")}
+              className="border-0 bg-transparent p-0 h-auto shadow-none focus-visible:ring-0"
+            />
+          </div>
+
+          <div className="max-h-[55vh] overflow-y-auto rounded-2xl border border-border/60">
+            <div className="px-4 pt-4 pb-2 text-xs font-medium text-muted-foreground">
+              {t("settings.language.dialog.current")}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setLocalePreference("auto");
+                setLangOpen(false);
+              }}
+              className={[
+                "w-full px-4 py-3 flex items-center justify-between gap-3 text-sm text-foreground",
+                "hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+              ].join(" ")}
+            >
+              <div className="min-w-0">
+                <div className="font-medium">{t("settings.language.auto")}</div>
+                <div className="text-xs text-muted-foreground truncate">{locale}</div>
+              </div>
+              {localePreference === "auto" && (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background">
+                  <Check className="h-3 w-3" />
+                </span>
+              )}
+            </button>
+
+            <div className="px-4 pt-5 pb-2 text-xs font-medium text-muted-foreground">
+              {t("settings.language.dialog.all")}
+            </div>
+            <div className="pb-2">
+              {filteredAvailableLanguages.map((opt) => {
+                const selected =
+                  localePreference !== "auto" &&
+                  catalogKeyForLocale(String(localePreference))?.toLowerCase() === opt.tag.toLowerCase();
+                return (
+                  <button
+                    key={opt.tag}
+                    type="button"
+                    onClick={() => {
+                      setLocalePreference(opt.tag);
+                      setLangOpen(false);
+                    }}
+                    className={[
+                      "w-full px-4 py-3 flex items-center justify-between gap-3 text-sm text-foreground",
+                      "hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+                    ].join(" ")}
+                  >
+                    <div className="min-w-0 flex items-start justify-between gap-4 flex-1">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{opt.label}</div>
+                        <div className="text-xs text-muted-foreground truncate">{opt.tag}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">{opt.nativeLabel}</div>
+                    </div>
+                    {selected && (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background">
+                        <Check className="h-3 w-3" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {filteredPlannedLanguages.length > 0 ? (
+              <>
+                <div className="px-4 pt-5 pb-2 text-xs font-medium text-muted-foreground">
+                  {t("settings.language.dialog.comingSoon")}
+                </div>
+                <div className="pb-2">
+                  {filteredPlannedLanguages.map((opt) => {
+                    return (
+                      <div
+                        key={opt.tag}
+                        aria-disabled="true"
+                        className={[
+                          "w-full px-4 py-3 flex items-center justify-between gap-3 text-sm text-foreground",
+                          "opacity-60 cursor-not-allowed",
+                        ].join(" ")}
+                      >
+                        <div className="min-w-0 flex items-start justify-between gap-4 flex-1">
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{opt.label}</div>
+                            <div className="text-xs text-muted-foreground truncate">{opt.tag}</div>
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">{opt.nativeLabel}</div>
+                        </div>
+                        <span className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {t("settings.language.dialog.comingSoon")}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
+
+            {filteredAvailableLanguages.length === 0 && filteredPlannedLanguages.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.noResults")}</div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function PlaceholderTab({ label }: { label: string }) {
-  return <div className="text-sm text-muted-foreground">{label} settings coming soon.</div>;
+  const { t } = useI18n();
+  return <div className="text-sm text-muted-foreground">{t("settings.placeholder.comingSoon", { label })}</div>;
 }

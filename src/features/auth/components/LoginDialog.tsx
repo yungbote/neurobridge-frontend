@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/shared/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from "@/shared/ui/field";
 import { Input } from "@/shared/ui/input";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 interface LoginDialogProps extends React.ComponentPropsWithoutRef<typeof Dialog> {
   className?: string;
@@ -15,15 +16,17 @@ interface LoginDialogProps extends React.ComponentPropsWithoutRef<typeof Dialog>
 
 export function LoginDialog({
   className,
-  triggerLabel = "Login",
+  triggerLabel,
   onSwitchToSignup,
   ...props
 }: LoginDialogProps) {
   const { login, loginWithApple, loginWithGoogle } = useAuth();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const resolvedTriggerLabel = triggerLabel ?? t("auth.login");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -33,7 +36,7 @@ export function LoginDialog({
       await login(email, password);
     } catch (err) {
       console.error("[LoginDialog] Login failed:", err);
-      setError("Login failed. Please check your credentials.");
+      setError(t("auth.login.error.credentials"));
     } finally {
       setSubmitting(false);
     }
@@ -49,8 +52,8 @@ export function LoginDialog({
       const msg = err instanceof Error ? err.message : "";
       setError(
         msg
-          ? `Apple sign in failed (${msg}). Check your Apple Service ID / redirect URI.`
-          : "Apple login failed. Please try again."
+          ? t("auth.apple.error.withMessage", { msg })
+          : t("auth.apple.error.login")
       );
     } finally {
       setSubmitting(false);
@@ -68,8 +71,8 @@ export function LoginDialog({
       const origin = window.location.origin;
       setError(
         msg
-          ? `Google sign in failed (${msg}). If running locally, add ${origin} to Google OAuth Authorized JavaScript origins.`
-          : "Google login failed. Please try again."
+          ? t("auth.google.error.withMessage", { msg, origin })
+          : t("auth.google.error.login")
       );
     } finally {
       setSubmitting(false);
@@ -79,7 +82,7 @@ export function LoginDialog({
   return (
     <Dialog {...props}>
       <DialogTrigger asChild>
-        <Button variant="default" className="rounded-3xl">{triggerLabel}</Button>
+        <Button variant="default" className="rounded-3xl">{resolvedTriggerLabel}</Button>
       </DialogTrigger>
 
       <DialogContent className={cn("max-w-md", className)}>
@@ -93,8 +96,8 @@ export function LoginDialog({
         <div className="flex flex-col gap-6">
           <Card className="bg-transparent border-none shadow-none">
             <CardHeader className="text-center">
-              <CardTitle className="text-xl">Welcome back</CardTitle>
-              <CardDescription>Login with your Apple or Google Account </CardDescription>
+              <CardTitle className="text-xl">{t("auth.login.title")}</CardTitle>
+              <CardDescription>{t("auth.login.subtitle")}</CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
               <form onSubmit={handleSubmit}>
@@ -107,7 +110,7 @@ export function LoginDialog({
                       fill="currentColor"
                     />
                   </svg>
-                      Login with Apple
+                      {t("auth.login.withApple")}
                     </Button>
 
                     <Button variant="outline" type="button" onClick={handleLoginWithGoogle} disabled={submitting} className="w-full justify-center gap-2">
@@ -117,23 +120,23 @@ export function LoginDialog({
                           fill="currentColor"
                         />
                       </svg>
-                      Login with Google
+                      {t("auth.login.withGoogle")}
                     </Button>
                   </Field>
 
                   <FieldSeparator className="*:data-[slot=field-separator-content]:bg-transparent">
-                    Or continue with
+                    {t("auth.orContinue")}
                   </FieldSeparator>
 
                   <Field>
-                    <FieldLabel htmlFor="email">Email</FieldLabel>
-                    <Input id="email" type="email" placeholder="me@example.com" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting} />
+                    <FieldLabel htmlFor="email">{t("auth.email")}</FieldLabel>
+                    <Input id="email" type="email" placeholder={t("auth.email.placeholder")} required value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting} />
                   </Field>
                   <Field>
                     <div className="flex items-center">
-                      <FieldLabel htmlFor="password">Password</FieldLabel>
+                      <FieldLabel htmlFor="password">{t("auth.password")}</FieldLabel>
                       <a href="#" className="ml-auto text-sm underline-offset-4 hover:underline">
-                        Forgot your password?
+                        {t("auth.password.forgot")}
                       </a>
                     </div>
                     <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={submitting} />
@@ -141,12 +144,12 @@ export function LoginDialog({
 
                   <Field>
                     <Button type="submit" disabled={submitting} className="w-full">
-                      {submitting ? "Logging in..." : "Login"}
+                      {submitting ? t("auth.login.submitting") : t("auth.login")}
                     </Button>
                     <FieldDescription className="mt-2 text-center">
-                      Don&apos;t have an account ?{" "}
+                      {t("auth.login.noAccount")}{" "}
                       <button type="button" className="underline underline-offset-4" onClick={() => { onSwitchToSignup?.(); }}>
-                        Sign up
+                        {t("auth.signup")}
                       </button>
                     </FieldDescription>
                   </Field>
@@ -163,13 +166,13 @@ export function LoginDialog({
           </Card>
 
           <FieldDescription className="px-6 text-center text-xs">
-            By clicking continue, you agree to our{" "}
+            {t("auth.legal.prefix")}{" "}
             <a href="#" className="underline underline-offset-4">
-              Terms of Service
+              {t("auth.legal.terms")}
             </a>{" "}
-            and{" "}
+            {t("auth.legal.and")}{" "}
             <a href="#" className="underline underline-offset-4">
-              Privacy Policy
+              {t("auth.legal.privacy")}
             </a>
             .
           </FieldDescription>

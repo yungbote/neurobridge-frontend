@@ -118,10 +118,10 @@ function markdownComponents(): Components {
       );
     },
     ul({ children }: { children?: React.ReactNode }) {
-      return <ul className="list-disc pl-5 space-y-2 text-foreground/90">{children}</ul>;
+      return <ul className="list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;
     },
     ol({ children }: { children?: React.ReactNode }) {
-      return <ol className="list-decimal pl-5 space-y-2 text-foreground/90">{children}</ol>;
+      return <ol className="list-decimal ps-5 space-y-2 text-foreground/90">{children}</ol>;
     },
     li({ children }: { children?: React.ReactNode }) {
       return <li className="leading-relaxed">{children}</li>;
@@ -199,7 +199,7 @@ function CodeBlock({ language, filename, code }: { language?: string; filename?:
         <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
           <div className="min-w-0 text-xs text-muted-foreground">
             <span className="font-medium text-foreground/80">{safeString(filename).trim() || "Code"}</span>
-            {safeString(language).trim() ? <span className="ml-2">{safeString(language).trim()}</span> : null}
+            {safeString(language).trim() ? <span className="ms-2">{safeString(language).trim()}</span> : null}
           </div>
           <Button variant="ghost" size="sm" onClick={copy}>
             {copied ? "Copied" : "Copy"}
@@ -357,7 +357,7 @@ export function NodeDocRenderer({
       {safeString(d?.summary).trim() ? (
         <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</div>
-          <div className="mt-3 text-[15px] leading-relaxed text-foreground/90">
+          <div dir="auto" className="mt-3 text-[15px] leading-relaxed text-foreground/90">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
               {safeString(d.summary)}
             </ReactMarkdown>
@@ -379,7 +379,7 @@ export function NodeDocRenderer({
         const actionBar = showActions ? (
           <div
             className={cn(
-              "absolute -top-3 right-0 z-10 flex items-center gap-1 rounded-full border border-border/60",
+              "absolute -top-3 end-0 z-10 flex items-center gap-1 rounded-full border border-border/60",
               "bg-card/90 px-1.5 py-1 shadow-sm backdrop-blur",
               "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             )}
@@ -459,7 +459,7 @@ export function NodeDocRenderer({
 
         if (type === "paragraph") {
           return wrap(
-            <div className="text-[15px] leading-relaxed text-foreground/90">
+            <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                 {safeString(b?.md)}
               </ReactMarkdown>
@@ -477,9 +477,9 @@ export function NodeDocRenderer({
               ? "border-success/40 bg-success/10"
               : "border-border/60 bg-muted/20";
           return wrap(
-            <div className={cn("rounded-2xl border border-l-4 p-4", border)}>
+            <div className={cn("rounded-2xl border border-s-4 p-4", border)}>
               {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
-              <div className={cn("text-[15px] leading-relaxed text-foreground/90", title && "mt-2")}>
+              <div dir="auto" className={cn("text-[15px] leading-relaxed text-foreground/90", title && "mt-2")}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                   {safeString(b?.md)}
                 </ReactMarkdown>
@@ -586,7 +586,7 @@ export function NodeDocRenderer({
                   <thead className="bg-muted/30">
                     <tr>
                       {columns.map((c, idx) => (
-                        <th key={idx} className="px-3 py-2 text-left font-medium text-foreground/90">
+                        <th key={idx} className="px-3 py-2 text-start font-medium text-foreground/90">
                           {c}
                         </th>
                       ))}

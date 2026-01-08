@@ -1,10 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+	    <title>frontend</title>
+	    <script>
+	      (() => {
+	        try {
+	          const STORAGE_KEY = "nb:ui:locale";
+	          const pref = String(localStorage.getItem(STORAGE_KEY) || "auto").trim() || "auto";
+	          const resolved =
+	            pref === "auto"
+	              ? String((navigator.languages && navigator.languages[0]) || navigator.language || "en").trim() || "en"
+	              : pref;
+
+	          document.documentElement.setAttribute("lang", resolved);
+	          // Keep the app layout direction stable (we do not mirror the UI by locale).
+	          document.documentElement.setAttribute("dir", "ltr");
+	          document.documentElement.setAttribute("data-locale", resolved);
+	        } catch {
+	          // ignore
+	        }
+	      })();
+	    </script>
   </head>
   <body>
     <div id="root"></div>

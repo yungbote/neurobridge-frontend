@@ -36,12 +36,13 @@ import { useSidebar } from "@/shared/ui/sidebar";
 import { cn } from "@/shared/lib/utils";
 import { m } from "framer-motion";
 import { nbTransitions } from "@/shared/motion/presets";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 const PATH_NAV_TABS = [
-  { id: "materials", label: "Materials", icon: FolderOpen },
-  { id: "unit", label: "Unit", icon: BookOpen },
-  { id: "audio", label: "Audio", icon: Headphones },
-  { id: "mindmap", label: "Mindmap", icon: Brain },
+  { id: "materials", labelKey: "paths.tabs.materials", icon: FolderOpen },
+  { id: "unit", labelKey: "paths.tabs.unit", icon: BookOpen },
+  { id: "audio", labelKey: "paths.tabs.audio", icon: Headphones },
+  { id: "mindmap", labelKey: "paths.tabs.mindmap", icon: Brain },
 ] as const;
 
 type PathNavTabId = (typeof PATH_NAV_TABS)[number]["id"];
@@ -53,6 +54,7 @@ export function AppNavBar() {
   const { user, loading: userLoading } = useUser();
   const { activePathId, clearActivePath } = usePaths();
   const { docked: homeChatbarDocked } = useHomeChatbarDock();
+  const { t } = useI18n();
   const [authDialog, setAuthDialog] = useState<"login" | "signup" | null>(null);
   const { state, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -128,10 +130,10 @@ export function AppNavBar() {
         {/* LEFT: Sidebar Trigger + Logo */}
         <div className="flex items-center gap-2">
           {isAuthenticated && isCollapsed && isMobile &&  (
-            <SidebarTrigger aria-label="Expand sidebar" style={{ cursor: "e-resize" }} />
+            <SidebarTrigger aria-label={t("sidebar.expand")} style={{ cursor: "e-resize" }} />
           )}
           {!isAuthenticated && (
-          <Link to="/" aria-label="Go to home" className="flex items-center">
+          <Link to="/" aria-label={t("nav.goHome")} className="flex items-center">
             <AppLogo className="cursor-pointer" />
           </Link>)}
         </div>
@@ -170,7 +172,7 @@ export function AppNavBar() {
           <div className="flex flex-1 justify-center">
             <div
               role="tablist"
-              aria-label="Path sections"
+              aria-label={t("paths.sections")}
               className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-muted/40 p-1 shadow-sm backdrop-blur scrollbar-none"
             >
               {PATH_NAV_TABS.map((tab) => {
@@ -191,7 +193,7 @@ export function AppNavBar() {
                     )}
                   >
                     <Icon className="h-4 w-4" />
-                    <span className="whitespace-nowrap">{tab.label}</span>
+                    <span className="whitespace-nowrap">{t(tab.labelKey)}</span>
                   </button>
                 );
               })}
@@ -201,7 +203,7 @@ export function AppNavBar() {
 
         {/* RIGHT: Auth / User Actions */}
         {!isAuthenticated && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ms-auto flex items-center gap-2">
             {/* Mobile marketing menu */}
             <div className="md:hidden">
               <DropdownMenu>
@@ -209,8 +211,8 @@ export function AppNavBar() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Open menu"
-                    title="Open menu"
+                    aria-label={t("nav.openMenu")}
+                    title={t("nav.openMenu")}
                   >
                     <AlignJustify className="size-5" />
                   </Button>
@@ -218,17 +220,17 @@ export function AppNavBar() {
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem asChild>
                     <Link to="/about" className="w-full cursor-pointer">
-                      About
+                      {t("marketing.about")}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/features" className="w-full cursor-pointer">
-                      Features
+                      {t("marketing.features")}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/pricing" className="w-full cursor-pointer">
-                      Pricing
+                      {t("marketing.pricing")}
                     </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -236,7 +238,7 @@ export function AppNavBar() {
             </div>
 
             <LoginDialog
-              triggerLabel="Login"
+              triggerLabel={t("auth.login")}
               open={authDialog === "login"}
               onOpenChange={(open: boolean) => {
                 setAuthDialog(open ? "login" : null);
@@ -244,7 +246,7 @@ export function AppNavBar() {
               onSwitchToSignup={() => setAuthDialog("signup")}
             />
             <SignupDialog
-              triggerLabel="Sign up"
+              triggerLabel={t("auth.signup")}
               open={authDialog === "signup"}
               onOpenChange={(open: boolean) => {
                 setAuthDialog(open ? "signup" : null);
@@ -256,12 +258,12 @@ export function AppNavBar() {
         )}
 
         {isAuthenticated && !userLoading && user && (
-          <div className="ml-auto">
+          <div className="ms-auto">
             <IconButton
               type="button"
               variant="ghost"
               size="icon"
-              label="More options"
+              label={t("navbar.moreOptions")}
               shortcut="M"
             >
               <Ellipsis className="size-5" />
@@ -270,14 +272,14 @@ export function AppNavBar() {
         )}
 
         {isAuthenticated && !userLoading && !user && (
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-3">
+          <div className="ms-auto flex items-center gap-1.5 sm:gap-3">
             {location.pathname === "/" && (
               <>
                 <FileUploadDialog
                   trigger={
                     <Button variant="ghost" size="sm" className="gap-2">
                       <BadgePlus className="size-5" />
-                      <span className="hidden sm:inline">New Path</span>
+                      <span className="hidden sm:inline">{t("paths.new")}</span>
                     </Button>
                   }
                 />
@@ -291,7 +293,7 @@ export function AppNavBar() {
                     >
                       <div className="flex items-center gap-1.5">
                         <CircleDashed className="size-5" />
-                        <span className="hidden sm:inline">In Progress</span>
+                        <span className="hidden sm:inline">{t("paths.inProgress")}</span>
                       </div>
                       <ChevronDownIcon className="size-5 transition-transform group-data-[state=open]:rotate-180" />
                     </Button>

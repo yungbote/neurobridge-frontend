@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Check } from "lucide-react";
+import { useI18n } from "@/app/providers/I18nProvider";
 import { cn } from "@/shared/lib/utils";
 
 export const AVATAR_COLORS = [
@@ -77,6 +78,7 @@ export function ColorPicker({
   swatchSize = 18,
   className,
 }: ColorPickerProps) {
+  const { t } = useI18n();
   const [isExpanded, setIsExpanded] = useState(false);
   const selected = value ?? AVATAR_COLORS[0];
   const hoverZone = useMemo(() => getHoverZone(position), [position]);
@@ -108,7 +110,7 @@ export function ColorPicker({
         <button
           type="button"
           className="h-8 w-8 rounded-full bg-background border-2 border-border shadow-sm flex items-center justify-center"
-          aria-label="Choose avatar color"
+          aria-label={t("user.profile.chooseAvatarColor")}
           aria-expanded={isExpanded}
           onClick={() => setIsExpanded((v) => !v)}
         >
@@ -179,7 +181,6 @@ export function ColorPicker({
     </div>
   );
 }
-
 
 
 

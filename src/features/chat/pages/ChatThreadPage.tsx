@@ -22,6 +22,7 @@ import { getPath as apiGetPath } from "@/shared/api/PathService";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { Container } from "@/shared/layout/Container";
@@ -282,7 +283,7 @@ function GenerationCard({
           userToggledRef.current = true;
           setExpanded((v) => !v);
         }}
-        className="flex w-full items-center justify-between gap-3 py-1 text-left"
+        className="flex w-full items-center justify-between gap-3 py-1 text-start"
         aria-expanded={expanded}
       >
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -303,7 +304,7 @@ function GenerationCard({
         </div>
 
       {expanded ? (
-        <div className="mt-3 border-l border-border/60 pl-3 text-sm text-muted-foreground leading-relaxed">
+        <div className="mt-3 border-s border-border/60 ps-3 text-sm text-muted-foreground leading-relaxed">
           {children}
         </div>
       ) : null}
@@ -316,6 +317,7 @@ export default function ChatThreadPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { t } = useI18n();
 
   const { user } = useUser();
   const { lastMessage } = useSSEContext();
@@ -391,7 +393,7 @@ export default function ChatThreadPage() {
     const scrollHeight = doc.scrollHeight || body.scrollHeight || 0;
     const clientHeight = doc.clientHeight || window.innerHeight || 0;
     return scrollHeight - (scrollTop + clientHeight);
-  }, []);
+	  }, [t]);
 
   const updateScrollState = useCallback(() => {
     const dist = getScrollDistance();
@@ -647,10 +649,10 @@ export default function ChatThreadPage() {
       return;
     }
 
-    if (event === "ChatMessageError") {
-      const messageId = String(data.message_id ?? data.messageId ?? "");
-      const error = String(data.error ?? "Unknown error");
-      if (!messageId) return;
+	    if (event === "ChatMessageError") {
+	      const messageId = String(data.message_id ?? data.messageId ?? "");
+	      const error = String(data.error ?? t("common.unknownError"));
+	      if (!messageId) return;
       setMessages((prev) => {
         const idx = (prev || []).findIndex((m) => m?.id === messageId);
         if (idx === -1) return prev;
@@ -660,7 +662,7 @@ export default function ChatThreadPage() {
       });
       return;
     }
-  }, [lastMessage, user?.id, threadId]);
+	  }, [lastMessage, user?.id, threadId, t]);
 
   const hasStreaming = useMemo(
     () => (messages || []).some((m) => String(m?.status || "").toLowerCase() === "streaming"),
@@ -781,13 +783,13 @@ export default function ChatThreadPage() {
     setRevisionInstruction(String(lastAssistantMessage.content || "").trim());
   }, [lastAssistantMessage]);
 
-  const handleApplyRevision = useCallback(async () => {
-    if (!blockNodeId || !blockId) return;
-    const instruction = String(revisionInstruction || "").trim();
-    if (!instruction) {
-      setRevisionError("Add the revision you want applied to this block.");
-      return;
-    }
+	  const handleApplyRevision = useCallback(async () => {
+	    if (!blockNodeId || !blockId) return;
+	    const instruction = String(revisionInstruction || "").trim();
+	    if (!instruction) {
+	      setRevisionError(t("chat.revision.error.missingInstruction"));
+	      return;
+	    }
     setRevisionSubmitting(true);
     setRevisionError("");
     try {
@@ -805,12 +807,12 @@ export default function ChatThreadPage() {
       });
       setRevisionQueued(true);
       setRevisionDialogOpen(false);
-    } catch (err) {
-      setRevisionError(getErrorMessage(err, "Failed to apply revision"));
-    } finally {
-      setRevisionSubmitting(false);
-    }
-  }, [blockNodeId, blockId, revisionInstruction]);
+	    } catch (err) {
+	      setRevisionError(getErrorMessage(err, t("chat.revision.error.applyFailed")));
+	    } finally {
+	      setRevisionSubmitting(false);
+	    }
+	  }, [blockNodeId, blockId, revisionInstruction, t]);
 
   const goToNode = useCallback(() => {
     if (!blockNodeId) return;
@@ -844,7 +846,7 @@ export default function ChatThreadPage() {
     const firstId = String((items || [])[0]?.id || "");
     const list = firstId.includes(jid) ? (items || []).slice(0, 200) : [];
     if (list.length === 0) {
-      const fallbackTitle = stageLabel(String(activeJob?.stage || "")) || "Generating path…";
+      const fallbackTitle = stageLabel(String(activeJob?.stage || "")) || t("chat.pathGeneration.generating");
       const fallbackProgress = clampPct(activeJob?.progress);
       const fallbackMsg = String(activeJob?.message || "").trim();
       return (
@@ -867,7 +869,7 @@ export default function ChatThreadPage() {
         ? list.filter((_, idx) => idx !== summaryIndex)
         : list.slice(0, Math.max(0, list.length - 1));
 
-    const title = summary?.title || stageLabel(String(activeJob?.stage || "")) || "Generating path…";
+    const title = summary?.title || stageLabel(String(activeJob?.stage || "")) || t("chat.pathGeneration.generating");
     const progress = clampPct(summary?.progress ?? activeJob?.progress);
     const msg = String(summary?.content || "").trim();
 
@@ -880,7 +882,7 @@ export default function ChatThreadPage() {
                 key={it.id || `${it.title}-${it.progress}`}
                 type="button"
                 onClick={() => openForJob(jid)}
-                className="block w-full text-left hover:text-foreground transition-colors"
+                className="block w-full text-start hover:text-foreground transition-colors"
               >
                 <span className="font-medium text-foreground">{it.title}</span>
                 <span className="text-muted-foreground">
@@ -896,7 +898,7 @@ export default function ChatThreadPage() {
           <button
             type="button"
             onClick={() => openForJob(jid)}
-            className="w-full text-left hover:text-foreground transition-colors"
+            className="w-full text-start hover:text-foreground transition-colors"
           >
             <span className="font-semibold text-foreground">
               <WaveText text={stageLabel(title) || title} />
@@ -911,18 +913,18 @@ export default function ChatThreadPage() {
 
         {learningBuildCanceled ? (
           <div className="pt-3">
-            <button
-              type="button"
-              onClick={handleRestartBuild}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              Regenerate
-            </button>
-          </div>
-        ) : null}
-      </div>
-    );
-  }, [items, buildJobId, activeJob?.stage, activeJob?.progress, activeJob?.message, openForJob, learningBuildCanceled, handleRestartBuild]);
+	              <button
+	                type="button"
+	                onClick={handleRestartBuild}
+	                className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+	              >
+	              {t("common.regenerate")}
+	              </button>
+	            </div>
+	          ) : null}
+	      </div>
+	    );
+	  }, [items, buildJobId, activeJob?.stage, activeJob?.progress, activeJob?.message, openForJob, learningBuildCanceled, handleRestartBuild, t]);
 
   useEffect(() => {
     const needed = new Set<string>();
@@ -969,14 +971,14 @@ export default function ChatThreadPage() {
       } catch (err) {
         const raw = getErrorMessage(err, "send_failed");
         const msg = raw.toLowerCase().includes("thread is busy")
-          ? "The assistant is still responding. Try again in a moment."
-          : "Failed to send message. Please try again.";
+          ? t("chat.sendError.busy")
+          : t("chat.sendError.generic");
         setSendError(msg);
         console.error("[ChatThreadPage] send message failed:", err);
         throw err;
       }
     },
-    [threadId, scrollToBottom]
+    [threadId, scrollToBottom, t]
   );
 
   const renderMessageContent = useCallback((msg: ChatMessageItem): React.ReactNode => {
@@ -990,13 +992,13 @@ export default function ChatThreadPage() {
       const errText = String(msg?.error || "").trim();
       return (
         <div className="text-sm text-destructive">
-          {errText ? `Error: ${errText}` : "Error: Something went wrong."}
+          {errText ? t("common.errorWithDetail", { detail: errText }) : t("common.errorGeneric")}
         </div>
       );
     }
 
     if (status === "streaming" && !content.trim()) {
-      return <div className="text-sm text-muted-foreground animate-pulse">Thinking…</div>;
+      return <div className="text-sm text-muted-foreground animate-pulse">{t("chat.thinking")}</div>;
     }
 
     return (
@@ -1025,7 +1027,7 @@ export default function ChatThreadPage() {
     );
   }, []);
 
-  const blockLabel = blockTypeParam || blockContext?.block?.type || "block";
+	  const blockLabel = blockTypeParam || blockContext?.block?.type || t("chat.block");
   const hasRevisionText = String(revisionInstruction || "").trim().length > 0;
 
   return (
@@ -1060,67 +1062,67 @@ export default function ChatThreadPage() {
           {blockNodeId && blockId ? (
             <div className="mb-6 rounded-xl border border-border bg-muted/20 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Block revision
-                  </div>
+	                <div>
+	                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+	                    {t("chat.blockRevision")}
+	                  </div>
                   <div className="mt-1 text-sm font-semibold text-foreground">
                     {blockLabel}
                   </div>
-                  {blockNode?.title ? (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Unit: {blockNode.title}
-                    </div>
-                  ) : null}
+	                  {blockNode?.title ? (
+	                    <div className="mt-1 text-xs text-muted-foreground">
+	                      {t("chat.unitLabel", { title: blockNode.title })}
+	                    </div>
+	                  ) : null}
                   {blockContext?.summary ? (
                     <div className="mt-2 text-xs text-muted-foreground">
                       “{blockContext.summary}”
                     </div>
-                  ) : blockDocLoaded ? (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Block details unavailable. You can still apply revisions.
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Loading block details…
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={goToNode}>
-                    Open unit
-                  </Button>
-                </div>
+	                  ) : blockDocLoaded ? (
+	                    <div className="mt-2 text-xs text-muted-foreground">
+	                      {t("chat.blockDetails.unavailable")}
+	                    </div>
+	                  ) : (
+	                    <div className="mt-2 text-xs text-muted-foreground">
+	                      {t("chat.blockDetails.loading")}
+	                    </div>
+	                  )}
+	                </div>
+	                <div className="flex items-center gap-2">
+	                  <Button variant="outline" size="sm" onClick={goToNode}>
+	                    {t("chat.openUnit")}
+	                  </Button>
+	                </div>
               </div>
 
               <div className="mt-4 space-y-2">
-                <Textarea
-                  value={revisionInstruction}
-                  onChange={(e) => setRevisionInstruction(e.target.value)}
-                  placeholder="Describe exactly how you want this block revised."
-                  className="min-h-[120px] resize-none bg-background"
-                />
+	                <Textarea
+	                  value={revisionInstruction}
+	                  onChange={(e) => setRevisionInstruction(e.target.value)}
+	                  placeholder={t("chat.revision.placeholder")}
+	                  className="min-h-[120px] resize-none bg-background"
+	                />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => setRevisionDialogOpen(true)}
-                    disabled={revisionSubmitting || !hasRevisionText}
-                  >
-                    Review & Apply
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleUseLastAssistant}
-                    disabled={!lastAssistantMessage?.content}
-                  >
-                    Use last assistant reply
-                  </Button>
-                  {revisionQueued ? (
-                    <span className="text-xs text-muted-foreground">
-                      Revision queued. Open the unit to confirm.
-                    </span>
-                  ) : null}
+	                  <Button
+	                    size="sm"
+	                    onClick={() => setRevisionDialogOpen(true)}
+	                    disabled={revisionSubmitting || !hasRevisionText}
+	                  >
+	                    {t("chat.revision.reviewApply")}
+	                  </Button>
+	                  <Button
+	                    size="sm"
+	                    variant="ghost"
+	                    onClick={handleUseLastAssistant}
+	                    disabled={!lastAssistantMessage?.content}
+	                  >
+	                    {t("chat.revision.useLastReply")}
+	                  </Button>
+	                  {revisionQueued ? (
+	                    <span className="text-xs text-muted-foreground">
+	                      {t("chat.revision.queued")}
+	                    </span>
+	                  ) : null}
                 </div>
                 {revisionError ? (
                   <div className="text-xs text-destructive">{revisionError}</div>
@@ -1138,11 +1140,11 @@ export default function ChatThreadPage() {
                     <Skeleton className="h-2.5 w-2.5 rounded-full bg-muted/30" />
                     <Skeleton className="h-3 w-32 rounded-full bg-muted/30" />
                   </div>
-                ) : !hasOlder && messages.length > 0 ? (
-                  <div className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
-                    Start of chat
-                  </div>
-                ) : null}
+	                ) : !hasOlder && messages.length > 0 ? (
+	                  <div className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+	                    {t("chat.startOfChat")}
+	                  </div>
+	                ) : null}
               </div>
             </div>
             {(messages || []).map((msg) => {
@@ -1152,15 +1154,15 @@ export default function ChatThreadPage() {
               const shouldAnimate =
                 enableMessageEntryMotion && !loadingOlder && !seenMessageIdsRef.current.has(String(msg.id || ""));
 
-              if (kind === "path_generation") {
-                const statusLabel =
-                  String(learningBuildStatus || "").toLowerCase() === "succeeded"
-                    ? "Path ready"
-                    : String(learningBuildStatus || "").toLowerCase() === "failed"
-                      ? "Generation failed"
-                      : String(learningBuildStatus || "").toLowerCase() === "canceled"
-                        ? "Generation canceled"
-                        : "Generating path…";
+	              if (kind === "path_generation") {
+	                const statusLabel =
+	                  String(learningBuildStatus || "").toLowerCase() === "succeeded"
+	                    ? t("chat.pathGeneration.ready")
+	                    : String(learningBuildStatus || "").toLowerCase() === "failed"
+	                      ? t("chat.pathGeneration.failed")
+	                      : String(learningBuildStatus || "").toLowerCase() === "canceled"
+	                        ? t("chat.pathGeneration.canceled")
+	                        : t("chat.pathGeneration.generating");
                 const progress = clampPct(activeJob?.progress);
                 const defaultExpanded = learningBuildActive || learningBuildCanceled;
 
@@ -1174,14 +1176,14 @@ export default function ChatThreadPage() {
                     style={{ contentVisibility: "auto", containIntrinsicSize: "180px" }}
                   >
                     <ChatMessage variant={variant} showActions={false}>
-                      <GenerationCard
-                        title={statusLabel}
-                        progress={progress}
-                        duration={thinkingDuration}
-                        defaultExpanded={defaultExpanded}
-                      >
-                        {buildLog ? buildLog : <div>Working…</div>}
-                      </GenerationCard>
+	                      <GenerationCard
+	                        title={statusLabel}
+	                        progress={progress}
+	                        duration={thinkingDuration}
+	                        defaultExpanded={defaultExpanded}
+	                      >
+	                        {buildLog ? buildLog : <div>{t("common.working")}</div>}
+	                      </GenerationCard>
                     </ChatMessage>
                   </m.div>
                 );
@@ -1206,11 +1208,11 @@ export default function ChatThreadPage() {
                         {pid ? (
                           path ? (
                             <PathCardLarge path={path} />
-                          ) : hasPath ? (
-                            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
-                              Path unavailable.
-                            </div>
-                          ) : (
+	                          ) : hasPath ? (
+	                            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+	                              {t("chat.pathUnavailable")}
+	                            </div>
+	                          ) : (
                             <div className="h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4">
                               <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
                               <div className="mt-4 space-y-2">
@@ -1257,13 +1259,13 @@ export default function ChatThreadPage() {
 
       <div className="shrink-0 sticky bottom-0 z-10 bg-background">
         <div className="relative pb-5">
-          {showScrollToBottom && (
-            <button
-              type="button"
-              onClick={() => scrollToBottom("smooth")}
-              className="absolute left-1/2 top-0 z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-[calc(50%+6px)] items-center justify-center rounded-full border border-border bg-background/95 shadow-lg nb-motion-fast motion-reduce:transition-none hover:bg-muted"
-              aria-label="Scroll to bottom"
-            >
+	          {showScrollToBottom && (
+	            <button
+	              type="button"
+	              onClick={() => scrollToBottom("smooth")}
+	              className="absolute left-1/2 top-0 z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-[calc(50%+6px)] items-center justify-center rounded-full border border-border bg-background/95 shadow-lg nb-motion-fast motion-reduce:transition-none hover:bg-muted"
+	              aria-label={t("chat.scrollToBottom")}
+	            >
               <ArrowDown className="h-4 w-4 text-muted-foreground" />
             </button>
           )}
@@ -1290,27 +1292,27 @@ export default function ChatThreadPage() {
         </div>
       </div>
 
-      <Dialog open={revisionDialogOpen} onOpenChange={(open) => !revisionSubmitting && setRevisionDialogOpen(open)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Apply revision to this block?</DialogTitle>
-            <DialogDescription>
-              This will rewrite the selected block using the revision text below. You can undo from the unit page if needed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
-            {revisionInstruction || "No revision provided."}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRevisionDialogOpen(false)} disabled={revisionSubmitting}>
-              Cancel
-            </Button>
-            <Button onClick={handleApplyRevision} disabled={revisionSubmitting || !hasRevisionText}>
-              {revisionSubmitting ? "Applying…" : "Apply revision"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+	      <Dialog open={revisionDialogOpen} onOpenChange={(open) => !revisionSubmitting && setRevisionDialogOpen(open)}>
+	        <DialogContent className="max-w-2xl">
+	          <DialogHeader>
+	            <DialogTitle>{t("chat.revision.dialog.title")}</DialogTitle>
+	            <DialogDescription>
+	              {t("chat.revision.dialog.description")}
+	            </DialogDescription>
+	          </DialogHeader>
+	          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
+	            {revisionInstruction || t("chat.revision.none")}
+	          </div>
+	          <DialogFooter>
+	            <Button variant="outline" onClick={() => setRevisionDialogOpen(false)} disabled={revisionSubmitting}>
+	              {t("common.cancel")}
+	            </Button>
+	            <Button onClick={handleApplyRevision} disabled={revisionSubmitting || !hasRevisionText}>
+	              {revisionSubmitting ? t("chat.revision.applying") : t("chat.revision.apply")}
+	            </Button>
+	          </DialogFooter>
+	        </DialogContent>
+	      </Dialog>
     </div>
   );
 }

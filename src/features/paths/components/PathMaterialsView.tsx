@@ -16,6 +16,7 @@ import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { cn } from "@/shared/lib/utils";
 import { getAccessToken } from "@/shared/services/StorageService";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { MaterialAsset, MaterialFile } from "@/shared/types/models";
 
 type MaterialAssetsByFile = Record<string, MaterialAsset[]>;
@@ -90,6 +91,7 @@ function ViewerLayout({
   fullscreen = false,
   className,
 }: ViewerLayoutProps) {
+  const { t } = useI18n();
   return (
     <div className={cn("grid gap-5 lg:grid-cols-[300px_1fr]", fullscreen && "h-full min-h-0", className)}>
       <aside
@@ -100,13 +102,13 @@ function ViewerLayout({
       >
         <div className="flex items-center justify-between gap-2 px-1">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Materials
+            {t("paths.tabs.materials")}
           </div>
           <div className="text-[11px] text-muted-foreground">
-            {files.length} file{files.length === 1 ? "" : "s"}
+            {files.length} {files.length === 1 ? t("common.file") : t("common.files")}
           </div>
         </div>
-        <div className={cn("mt-3 space-y-2", fullscreen && "min-h-0 flex-1 overflow-y-auto pr-1")}>
+        <div className={cn("mt-3 space-y-2", fullscreen && "min-h-0 flex-1 overflow-y-auto pe-1")}>
           {files.map((f) => {
             const Icon = fileIcon(f);
             const isActive = f.id === selectedFile?.id;
@@ -116,7 +118,7 @@ function ViewerLayout({
                 type="button"
                 onClick={() => onSelectFile(f)}
                 className={cn(
-                  "group flex w-full items-start gap-3 rounded-xl border px-3 py-2 text-left transition-colors",
+                  "group flex w-full items-start gap-3 rounded-xl border px-3 py-2 text-start transition-colors",
                   isActive
                     ? "border-primary/20 bg-primary/5 text-foreground shadow-sm"
                     : "border-border/60 bg-background/70 text-muted-foreground hover:bg-muted/40"
@@ -132,7 +134,7 @@ function ViewerLayout({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">
-                    {f.originalName || "Untitled file"}
+                    {f.originalName || t("common.untitledFile")}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {f.mimeType ? <span>{f.mimeType}</span> : null}
@@ -154,10 +156,10 @@ function ViewerLayout({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Document
+              {t("paths.materials.document")}
             </div>
             <div className="mt-1 text-lg font-semibold text-foreground">
-              {selectedFile?.originalName || "Select a document"}
+              {selectedFile?.originalName || t("paths.materials.selectDocument")}
             </div>
           </div>
 
@@ -171,7 +173,7 @@ function ViewerLayout({
               <IconButton
                 variant="ghost"
                 size="icon"
-                label="Open in new tab"
+                label={t("common.openInNewTab")}
                 shortcut="O"
                 asChild
               >
@@ -187,7 +189,7 @@ function ViewerLayout({
                   size="icon"
                   onClick={onPrevPage}
                   disabled={disablePrev}
-                  label="Previous page"
+                  label={t("common.previousPage")}
                   shortcut="Left"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -197,7 +199,7 @@ function ViewerLayout({
                   size="icon"
                   onClick={onNextPage}
                   disabled={disableNext}
-                  label="Next page"
+                  label={t("common.nextPage")}
                   shortcut="Right"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -209,7 +211,7 @@ function ViewerLayout({
                 variant="ghost"
                 size="icon"
                 onClick={onOpenFullscreen}
-                label="Open fullscreen"
+                label={t("common.openFullscreen")}
                 shortcut="F"
               >
                 <Maximize2 className="h-4 w-4" />
@@ -235,6 +237,7 @@ interface PathMaterialsViewProps {
 }
 
 export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [files, setFiles] = useState<MaterialFile[]>([]);
@@ -267,7 +270,7 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
         });
       } catch (err) {
         if (!cancelled) {
-          setError(getErrorMessage(err, "Failed to load materials"));
+          setError(getErrorMessage(err, t("paths.materials.loadFailed")));
           setFiles([]);
           setAssetsByFile({});
           setSelectedFileId(null);
@@ -311,13 +314,13 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
 
   const pageLabel = useMemo(() => {
     if (pageAssets.length > 0) {
-      return `Page ${pageIndex + 1} of ${pageAssets.length}`;
+      return t("common.pageOf", { current: pageIndex + 1, total: pageAssets.length });
     }
     if (isPdf) {
-      return `Page ${pdfPage}`;
+      return t("common.page", { page: pdfPage });
     }
     return "";
-  }, [isPdf, pageAssets.length, pageIndex, pdfPage]);
+  }, [isPdf, pageAssets.length, pageIndex, pdfPage, t]);
 
   const handlePrevPage = useCallback(() => {
     if (pageAssets.length > 0) {
@@ -362,8 +365,8 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
     if (!selectedFile) {
       return (
         <EmptyContent
-          title="Select a document"
-          message="Choose a file on the left to view it here."
+          title={t("paths.materials.selectDocument")}
+          message={t("paths.materials.selectHint")}
           helperText=""
         />
       );
@@ -374,8 +377,8 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
       if (!asset) {
         return (
           <EmptyContent
-            title="No preview available"
-            message="This file does not have a preview yet."
+            title={t("paths.materials.noPreview.title")}
+            message={t("paths.materials.noPreview.message")}
             helperText=""
           />
         );
@@ -390,7 +393,7 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
         >
           <img
             src={assetSrc}
-            alt={selectedFile.originalName || "Document page"}
+            alt={selectedFile.originalName || t("paths.materials.alt.documentPage")}
             className="max-h-full max-w-full object-contain"
           />
         </div>
@@ -404,7 +407,7 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
           <div className={cn("flex items-center justify-center rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
             <img
               src={fileUrl}
-              alt={selectedFile.originalName || "Image"}
+              alt={selectedFile.originalName || t("common.image")}
               className="max-h-full max-w-full object-contain"
             />
           </div>
@@ -428,17 +431,17 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
         const src = `${fileUrl}#page=${pdfPage}&view=FitH`;
         return (
           <div className={cn("overflow-hidden rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
-            <iframe title={selectedFile.originalName || "Document"} src={src} className="h-full w-full" />
+            <iframe title={selectedFile.originalName || t("paths.materials.document")} src={src} className="h-full w-full" />
           </div>
         );
       }
       return (
         <div className={cn("flex items-center justify-center rounded-2xl border border-border/60 bg-muted/20", viewerHeight)}>
           <div className="space-y-3 text-center">
-            <div className="text-sm text-muted-foreground">Preview not available.</div>
+            <div className="text-sm text-muted-foreground">{t("paths.materials.previewUnavailable")}</div>
             <Button asChild size="sm">
               <a href={fileUrl} target="_blank" rel="noreferrer">
-                Open file
+                {t("paths.materials.openFile")}
               </a>
             </Button>
           </div>
@@ -448,8 +451,8 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
 
     return (
       <EmptyContent
-        title="No preview available"
-        message="This file does not have a preview yet."
+        title={t("paths.materials.noPreview.title")}
+        message={t("paths.materials.noPreview.message")}
         helperText=""
       />
     );
@@ -464,13 +467,14 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
     pageIndex,
     pdfPage,
     selectedFile,
+    t,
     viewerHeight,
   ]);
 
   if (loading) {
     return (
       <div className="rounded-2xl border border-border/60 bg-card/70 p-6 text-sm text-muted-foreground shadow-sm backdrop-blur">
-        Loading materials…
+        {t("paths.materials.loading")}
       </div>
     );
   }
@@ -486,8 +490,8 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
   if (!files || files.length === 0) {
     return (
       <EmptyContent
-        title="No materials yet"
-        message="Upload documents to see them here."
+        title={t("paths.materials.empty.title")}
+        message={t("paths.materials.empty.message")}
         helperText=""
       />
     );

@@ -1069,7 +1069,7 @@
   }
 
   .prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
-    padding-left: 1.25rem;
+    padding-inline-start: 1.25rem;
     margin-block: 1em;
   }
   .prose :where(ul):not(:where(.not-prose, .not-prose *)) {
@@ -1083,8 +1083,8 @@
   }
 
   .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
-    border-left: 2px solid var(--border);
-    padding-left: 1rem;
+    border-inline-start: 2px solid var(--border);
+    padding-inline-start: 1rem;
     color: var(--muted-foreground);
     margin-block: 1.25em;
   }
@@ -1128,7 +1128,7 @@
   }
   .prose :where(th):not(:where(.not-prose, .not-prose *)) {
     background: color-mix(in oklch, var(--muted) 40%, transparent);
-    text-align: left;
+    text-align: start;
     font-weight: 600;
     color: var(--foreground);
   }
@@ -1163,7 +1163,6 @@
     height: auto;
   }
 }
-
 
 
 

@@ -16,6 +16,7 @@ import {
 import { Button } from "@/shared/ui/button";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { useI18n } from "@/app/providers/I18nProvider";
 
 function TopLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
@@ -38,6 +39,7 @@ interface NavDropdownProps {
 }
 
 function NavDropdown({ id, label, basePath, sections, isOpen, setOpenKey }: NavDropdownProps) {
+  const { t } = useI18n();
   return (
     <DropdownMenu
       open={isOpen}
@@ -86,7 +88,7 @@ function NavDropdown({ id, label, basePath, sections, isOpen, setOpenKey }: NavD
             asChild
             className="w-full justify-start px-2 py-1.5 text-sm font-normal hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
           >
-            <Link to={basePath}>Overview</Link>
+            <Link to={basePath}>{t("marketing.overview")}</Link>
           </Button>
         </DropdownMenuItem>
 
@@ -119,13 +121,14 @@ function NavDropdown({ id, label, basePath, sections, isOpen, setOpenKey }: NavD
 
 export function MarketingNav() {
   const [openId, setOpenId] = useState<string | null>(null);
+  const { t } = useI18n();
 
   return (
     <ul className="flex items-center gap-3 lg:gap-4">
       <li>
         <NavDropdown
           id="about"
-          label="About"
+          label={t("marketing.about")}
           basePath="/about"
           sections={ABOUT_SECTIONS}
           isOpen={openId === "about"}
@@ -135,7 +138,7 @@ export function MarketingNav() {
       <li>
         <NavDropdown
           id="features"
-          label="Features"
+          label={t("marketing.features")}
           basePath="/features"
           sections={FEATURES_SECTIONS}
           isOpen={openId === "features"}
@@ -145,7 +148,7 @@ export function MarketingNav() {
       <li>
         <NavDropdown
           id="pricing"
-          label="Pricing"
+          label={t("marketing.pricing")}
           basePath="/pricing"
           sections={PRICING_SECTIONS}
           isOpen={openId === "pricing"}
@@ -155,7 +158,6 @@ export function MarketingNav() {
     </ul>
   );
 }
-
 
 
 

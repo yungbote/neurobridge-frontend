@@ -9,6 +9,7 @@ import {
   BreadcrumbSeparator,
 } from "@/shared/ui/breadcrumb";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { Path } from "@/shared/types/models";
 
 function getMeta(path: Path | null | undefined): Record<string, unknown> {
@@ -31,11 +32,12 @@ function clampLabel(value: unknown, n = 42) {
 export function Breadcrumbs() {
   const location = useLocation();
   const { getById } = usePaths();
+  const { t } = useI18n();
 
   const crumbs = useMemo(() => {
     const path = location.pathname;
 
-    const out = [{ label: "Home", to: "/" }];
+    const out = [{ label: t("nav.home"), to: "/" }];
 
     if (path === "/") return out.map((c, i) => ({ ...c, current: i === out.length - 1 }));
 
@@ -50,7 +52,7 @@ export function Breadcrumbs() {
         metaRecord.short_title ||
         metaRecord.shortTitle ||
         row?.title ||
-        "Path";
+        t("breadcrumbs.path");
 
       out.push({
         label: clampLabel(name, 42), // ✅ keep breadcrumb compact
@@ -60,9 +62,9 @@ export function Breadcrumbs() {
       return out.map((c, i) => ({ ...c, current: i === out.length - 1 }));
     }
 
-    out.push({ label: "Page", to: path });
+    out.push({ label: t("breadcrumbs.page"), to: path });
     return out.map((c, i) => ({ ...c, current: i === out.length - 1 }));
-  }, [location.pathname, getById]);
+  }, [location.pathname, getById, t]);
 
   if (!crumbs || crumbs.length <= 1) return null;
 
@@ -98,7 +100,6 @@ export function Breadcrumbs() {
     </Breadcrumb>
   );
 }
-
 
 
 

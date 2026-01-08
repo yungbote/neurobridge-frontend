@@ -11,11 +11,13 @@ import { EmptyContent } from "@/shared/components/EmptyContent";
 import { PathMaterialsView } from "@/features/paths/components/PathMaterialsView";
 import { Container } from "@/shared/layout/Container";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
+import { useI18n } from "@/app/providers/I18nProvider";
 import type { Path, PathNode } from "@/shared/types/models";
 
 export default function PathPage() {
   const { id: pathId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [searchParams] = useSearchParams();
 
   const { getById, activatePath, setActivePath } = usePaths();
@@ -136,7 +138,7 @@ export default function PathPage() {
 
   if (!pathId) return null;
 
-  const displayTitle = path?.title || (loading ? "Loading path…" : "Path");
+  const displayTitle = path?.title || (loading ? t("paths.loadingPath") : t("paths.path"));
   const displayDescription = path?.description || "";
 
   return (
@@ -152,7 +154,7 @@ export default function PathPage() {
 
           {err != null && (
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-              Failed to load path content.
+              {t("paths.loadFailed")}
             </div>
           )}
         </div>
@@ -163,30 +165,30 @@ export default function PathPage() {
           <PathMaterialsView pathId={pathId} />
         ) : isAudioView ? (
           <EmptyContent
-            title="Audio view"
-            message="Audio summaries are coming soon for this path."
-            helperText="Switch to Unit or Mindmap to continue learning."
+            title={t("paths.audio.title")}
+            message={t("paths.audio.message")}
+            helperText={t("paths.audio.helper")}
             icon={<Headphones className="h-7 w-7" />}
           />
         ) : (
           <>
             <div className="mb-12">
               <h2 className="mb-6 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-                Path Outline
+                {t("paths.outline")}
               </h2>
 
               {loading && nodes.length === 0 ? (
-                <div className="text-sm text-muted-foreground">Loading nodes…</div>
+                <div className="text-sm text-muted-foreground">{t("paths.loadingNodes")}</div>
               ) : nodes.length === 0 ? (
                 <div className="rounded-2xl border border-border/60 bg-muted/20 p-8 text-center">
                   <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-background/60 text-muted-foreground shadow-sm">
                     <BookOpen className="h-6 w-6" />
                   </div>
-                  <div className="text-base font-medium text-foreground">No lessons yet</div>
+                  <div className="text-base font-medium text-foreground">{t("sidebar.emptyLessons")}</div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {path?.jobId
-                      ? "We’re still building your path. Check back in a moment."
-                      : "This path doesn’t have any lessons yet."}
+                      ? t("paths.lessons.building")
+                      : t("paths.lessons.none")}
                   </div>
                 </div>
               ) : (
@@ -205,7 +207,7 @@ export default function PathPage() {
                           key={node.id}
                           type="button"
                           onClick={() => navigate(`/path-nodes/${node.id}`)}
-                          className="w-full rounded-xl border border-border bg-background px-4 py-4 text-left transition-colors hover:bg-muted/30"
+                          className="w-full rounded-xl border border-border bg-background px-4 py-4 text-start transition-colors hover:bg-muted/30"
                         >
                           <div className="flex items-start gap-3">
                             <Avatar className="mt-0.5 h-6 w-6 shrink-0">
@@ -224,7 +226,7 @@ export default function PathPage() {
                                 <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {hasContent ? "Lesson ready" : "Lesson is still being written"}
+                                {hasContent ? t("paths.lessons.ready") : t("paths.lessons.writing")}
                               </p>
                             </div>
                           </div>
@@ -237,7 +239,7 @@ export default function PathPage() {
 
             <div className="flex justify-center pt-4">
               <Button size="lg" className="px-8" onClick={onStart} disabled={!firstNode}>
-                Start Path
+                {t("paths.start")}
               </Button>
             </div>
           </>
