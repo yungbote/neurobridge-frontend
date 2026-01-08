@@ -1106,7 +1106,7 @@ const ChatMessage: ChatMessageComponent = ({
       {isThinking && !children ? (
         <ThinkingIndicator />
       ) : (
-        <div className="max-w-3xl">
+        <div className="max-w-5xl">
           {thinkingContent && (
             <ThinkingContent
               duration={thinkingDuration}

@@ -1042,7 +1042,7 @@ export default function ChatThreadPage() {
       `}</style>
 
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto">
-        <Container size="sm" className="page-pad-compact">
+        <Container size="md" className="page-pad-compact">
           {loading && !thread ? (
             <div className="space-y-3 py-2">
               <div className="flex justify-end">
@@ -1270,12 +1270,12 @@ export default function ChatThreadPage() {
           {thread ? (
             <>
               {sendError ? (
-                <Container size="sm" className="pb-2 text-xs text-destructive">
+                <Container size="md" className="pb-2 text-xs text-destructive">
                   {sendError}
                 </Container>
               ) : null}
               <AnimatedChatbar
-                className="max-w-3xl"
+                className="max-w-5xl"
                 disablePlaceholderAnimation
                 disableUploads
                 submitMode={learningBuildActive ? "cancel" : "send"}
@@ -1283,7 +1283,7 @@ export default function ChatThreadPage() {
               />
             </>
           ) : (
-            <Container size="sm">
+            <Container size="md">
               <div className="h-14 w-full rounded-3xl border border-border bg-muted/30" />
             </Container>
           )}
