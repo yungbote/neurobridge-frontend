@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Separator } from "@/shared/ui/separator";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
+import { MermaidDiagram } from "@/shared/components/MermaidDiagram";
 import type { JsonInput } from "@/shared/types/models";
 
 interface ContentBlock {
@@ -297,13 +298,8 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
             );
           }
           return (
-            <div key={i} className="space-y-2">
-              <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagram</div>
-                <pre className="mt-2 overflow-x-auto text-sm text-foreground/90">
-                  <code>{md}</code>
-                </pre>
-              </div>
+            <div key={i}>
+              <MermaidDiagram source={md} frameClassName="bg-muted/20" />
             </div>
           );
         }

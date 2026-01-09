@@ -294,6 +294,41 @@ export function ActivityPanelProvider({ children }: ActivityPanelProviderProps) 
     };
   }, [connected, activeJobId, applyLearningBuildSnapshot]);
 
+  // Fallback: poll while job is non-terminal (SSE has no replay and may drop messages).
+  useEffect(() => {
+    if (!activeJobId) return;
+    const knownStatus = String(activeJob?.status || "").toLowerCase();
+    if (knownStatus && isTerminalJobStatus(knownStatus)) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+
+    const poll = async () => {
+      if (cancelled) return;
+      attempt += 1;
+
+      try {
+        const job = await apiGetJob(activeJobId);
+        if (cancelled) return;
+        if (job) applyLearningBuildSnapshot(job, job?.message);
+        if (job && isTerminalJobStatus(job.status)) return;
+      } catch (err) {
+        console.warn("[ActivityPanelProvider] Poll job snapshot failed:", err);
+      }
+
+      const delay = Math.min(10_000, 1500 + attempt * 500);
+      timer = setTimeout(poll, delay);
+    };
+
+    timer = setTimeout(poll, 1500);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [activeJobId, activeJob?.status, applyLearningBuildSnapshot]);
+
   useEffect(() => {
     if (!lastMessage) return;
     if (!user?.id) return;

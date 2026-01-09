@@ -4,6 +4,15 @@
 /* allow dark mode via `.dark` class on <html> or <body> */
 @custom-variant dark (&:is(.dark *));
 
+@keyframes nb-skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @font-face {
   font-family: "Riforma";
   src: url("/fonts/Riforma-Bold.ttf") format("truetype");
@@ -326,7 +335,7 @@
   --info: oklch(0.6 0.12 240);
   --success: oklch(0.62 0.12 165);
   --warning: oklch(0.8 0.12 90);
-  --sidebar: oklch(0.98 0.006 250);
+  --sidebar: oklch(0.97 0.006 250);
   --sidebar-foreground: oklch(0.17 0.02 250);
   --sidebar-primary: oklch(0.3 0.04 250);
   --sidebar-primary-foreground: oklch(0.98 0.01 250);
@@ -363,7 +372,7 @@
   --info: oklch(0.7 0.12 240);
   --success: oklch(0.72 0.12 165);
   --warning: oklch(0.78 0.12 90);
-  --sidebar: oklch(0.16 0.02 250);
+  --sidebar: oklch(0.18 0.02 250);
   --sidebar-foreground: oklch(0.95 0.015 250);
   --sidebar-primary: oklch(0.78 0.06 250);
   --sidebar-primary-foreground: oklch(0.2 0.02 250);
@@ -401,7 +410,7 @@
   --info: oklch(0.6 0.1 230);
   --success: oklch(0.62 0.1 135);
   --warning: oklch(0.82 0.14 80);
-  --sidebar: oklch(0.985 0.014 80);
+  --sidebar: oklch(0.975 0.014 80);
   --sidebar-foreground: oklch(0.19 0.04 70);
   --sidebar-primary: oklch(0.38 0.07 70);
   --sidebar-primary-foreground: oklch(0.98 0.01 80);
@@ -438,7 +447,7 @@
   --info: oklch(0.7 0.1 230);
   --success: oklch(0.7 0.1 135);
   --warning: oklch(0.78 0.13 80);
-  --sidebar: oklch(0.18 0.03 70);
+  --sidebar: oklch(0.2 0.03 70);
   --sidebar-foreground: oklch(0.95 0.02 80);
   --sidebar-primary: oklch(0.84 0.08 80);
   --sidebar-primary-foreground: oklch(0.2 0.03 70);
@@ -476,7 +485,7 @@
   --info: oklch(0.6 0.12 200);
   --success: oklch(0.62 0.12 150);
   --warning: oklch(0.8 0.13 85);
-  --sidebar: oklch(0.985 0.012 145);
+  --sidebar: oklch(0.97 0.012 145);
   --sidebar-foreground: oklch(0.18 0.03 145);
   --sidebar-primary: oklch(0.33 0.08 145);
   --sidebar-primary-foreground: oklch(0.98 0.01 145);
@@ -513,7 +522,7 @@
   --info: oklch(0.7 0.12 200);
   --success: oklch(0.72 0.12 150);
   --warning: oklch(0.78 0.12 85);
-  --sidebar: oklch(0.17 0.02 145);
+  --sidebar: oklch(0.19 0.02 145);
   --sidebar-foreground: oklch(0.95 0.015 145);
   --sidebar-primary: oklch(0.8 0.09 145);
   --sidebar-primary-foreground: oklch(0.2 0.02 145);
@@ -551,7 +560,7 @@
   --info: oklch(0.62 0.12 210);
   --success: oklch(0.64 0.12 150);
   --warning: oklch(0.8 0.13 85);
-  --sidebar: oklch(0.985 0.01 210);
+  --sidebar: oklch(0.97 0.01 210);
   --sidebar-foreground: oklch(0.18 0.03 220);
   --sidebar-primary: oklch(0.36 0.09 205);
   --sidebar-primary-foreground: oklch(0.98 0.01 210);
@@ -588,7 +597,7 @@
   --info: oklch(0.72 0.12 210);
   --success: oklch(0.74 0.12 150);
   --warning: oklch(0.78 0.12 85);
-  --sidebar: oklch(0.16 0.03 220);
+  --sidebar: oklch(0.18 0.03 220);
   --sidebar-foreground: oklch(0.95 0.02 210);
   --sidebar-primary: oklch(0.78 0.11 205);
   --sidebar-primary-foreground: oklch(0.2 0.03 220);
@@ -626,7 +635,7 @@
   --info: oklch(0.62 0.12 230);
   --success: oklch(0.62 0.12 150);
   --warning: oklch(0.8 0.13 85);
-  --sidebar: oklch(0.985 0.006 260);
+  --sidebar: oklch(0.97 0.006 260);
   --sidebar-foreground: oklch(0.16 0.02 260);
   --sidebar-primary: oklch(0.3 0.05 260);
   --sidebar-primary-foreground: oklch(0.98 0.01 260);
@@ -663,7 +672,7 @@
   --info: oklch(0.72 0.12 230);
   --success: oklch(0.74 0.12 150);
   --warning: oklch(0.78 0.12 85);
-  --sidebar: oklch(0.14 0.02 260);
+  --sidebar: oklch(0.17 0.02 260);
   --sidebar-foreground: oklch(0.95 0.02 260);
   --sidebar-primary: oklch(0.82 0.08 260);
   --sidebar-primary-foreground: oklch(0.2 0.02 260);
@@ -701,7 +710,7 @@
   --info: oklch(0.6 0.12 230);
   --success: oklch(0.62 0.12 140);
   --warning: oklch(0.82 0.14 80);
-  --sidebar: oklch(0.99 0.012 95);
+  --sidebar: oklch(0.975 0.012 95);
   --sidebar-foreground: oklch(0.2 0.03 95);
   --sidebar-primary: oklch(0.38 0.06 95);
   --sidebar-primary-foreground: oklch(0.98 0.01 95);
@@ -738,7 +747,7 @@
   --info: oklch(0.7 0.12 230);
   --success: oklch(0.72 0.12 140);
   --warning: oklch(0.78 0.12 80);
-  --sidebar: oklch(0.18 0.02 95);
+  --sidebar: oklch(0.2 0.02 95);
   --sidebar-foreground: oklch(0.95 0.015 95);
   --sidebar-primary: oklch(0.85 0.08 95);
   --sidebar-primary-foreground: oklch(0.2 0.02 95);
@@ -776,7 +785,7 @@
   --info: oklch(0.6 0.12 230);
   --success: oklch(0.62 0.12 145);
   --warning: oklch(0.82 0.16 80);
-  --sidebar: oklch(0.985 0.014 60);
+  --sidebar: oklch(0.97 0.014 60);
   --sidebar-foreground: oklch(0.2 0.05 50);
   --sidebar-primary: oklch(0.4 0.1 50);
   --sidebar-primary-foreground: oklch(0.98 0.01 60);
@@ -813,7 +822,7 @@
   --info: oklch(0.7 0.12 230);
   --success: oklch(0.72 0.12 145);
   --warning: oklch(0.78 0.14 80);
-  --sidebar: oklch(0.17 0.03 50);
+  --sidebar: oklch(0.2 0.03 50);
   --sidebar-foreground: oklch(0.95 0.02 60);
   --sidebar-primary: oklch(0.84 0.12 50);
   --sidebar-primary-foreground: oklch(0.2 0.03 50);
@@ -851,7 +860,7 @@
   --info: oklch(0.62 0.12 215);
   --success: oklch(0.64 0.12 155);
   --warning: oklch(0.8 0.13 85);
-  --sidebar: oklch(0.985 0.008 220);
+  --sidebar: oklch(0.97 0.008 220);
   --sidebar-foreground: oklch(0.18 0.03 225);
   --sidebar-primary: oklch(0.34 0.08 220);
   --sidebar-primary-foreground: oklch(0.98 0.01 220);
@@ -888,7 +897,7 @@
   --info: oklch(0.72 0.12 215);
   --success: oklch(0.74 0.12 155);
   --warning: oklch(0.78 0.12 85);
-  --sidebar: oklch(0.16 0.03 225);
+  --sidebar: oklch(0.18 0.03 225);
   --sidebar-foreground: oklch(0.95 0.02 220);
   --sidebar-primary: oklch(0.8 0.1 220);
   --sidebar-primary-foreground: oklch(0.2 0.03 225);
@@ -926,7 +935,7 @@
   --info: oklch(0.6 0.12 205);
   --success: oklch(0.62 0.12 145);
   --warning: oklch(0.8 0.13 85);
-  --sidebar: oklch(0.985 0.01 120);
+  --sidebar: oklch(0.97 0.01 120);
   --sidebar-foreground: oklch(0.18 0.03 120);
   --sidebar-primary: oklch(0.32 0.08 120);
   --sidebar-primary-foreground: oklch(0.98 0.01 120);
@@ -963,7 +972,7 @@
   --info: oklch(0.7 0.12 205);
   --success: oklch(0.72 0.12 145);
   --warning: oklch(0.78 0.12 85);
-  --sidebar: oklch(0.17 0.02 120);
+  --sidebar: oklch(0.19 0.02 120);
   --sidebar-foreground: oklch(0.95 0.015 120);
   --sidebar-primary: oklch(0.8 0.09 120);
   --sidebar-primary-foreground: oklch(0.2 0.02 120);
@@ -1163,7 +1172,4 @@
     height: auto;
   }
 }
-
-
-
 

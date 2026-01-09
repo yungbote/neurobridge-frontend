@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/sheet"
 import { Separator } from "@/shared/ui/separator";
 import { Textarea } from "@/shared/ui/textarea";
 import { cn } from "@/shared/lib/utils";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 
 import { createChatThread, sendChatMessage } from "@/shared/api/ChatService";
 import { ingestEvents } from "@/shared/api/EventService";
@@ -49,6 +50,49 @@ type DocBlock = {
 };
 
 type BlockFeedback = "" | "like" | "dislike";
+
+export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <div className="mx-auto w-full max-w-5xl">
+      <div className="mb-8 space-y-3">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-9 w-24 rounded-full" />
+          <Skeleton className="h-4 w-44 rounded-full" />
+        </div>
+        <Skeleton className="h-10 w-10/12 rounded-full" />
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {Array.from({ length: 8 }).map((_, i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <Skeleton key={i} className="h-6 w-20 rounded-full" />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
+        <div className="px-6 py-8 sm:px-8 sm:py-10">
+          <div className="space-y-6">
+            <Skeleton className="h-6 w-44 rounded-full" />
+            <SkeletonText lines={6} className="max-w-[72ch]" />
+            <Skeleton className="h-[220px] w-full rounded-2xl" />
+            <SkeletonText lines={5} className="max-w-[72ch]" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return <div aria-busy="true">{body}</div>;
+  }
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      <Container size="2xl" className="page-pad">
+        {body}
+      </Container>
+    </div>
+  );
+}
 
 const markdownCodeComponents = {
   code({
@@ -823,6 +867,10 @@ export default function PathNodePage() {
 	  );
 
   const drillPayload = drawerDrill && typeof drawerDrill === "object" ? drawerDrill : null;
+
+  if (loading && !node) {
+    return <PathNodePageSkeleton />;
+  }
 
   return (
     <div className="page-surface">

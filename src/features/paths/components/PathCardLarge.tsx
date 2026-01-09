@@ -17,6 +17,7 @@ import { usePaths } from "@/app/providers/PathProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { cn } from "@/shared/lib/utils";
+import { Skeleton, SkeletonPill, SkeletonText } from "@/shared/ui/skeleton";
 import type { Path } from "@/shared/types/models";
 
 interface PathCardLargeProps {
@@ -310,10 +311,12 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     </Card>
   );
 
-  const to = showGen && path.jobId
-    ? `/paths/build/${path.jobId}`
-    : !isPlaceholder
-      ? `/paths/${path.id}`
+  // If we have a real path id, let users open it immediately (even while generating).
+  // Only route to the build view when we *don't* have a path yet (job:* placeholders).
+  const to = !isPlaceholder
+    ? `/paths/${path.id}`
+    : path.jobId
+      ? `/paths/build/${path.jobId}`
       : null;
 
   if (!to) return <div className="cursor-default">{card}</div>;
@@ -326,5 +329,43 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     >
       {card}
     </Link>
+  );
+}
+
+export function PathCardLargeSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("cursor-default", className)}>
+      <div className="group relative w-full max-w-[360px] rounded-xl border bg-card py-6 shadow-sm">
+        <div className="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6">
+          <div className="space-y-3">
+            <div className="flex min-h-[110px] items-start justify-between gap-3">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <SkeletonPill className="w-14" />
+                  <SkeletonPill className="w-12" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-6 w-11/12 rounded-full" />
+                  <Skeleton className="h-6 w-8/12 rounded-full" />
+                </div>
+                <SkeletonText lines={2} className="pt-1" />
+              </div>
+
+              <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center sm:h-[92px] sm:w-[92px]">
+                <Skeleton className="h-full w-full rounded-full" />
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-sm">
+                <div className="aspect-[16/9]">
+                  <Skeleton className="h-full w-full rounded-none" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

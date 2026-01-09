@@ -37,6 +37,7 @@ import { cn } from "@/shared/lib/utils";
 import { m } from "framer-motion";
 import { nbTransitions } from "@/shared/motion/presets";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Skeleton } from "@/shared/ui/skeleton";
 
 const PATH_NAV_TABS = [
   { id: "materials", labelKey: "paths.tabs.materials", icon: FolderOpen },
@@ -268,6 +269,13 @@ export function AppNavBar() {
             >
               <Ellipsis className="size-5" />
             </IconButton>
+          </div>
+        )}
+
+        {isAuthenticated && userLoading && (
+          <div className="ms-auto flex items-center gap-2" aria-hidden="true">
+            <Skeleton className="h-9 w-9 rounded-full" />
+            <Skeleton className="hidden h-9 w-24 rounded-full sm:block" />
           </div>
         )}
 

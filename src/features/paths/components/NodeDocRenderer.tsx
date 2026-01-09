@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
+import { MermaidDiagram } from "@/shared/components/MermaidDiagram";
 import type { JsonInput } from "@/shared/types/models";
 
 interface DocBlock {
@@ -139,7 +140,7 @@ function SectionBlock({
 function markdownComponents(): Components {
   return {
     p({ children }: { children?: React.ReactNode }) {
-      return <p className="text-pretty leading-relaxed text-foreground/90">{children}</p>;
+      return <p className="mt-4 first:mt-0 text-pretty leading-7 text-foreground/90">{children}</p>;
     },
     a({ href, children }: { href?: string; children?: React.ReactNode }) {
       return (
@@ -169,22 +170,44 @@ function markdownComponents(): Components {
       return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
     },
     ul({ children }: { children?: React.ReactNode }) {
-      return <ul className="list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;
+      return <ul className="mt-4 first:mt-0 list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;
     },
     ol({ children }: { children?: React.ReactNode }) {
-      return <ol className="list-decimal ps-5 space-y-2 text-foreground/90">{children}</ol>;
+      return <ol className="mt-4 first:mt-0 list-decimal ps-5 space-y-2 text-foreground/90">{children}</ol>;
     },
     li({ children }: { children?: React.ReactNode }) {
       return <li className="leading-relaxed">{children}</li>;
     },
     h2({ children }: { children?: React.ReactNode }) {
-      return <h2 className="text-balance text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
+      return (
+        <h2 className="mt-8 first:mt-0 text-balance text-2xl font-semibold tracking-tight text-foreground">
+          {children}
+        </h2>
+      );
     },
     h3({ children }: { children?: React.ReactNode }) {
-      return <h3 className="text-balance text-lg font-semibold tracking-tight text-foreground">{children}</h3>;
+      return (
+        <h3 className="mt-6 first:mt-0 text-balance text-xl font-semibold tracking-tight text-foreground">
+          {children}
+        </h3>
+      );
     },
     h4({ children }: { children?: React.ReactNode }) {
-      return <h4 className="text-balance text-base font-semibold tracking-tight text-foreground">{children}</h4>;
+      return (
+        <h4 className="mt-5 first:mt-0 text-balance text-lg font-semibold tracking-tight text-foreground">
+          {children}
+        </h4>
+      );
+    },
+    blockquote({ children }: { children?: React.ReactNode }) {
+      return (
+        <blockquote className="mt-4 first:mt-0 border-l-2 border-border/70 pl-4 text-foreground/85">
+          {children}
+        </blockquote>
+      );
+    },
+    hr() {
+      return <hr className="my-6 border-border/60" />;
     },
   };
 }
@@ -250,7 +273,7 @@ function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: stri
   return (
     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick check</div>
-      <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
+      <div className="mt-2 text-[16px] leading-7 text-foreground/90">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
           {safeString(promptMd)}
         </ReactMarkdown>
@@ -259,7 +282,7 @@ function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: stri
         <summary className="cursor-pointer text-sm font-medium text-foreground/90">
           Reveal answer
         </summary>
-        <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 p-3 text-[15px] leading-relaxed text-foreground/90">
+        <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 p-3 text-[16px] leading-7 text-foreground/90">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
             {safeString(answerMd)}
           </ReactMarkdown>
@@ -380,17 +403,37 @@ export function NodeDocRenderer({
 }: NodeDocRendererProps) {
   const d = useMemo(() => normalizeDoc(doc), [doc]);
   const blocks = asArray<DocBlock>(d?.blocks);
+  const sections = useMemo(() => {
+    const out: Array<{ id: string; blocks: Array<{ b: DocBlock; i: number }> }> = [];
+    let current: { id: string; blocks: Array<{ b: DocBlock; i: number }> } = {
+      id: "intro",
+      blocks: [],
+    };
+
+    for (let i = 0; i < blocks.length; i += 1) {
+      const b = blocks[i];
+      const type = safeString(b?.type).toLowerCase();
+      const level = type === "heading" ? Number(b?.level || 2) : 0;
+      if (type === "heading" && level === 2 && current.blocks.length > 0) {
+        out.push(current);
+        current = { id: safeString(b?.id) || `section:${i}`, blocks: [] };
+      }
+      current.blocks.push({ b, i });
+    }
+    if (current.blocks.length > 0) out.push(current);
+    return out;
+  }, [blocks]);
 
   if (!d || blocks.length === 0) {
     return <div className="text-sm text-muted-foreground">No unit doc yet.</div>;
   }
 
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-3xl space-y-10">
       {safeString(d?.summary).trim() ? (
         <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</div>
-          <div dir="auto" className="mt-3 text-[15px] leading-relaxed text-foreground/90">
+          <div dir="auto" className="mt-3 text-[16px] leading-7 text-foreground/90">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
               {safeString(d.summary)}
             </ReactMarkdown>
@@ -398,7 +441,14 @@ export function NodeDocRenderer({
         </div>
       ) : null}
 
-      {blocks.map((b, i) => {
+      <div className="space-y-8">
+        {sections.map((s) => (
+          <div
+            key={s.id}
+            className="rounded-3xl border border-border/60 bg-background/40 p-6 shadow-sm backdrop-blur-sm"
+          >
+            <div className="space-y-10">
+              {s.blocks.map(({ b, i }) => {
         const type = safeString(b?.type).toLowerCase();
         const blockId = safeString(b?.id) || String(i);
         const isPending = Boolean(pendingBlocks?.[blockId]);
@@ -485,14 +535,14 @@ export function NodeDocRenderer({
         if (type === "heading") {
           const level = Number(b?.level || 2);
           const text = safeString(b?.text);
-          if (level === 3) return wrap(<h3 className="text-balance text-lg font-semibold tracking-tight">{text}</h3>);
-          if (level === 4) return wrap(<h4 className="text-balance text-base font-semibold tracking-tight">{text}</h4>);
-          return wrap(<h2 className="text-balance text-xl font-semibold tracking-tight">{text}</h2>);
+          if (level === 3) return wrap(<h3 className="text-balance text-xl font-semibold tracking-tight">{text}</h3>);
+          if (level === 4) return wrap(<h4 className="text-balance text-lg font-semibold tracking-tight">{text}</h4>);
+          return wrap(<h2 className="text-balance text-2xl font-semibold tracking-tight">{text}</h2>);
         }
 
         if (type === "paragraph") {
           return wrap(
-            <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+            <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                 {safeString(b?.md)}
               </ReactMarkdown>
@@ -512,7 +562,7 @@ export function NodeDocRenderer({
           return wrap(
             <div className={cn("rounded-2xl border border-s-4 p-4", border)}>
               {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
-              <div dir="auto" className={cn("text-[15px] leading-relaxed text-foreground/90", title && "mt-2")}>
+              <div dir="auto" className={cn("text-[16px] leading-7 text-foreground/90", title && "mt-2")}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                   {safeString(b?.md)}
                 </ReactMarkdown>
@@ -542,7 +592,7 @@ export function NodeDocRenderer({
           const md = toMarkdownBullets(items);
           return wrap(
             <SectionBlock label={sectionLabel} title={title}>
-              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+              <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                   {md}
                 </ReactMarkdown>
@@ -559,7 +609,7 @@ export function NodeDocRenderer({
             <SectionBlock label={sectionLabel} title={title}>
               <ul className="space-y-2">
                 {items.map((it, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-[15px] leading-relaxed text-foreground/90">
+                  <li key={idx} className="flex items-start gap-2 text-[16px] leading-7 text-foreground/90">
                     <span className="mt-1 inline-flex h-4 w-4 shrink-0 rounded-[5px] border border-border/60 bg-background" />
                     <div dir="auto" className="min-w-0 flex-1">
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
@@ -580,7 +630,7 @@ export function NodeDocRenderer({
           const md = toMarkdownNumbered(stepsMd);
           return wrap(
             <SectionBlock label={sectionLabel} title={title}>
-              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+              <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                   {md}
                 </ReactMarkdown>
@@ -607,7 +657,7 @@ export function NodeDocRenderer({
                 {terms.map((t, idx) => (
                   <div key={idx} className="grid gap-2 sm:grid-cols-[160px,1fr]">
                     <div className="text-sm font-medium text-foreground/90">{t.term}</div>
-                    <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+                    <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                         {t.definition}
                       </ReactMarkdown>
@@ -641,7 +691,7 @@ export function NodeDocRenderer({
                         {qa.q}
                       </ReactMarkdown>
                     </summary>
-                    <div dir="auto" className="mt-3 text-[15px] leading-relaxed text-foreground/90">
+                    <div dir="auto" className="mt-3 text-[16px] leading-7 text-foreground/90">
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                         {qa.a}
                       </ReactMarkdown>
@@ -659,7 +709,7 @@ export function NodeDocRenderer({
           if (!md) return null;
           return wrap(
             <SectionBlock label={sectionLabel} title={title}>
-              <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+              <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
                   {md}
                 </ReactMarkdown>
@@ -744,6 +794,16 @@ export function NodeDocRenderer({
               />
             );
           }
+          if (kind === "mermaid") {
+            return wrap(
+              <MermaidDiagram
+                source={safeString(b?.source)}
+                caption={caption}
+                alt={caption || "Diagram"}
+                frameClassName="bg-muted/20"
+              />
+            );
+          }
           return wrap(
             <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagram</div>
@@ -796,7 +856,11 @@ export function NodeDocRenderer({
         }
 
         return null;
-      })}
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

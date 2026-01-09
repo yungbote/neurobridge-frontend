@@ -54,6 +54,38 @@ function HomeTabTopicIcon({
   );
 }
 
+export function HomePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <>
+      <Container size="app" className="page-pad">
+        <div className="flex flex-col gap-3 items-center text-center">
+          <Skeleton className="h-12 w-[min(560px,85vw)] rounded-2xl bg-muted/30" />
+          <Skeleton className="h-5 w-[min(720px,92vw)] rounded-full bg-muted/30" />
+        </div>
+      </Container>
+      <Container size="app" className="page-pad">
+        <div className="space-y-4">
+          <Skeleton className="h-14 w-full rounded-3xl bg-muted/20" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <Skeleton key={i} className="h-36 w-full rounded-2xl bg-muted/20" />
+            ))}
+          </div>
+        </div>
+      </Container>
+    </>
+  );
+
+  if (embedded) return <div aria-busy="true">{body}</div>;
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      {body}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { isAuthenticated, logout } = useAuth();
   const { user, loading: userLoading, reload: reloadUser } = useUser();
@@ -382,26 +414,7 @@ export default function HomePage() {
   if (!isAuthenticated) return null;
 
   if (userLoading) {
-    return (
-      <div className="page-surface">
-        <Container size="app" className="page-pad">
-          <div className="flex flex-col gap-3 items-center text-center">
-            <Skeleton className="h-12 w-[min(560px,85vw)] rounded-2xl bg-muted/30" />
-            <Skeleton className="h-5 w-[min(720px,92vw)] rounded-full bg-muted/30" />
-          </div>
-        </Container>
-        <Container size="app" className="page-pad">
-          <div className="space-y-4">
-            <Skeleton className="h-14 w-full rounded-3xl bg-muted/20" />
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-36 w-full rounded-2xl bg-muted/20" />
-              ))}
-            </div>
-          </div>
-        </Container>
-      </div>
-    );
+    return <HomePageSkeleton />;
   }
 
   if (!user) {

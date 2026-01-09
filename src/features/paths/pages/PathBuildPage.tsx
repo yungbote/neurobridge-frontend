@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getJob as apiGetJob } from "@/shared/api/JobService";
 import { Container } from "@/shared/layout/Container";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 function safeParseJSON(v: unknown): Record<string, unknown> | null {
   if (!v) return null;
   if (typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
@@ -17,6 +18,25 @@ function safeParseJSON(v: unknown): Record<string, unknown> | null {
     }
   }
   return null;
+}
+
+export function PathBuildPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <div className="space-y-3">
+      <Skeleton className="h-5 w-40 rounded-full" />
+      <SkeletonText lines={2} className="max-w-sm" />
+    </div>
+  );
+
+  if (embedded) return <div aria-busy="true">{body}</div>;
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      <Container size="sm" className="page-pad">
+        {body}
+      </Container>
+    </div>
+  );
 }
 
 export default function PathBuildPage() {
@@ -58,12 +78,14 @@ export default function PathBuildPage() {
 
   if (!jobId) return null;
 
-  const message = error ? "Failed to open build chat." : "Opening build…";
+  if (!error) {
+    return <PathBuildPageSkeleton />;
+  }
 
   return (
     <div className="page-surface">
       <Container size="sm" className="page-pad text-sm text-muted-foreground">
-        {message}
+        Failed to open build chat.
       </Container>
     </div>
   );

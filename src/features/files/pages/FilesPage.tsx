@@ -6,9 +6,40 @@ import { useMaterials } from "@/app/providers/MaterialProvider";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { Container } from "@/shared/layout/Container";
 import type { MaterialFile } from "@/shared/types/models";
-import { MaterialCardLarge } from "@/features/files/components/MaterialCardLarge";
+import { MaterialCardLarge, MaterialCardLargeSkeleton } from "@/features/files/components/MaterialCardLarge";
 import { nbFadeUp, nbTransitions } from "@/shared/motion/presets";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
+
+export function FilesPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <>
+      <div className="mb-10 space-y-3">
+        <Skeleton className="h-10 w-56 rounded-full" />
+        <SkeletonText lines={2} className="max-w-lg" />
+      </div>
+
+      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+        {Array.from({ length: 6 }).map((_, i) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <MaterialCardLargeSkeleton key={i} />
+        ))}
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div aria-busy="true">{body}</div>;
+  }
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      <Container size="app" className="page-pad">
+        {body}
+      </Container>
+    </div>
+  );
+}
 
 export default function FilesPage() {
   const { files, loading } = useMaterials();
@@ -23,6 +54,10 @@ export default function FilesPage() {
     return sorted.slice(0, 60);
   }, [files]);
 
+  if (loading && visible.length === 0) {
+    return <FilesPageSkeleton />;
+  }
+
   return (
     <div className="page-surface">
       <Container size="app" className="page-pad">
@@ -35,9 +70,7 @@ export default function FilesPage() {
           </p>
         </div>
 
-        {loading && visible.length === 0 ? (
-          <div className="text-sm text-muted-foreground">{t("files.loading")}</div>
-        ) : visible.length === 0 ? (
+        {visible.length === 0 ? (
           <EmptyContent
             title={t("sidebar.emptyFiles")}
             message={t("files.empty.message")}

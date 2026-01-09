@@ -18,6 +18,7 @@ import { ColorPicker, AVATAR_COLORS } from "@/features/user/components/ColorPick
 import { cn } from "@/shared/lib/utils";
 import type { UserProfile } from "@/shared/types/models";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+import { Skeleton } from "@/shared/ui/skeleton";
 
 function formatDisplayName(user: UserProfile | null | undefined, fallbackName = "User") {
   if (!user) return fallbackName;
@@ -125,7 +126,18 @@ export function UserAvatar({
     };
   }, []);
 
-  if (!isAuthenticated || userLoading || !user) return null;
+  if (!isAuthenticated) return null;
+  if (userLoading) {
+    const defaultTriggerClasses = showName ? "h-10 w-full justify-start px-2" : "h-10 w-10 p-0";
+    return (
+      <div className={cn("inline-flex items-center", defaultTriggerClasses, triggerClassName)}>
+        <div className={cn("flex items-center", showName ? "gap-2" : "justify-center")}>
+          <UserAvatarSkeleton showName={showName} />
+        </div>
+      </div>
+    );
+  }
+  if (!user) return null;
 
   const safeAvatarUrl = user.avatarUrl || "/placeholder.svg";
 
@@ -281,5 +293,20 @@ export function UserAvatar({
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+export function UserAvatarSkeleton({
+  showName = false,
+  className,
+}: {
+  showName?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-center gap-2", className)} aria-hidden="true">
+      <Skeleton className="h-8 w-8 rounded-full" />
+      {showName ? <Skeleton className="h-4 w-28 rounded-full" /> : null}
+    </div>
   );
 }

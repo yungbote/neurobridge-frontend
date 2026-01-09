@@ -77,6 +77,20 @@ function pathUpdatedMs(path: Path) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function pathReadyMs(path: Path) {
+  const legacy = path as Path & LegacyTimestampPath & { ready_at?: string | null };
+  const ms = new Date(
+    path?.readyAt ||
+      legacy.ready_at ||
+      path?.updatedAt ||
+      legacy.updated_at ||
+      path?.createdAt ||
+      legacy.created_at ||
+      0
+  ).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 function materialUpdatedMs(file: MaterialFile) {
   const ms = new Date(file?.updatedAt || file?.createdAt || 0).getTime();
   return Number.isFinite(ms) ? ms : 0;
@@ -332,11 +346,7 @@ export function HomeTabContent({
       const count = typeof p?.viewCount === "number" ? p.viewCount : 0;
       return !p?.lastViewedAt && count <= 0;
     };
-    const readyMsFor = (p: Path) => {
-      const t = p?.readyAt || p?.updatedAt || p?.createdAt || null;
-      const ms = t ? new Date(t).getTime() : 0;
-      return Number.isFinite(ms) ? ms : 0;
-    };
+    const readyMsFor = (p: Path) => pathReadyMs(p);
     const isNewPath = (p: Path) => {
       if (isBuildingPath(p)) return false;
       if (!isUnseen(p)) return false;
@@ -467,6 +477,10 @@ export function HomeTabContent({
     return sections;
   }, [filesByMaterialSetId, isHome, paths, t, taxonomySnapshot]);
 
+  const visibleHomeSections = useMemo(() => {
+    return (homeSections || []).filter((s) => (s.items?.length ?? 0) > 0);
+  }, [homeSections]);
+
   if (isHome && focusedNodeId) {
     const section =
       homeSections.find((s) => String(s?.nodeId || "") === focusedNodeId) ??
@@ -522,9 +536,45 @@ export function HomeTabContent({
       );
     }
 
+    if (visibleHomeSections.length === 0) {
+      // Fallback: never render an empty home view (e.g., missing taxonomy snapshot, legacy timestamps).
+      const recent = filterPathsByTab(paths, "home").slice(0, 24);
+      if (recent.length > 0) {
+        return (
+          <div className="w-full">
+            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+              {recent.map((path) => (
+                <PathCardLarge key={path.id} path={path} />
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      const orderedFiles = (materialList || []).slice().sort((a, b) => materialUpdatedMs(b) - materialUpdatedMs(a));
+      if (orderedFiles.length > 0) {
+        return (
+          <div className="w-full">
+            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+              {orderedFiles.slice(0, 24).map((file) => (
+                <MaterialCardLarge key={file.id} file={file} />
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      const copy = emptyCopy(activeTab, t);
+      return (
+        <div className="w-full">
+          <EmptyContent title={copy.title} message={copy.description} helperText="" />
+        </div>
+      );
+    }
+
     return (
       <div className="w-full space-y-12">
-        {homeSections.map((section) => (
+        {visibleHomeSections.map((section) => (
           <HomeRail
             key={section.id}
             title={section.title}

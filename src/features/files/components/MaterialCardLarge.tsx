@@ -12,6 +12,7 @@ import type { MaterialFile } from "@/shared/types/models";
 import { getAccessToken } from "@/shared/services/StorageService";
 import { cn } from "@/shared/lib/utils";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Skeleton, SkeletonPill, SkeletonText } from "@/shared/ui/skeleton";
 
 interface MaterialCardLargeProps {
   file?: MaterialFile | null;
@@ -302,5 +303,39 @@ export function MaterialCardLarge({ file }: MaterialCardLargeProps) {
     >
       {card}
     </a>
+  );
+}
+
+export function MaterialCardLargeSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("cursor-default", className)}>
+      <div className="group relative w-full max-w-[360px] rounded-xl border bg-card py-6 shadow-sm">
+        <div className="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6">
+          <div className="space-y-3">
+            <div className="flex min-h-[110px] items-start justify-between gap-3">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <SkeletonPill className="w-12" />
+                  <SkeletonPill className="w-14" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-6 w-10/12 rounded-full" />
+                  <Skeleton className="h-6 w-7/12 rounded-full" />
+                </div>
+                <SkeletonText lines={1} className="pt-1" />
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-sm">
+                <div className="aspect-[16/9]">
+                  <Skeleton className="h-full w-full rounded-none" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

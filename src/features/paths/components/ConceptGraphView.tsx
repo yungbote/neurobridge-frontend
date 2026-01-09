@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { getConceptGraph } from "@/shared/api/PathService";
 import { cn } from "@/shared/lib/utils";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 import type { Concept, ConceptEdge } from "@/shared/types/models";
 
 type Point = { x: number; y: number };
@@ -152,6 +153,49 @@ function screenFromWorld(pt: Point, view: ViewState): Point {
   };
 }
 
+export function ConceptGraphViewSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-4 w-72 rounded-full" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-8 w-20 rounded-full" />
+          <Skeleton className="h-8 w-20 rounded-full" />
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+        <div
+          className={cn(
+            "relative h-[380px] overflow-hidden rounded-2xl border border-border bg-card sm:h-[480px] lg:h-[560px]"
+          )}
+        >
+          <div className="absolute inset-0 p-4">
+            <Skeleton className="h-full w-full rounded-xl" />
+          </div>
+        </div>
+
+        <aside className="rounded-xl border border-border bg-card p-4">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-24 rounded-full" />
+              <Skeleton className="h-7 w-10/12 rounded-full" />
+              <Skeleton className="h-4 w-7/12 rounded-full" />
+            </div>
+            <SkeletonText lines={5} />
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <Skeleton key={i} className="h-6 w-16 rounded-full" />
+              ))}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -209,6 +253,10 @@ export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
   }, [concepts]);
 
   const selected = selectedId ? conceptById.get(selectedId) : null;
+
+  if (loading && !err && concepts.length === 0) {
+    return <ConceptGraphViewSkeleton />;
+  }
 
   // Build graph simulation data when concepts/edges change
   useEffect(() => {
@@ -694,8 +742,8 @@ export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_#e0f2fe_0%,_transparent_55%)] opacity-60" />
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,_rgba(148,163,184,0.25)_1px,_transparent_1px)] [background-size:24px_24px] opacity-30" />
           {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-              Loading concept graph…
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Skeleton className="h-4 w-40 rounded-full" />
             </div>
           ) : null}
           {!loading && concepts.length === 0 ? (

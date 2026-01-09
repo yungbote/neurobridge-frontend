@@ -17,6 +17,7 @@ import { EmptyContent } from "@/shared/components/EmptyContent";
 import { cn } from "@/shared/lib/utils";
 import { getAccessToken } from "@/shared/services/StorageService";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 import type { MaterialAsset, MaterialFile } from "@/shared/types/models";
 
 type MaterialAssetsByFile = Record<string, MaterialAsset[]>;
@@ -50,6 +51,61 @@ function normalizePageAssets(assets: MaterialAsset[] | null | undefined): Materi
     const bd = new Date(b?.createdAt || 0).getTime();
     return ad - bd;
   });
+}
+
+export function PathMaterialsViewSkeleton({ fullscreen = false }: { fullscreen?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "grid gap-5 lg:grid-cols-[300px_1fr]",
+        fullscreen && "h-full min-h-0"
+      )}
+      aria-busy="true"
+    >
+      <aside
+        className={cn(
+          "rounded-2xl border border-border/60 bg-card/70 p-3 shadow-sm backdrop-blur",
+          fullscreen && "flex h-full min-h-0 flex-col"
+        )}
+      >
+        <div className="flex items-center justify-between gap-2 px-1">
+          <Skeleton className="h-4 w-24 rounded-full" />
+          <Skeleton className="h-3 w-16 rounded-full" />
+        </div>
+
+        <div className={cn("mt-3 space-y-2", fullscreen && "min-h-0 flex-1 overflow-y-auto pe-1")}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <div key={i} className="flex items-start gap-3 rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+              <Skeleton className="mt-0.5 h-8 w-8 rounded-md" />
+              <div className="min-w-0 flex-1">
+                <Skeleton className="h-4 w-10/12 rounded-full" />
+                <Skeleton className="mt-2 h-3 w-6/12 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <div className={cn(fullscreen && "flex h-full min-h-0 flex-col")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Skeleton className="h-8 w-40 rounded-full" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-9 w-9 rounded-full" />
+            <Skeleton className="h-9 w-9 rounded-full" />
+            <Skeleton className="h-9 w-28 rounded-full" />
+          </div>
+        </div>
+
+        <div className={cn("mt-4", fullscreen ? "flex-1 min-h-0" : "")}>
+          <div className={cn("overflow-hidden rounded-2xl border border-border/60 bg-muted/20", fullscreen ? "h-full" : "h-[520px]")}>
+            <Skeleton className="h-full w-full rounded-none" />
+          </div>
+          <SkeletonText lines={2} className="mt-3 max-w-md" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface ViewerLayoutProps {
@@ -472,11 +528,7 @@ export function PathMaterialsView({ pathId }: PathMaterialsViewProps) {
   ]);
 
   if (loading) {
-    return (
-      <div className="rounded-2xl border border-border/60 bg-card/70 p-6 text-sm text-muted-foreground shadow-sm backdrop-blur">
-        {t("paths.materials.loading")}
-      </div>
-    );
+    return <PathMaterialsViewSkeleton />;
   }
 
   if (error) {

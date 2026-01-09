@@ -64,6 +64,7 @@ import {
 } from "@/shared/ui/tooltip";
 import { getAccessToken } from "@/shared/services/StorageService";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Skeleton } from "@/shared/ui/skeleton";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -795,6 +796,7 @@ export function AppSideBar() {
                             const isActive =
                               matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
                             const indent = Math.min(depth, 4) * 14;
+                            const showAvatarSkeleton = Boolean(activeBuild.showProgress && !hasChildren && !avatarUrl);
                             return (
                               <SidebarMenuSubItem key={n.id}>
                                 <div className="flex w-full items-center gap-1 rounded-xl nb-motion-fast motion-reduce:transition-none hover:bg-sidebar-accent/70">
@@ -821,23 +823,27 @@ export function AppSideBar() {
                                           <CornerDownRight className="h-3.5 w-3.5" />
                                         </span>
                                       ) : null}
-                                      <span
-                                        className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
-                                        style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
-                                        aria-hidden="true"
-                                      >
-                                        {avatarUrl ? (
-                                          <img
-                                            src={avatarUrl}
-                                            alt=""
-                                            loading="lazy"
-                                            decoding="async"
-                                            className="h-full w-full object-cover"
-                                          />
-                                        ) : hasChildren ? (
-                                          <FolderOpen className="h-3.5 w-3.5 text-white/80" />
-                                        ) : null}
-                                      </span>
+                                      {showAvatarSkeleton ? (
+                                        <Skeleton className="h-5 w-5 shrink-0 rounded-full border border-border/60" />
+                                      ) : (
+                                        <span
+                                          className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
+                                          style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
+                                          aria-hidden="true"
+                                        >
+                                          {avatarUrl ? (
+                                            <img
+                                              src={avatarUrl}
+                                              alt=""
+                                              loading="lazy"
+                                              decoding="async"
+                                              className="h-full w-full object-cover"
+                                            />
+                                          ) : hasChildren ? (
+                                            <FolderOpen className="h-3.5 w-3.5 text-white/80" />
+                                          ) : null}
+                                        </span>
+                                      )}
                                       <span className="truncate">{n.title || "Lesson"}</span>
                                     </Link>
                                   </SidebarMenuSubButton>

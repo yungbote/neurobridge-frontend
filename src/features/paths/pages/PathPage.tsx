@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/shared/ui/button";
 import { BookOpen, ChevronRight, CornerDownRight, Headphones } from "lucide-react";
 
@@ -12,9 +13,71 @@ import { PathMaterialsView } from "@/features/paths/components/PathMaterialsView
 import { Container } from "@/shared/layout/Container";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Badge } from "@/shared/ui/badge";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
+import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
+import { cn } from "@/shared/lib/utils";
+import { queryKeys } from "@/shared/query/queryKeys";
 import type { Path, PathNode } from "@/shared/types/models";
 
 type OutlineRow = { node: PathNode; depth: number; hasChildren: boolean };
+
+const EMPTY_NODES: PathNode[] = [];
+
+function PathOutlineSkeleton() {
+  const depths = [0, 0, 1, 1, 2, 0, 1, 2];
+  return (
+    <div className="space-y-2" aria-hidden="true">
+      {depths.map((depth, i) => {
+        const indent = Math.min(depth, 4) * 16;
+        return (
+          <div
+            // eslint-disable-next-line react/no-array-index-key
+            key={i}
+            className="w-full rounded-xl border border-border bg-background px-4 py-4"
+          >
+            <div className="flex items-start gap-3">
+              {indent > 0 ? <div aria-hidden="true" style={{ width: indent }} /> : null}
+              <Skeleton className="h-10 w-10 rounded-2xl" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-5 w-9/12 rounded-full" />
+                <Skeleton className="h-4 w-6/12 rounded-full" />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function PathPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <>
+      <div className="mb-12 space-y-4">
+        <Skeleton className="h-12 w-10/12 rounded-full" />
+        <SkeletonText lines={3} className="max-w-2xl" />
+      </div>
+
+      <div className="mb-12">
+        <Skeleton className="mb-6 h-4 w-40 rounded-full" />
+        <PathOutlineSkeleton />
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div aria-busy="true">{body}</div>;
+  }
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      <Container size="app" className="page-pad">
+        {body}
+      </Container>
+    </div>
+  );
+}
 
 export default function PathPage() {
   const { id: pathId } = useParams<{ id: string }>();
@@ -27,7 +90,6 @@ export default function PathPage() {
   const cached = pathId ? getById(pathId) : null;
 
   const [path, setPath] = useState<Path | null>(cached);
-  const [nodes, setNodes] = useState<PathNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<unknown | null>(null);
   const viewRecordedForRef = useRef<string | null>(null);
@@ -97,23 +159,7 @@ export default function PathPage() {
         const p = await activatePath(pathId);
         if (!mounted) return;
 
-        const showGen =
-          p?.jobId ||
-          p?.jobStatus ||
-          p?.jobStage ||
-          typeof p?.jobProgress === "number" ||
-          p?.jobMessage;
-
-        if (showGen && p?.jobId) {
-          navigate(`/paths/build/${p.jobId}`, { replace: true });
-          return;
-        }
-
         setPath(p);
-
-        const ns = await listNodesForPath(pathId);
-        if (!mounted) return;
-        setNodes(ns);
       } catch (e) {
         console.error("[PathPage] load failed:", e);
         if (mounted) setErr(e);
@@ -126,7 +172,17 @@ export default function PathPage() {
     return () => {
       mounted = false;
     };
-  }, [pathId, activatePath, navigate]);
+  }, [pathId, activatePath]);
+
+  const nodesQuery = useQuery({
+    queryKey: queryKeys.pathNodes(String(pathId || "")),
+    enabled: Boolean(pathId),
+    staleTime: 60_000,
+    queryFn: () => listNodesForPath(String(pathId)),
+  });
+
+  const nodes = nodesQuery.data ?? EMPTY_NODES;
+  const nodesLoading = Boolean(nodesQuery.isPending);
 
   const outline = useMemo((): { rows: OutlineRow[]; firstLeaf: PathNode | null } => {
     const sorted = (nodes || []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
@@ -177,8 +233,28 @@ export default function PathPage() {
 
   if (!pathId) return null;
 
+  if ((loading || nodesLoading) && nodes.length === 0 && !path) {
+    return <PathPageSkeleton />;
+  }
+
   const displayTitle = path?.title || (loading ? t("paths.loadingPath") : t("paths.path"));
   const displayDescription = path?.description || "";
+
+  const showGen =
+    path?.jobId ||
+    path?.jobStatus ||
+    path?.jobStage ||
+    typeof path?.jobProgress === "number" ||
+    path?.jobMessage;
+
+  const jobStatus = String(path?.jobStatus || "").toLowerCase();
+  const jobStage = String(path?.jobStage || "");
+  const isFailed = Boolean(showGen && jobStatus === "failed");
+  const isDone =
+    Boolean(showGen) &&
+    (jobStatus === "succeeded" || jobStatus === "success" || stageLabel(jobStage) === "Done");
+  const showProgress = Boolean(showGen && !isFailed && !isDone);
+  const progressPct = showProgress ? clampPct(path?.jobProgress) : 0;
 
   return (
     <div className="page-surface">
@@ -190,6 +266,49 @@ export default function PathPage() {
           <p className="text-pretty text-lg leading-relaxed text-muted-foreground">
             {displayDescription}
           </p>
+
+          {showGen ? (
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Badge>{t("paths.inProgress")}</Badge>
+                    {isFailed ? <Badge variant="destructive">{t("common.failed")}</Badge> : null}
+                  </div>
+                  <div className="text-sm font-medium text-foreground">
+                    {isFailed
+                      ? t("paths.generation.failed")
+                      : stageLabel(jobStage) || t("paths.generation.generating")}
+                  </div>
+                  {path?.jobMessage ? (
+                    <div className="text-xs text-muted-foreground">{path.jobMessage}</div>
+                  ) : null}
+                </div>
+
+                {path?.jobId ? (
+                  <div className="flex items-center gap-2">
+                    {showProgress ? (
+                      <div className="min-w-[140px]">
+                        <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>{progressPct}%</span>
+                          <span>{t("paths.generation.generating")}</span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted/60">
+                          <div
+                            className="h-full rounded-full bg-primary transition-[width] nb-duration nb-ease-out motion-reduce:transition-none"
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                    <Button asChild variant="outline" size="sm">
+                      <Link to={`/paths/build/${path.jobId}`}>{t("sidebar.openChat")}</Link>
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {err != null && (
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -216,8 +335,8 @@ export default function PathPage() {
                 {t("paths.outline")}
               </h2>
 
-              {loading && nodes.length === 0 ? (
-                <div className="text-sm text-muted-foreground">{t("paths.loadingNodes")}</div>
+              {nodesLoading && nodes.length === 0 ? (
+                <PathOutlineSkeleton />
               ) : nodes.length === 0 ? (
                 <div className="rounded-2xl border border-border/60 bg-muted/20 p-8 text-center">
                   <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-background/60 text-muted-foreground shadow-sm">
@@ -238,6 +357,7 @@ export default function PathPage() {
                         typeof node?.avatarUrl === "string" && node.avatarUrl.trim()
                           ? node.avatarUrl.trim()
                           : null;
+                      const showAvatarSkeleton = Boolean(!hasChildren && !avatarUrl);
                       const indent = Math.min(depth, 4) * 16;
                       const fallbackIndex =
                         typeof node?.index === "number" && node.index > 0 ? node.index : 0;
@@ -263,7 +383,12 @@ export default function PathPage() {
                               {avatarUrl ? (
                                 <AvatarImage src={avatarUrl} alt={`${node.title} avatar`} />
                               ) : null}
-                              <AvatarFallback className="text-xs font-medium text-muted-foreground">
+                              <AvatarFallback
+                                className={cn(
+                                  "text-xs font-medium text-muted-foreground",
+                                  showAvatarSkeleton && "animate-pulse bg-muted/40"
+                                )}
+                              >
                                 {fallbackIndex || ""}
                               </AvatarFallback>
                             </Avatar>

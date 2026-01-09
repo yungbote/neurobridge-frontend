@@ -15,6 +15,7 @@ import { useSSEContext } from "@/app/providers/SSEProvider";
 import { uploadMaterialSet as apiUploadMaterialSet } from "@/shared/api/MaterialService";
 import { getPath as apiGetPath, listPaths as apiListPaths } from "@/shared/api/PathService";
 import { getSessionState, patchSessionState } from "@/shared/api/SessionService";
+import { normalizeStage } from "@/shared/lib/learningBuildStages";
 import { queryKeys } from "@/shared/query/queryKeys";
 import type { BackendJob, BackendMaterialUploadResponse } from "@/shared/types/backend";
 import type { JobEventPayload, Path, SseMessage } from "@/shared/types/models";
@@ -196,11 +197,24 @@ export function PathProvider({ children }: PathProviderProps) {
 
   const [activePathId, setActivePathIdState] = useState<string | null>(null);
   const restoredActivePathRef = useRef(false);
+  const lastJobStageRef = useRef<Map<string, string>>(new Map());
 
   const pathsQuery = useQuery({
     queryKey: queryKeys.paths(),
     enabled: isAuthenticated,
     staleTime: 30_000,
+    refetchInterval: (query) => {
+      const data = query.state.data ?? [];
+      const hasPending = data.some((p) => {
+        const id = String(p?.id || "");
+        if (id.startsWith("job:")) return true;
+        const jobId = String(p?.jobId || "");
+        if (!jobId) return false;
+        const jobStatus = String(p?.jobStatus || "").toLowerCase();
+        return jobStatus === "queued" || jobStatus === "running";
+      });
+      return hasPending ? 5_000 : false;
+    },
     queryFn: async () => {
       const loaded = await apiListPaths();
       const normalized = (Array.isArray(loaded) ? loaded : []).map((p) => {
@@ -263,6 +277,7 @@ export function PathProvider({ children }: PathProviderProps) {
     if (isAuthenticated) return;
     setActivePathIdState(null);
     restoredActivePathRef.current = false;
+    lastJobStageRef.current.clear();
     queryClient.removeQueries({ queryKey: queryKeys.paths() });
   }, [isAuthenticated, queryClient]);
 
@@ -309,6 +324,19 @@ export function PathProvider({ children }: PathProviderProps) {
     }
 
     if (event === "jobprogress") {
+      const nextStage = normalizeStage(String(payload.stage ?? job?.stage ?? "")).toLowerCase();
+      const prevStage = lastJobStageRef.current.get(String(jobId)) ?? "";
+      if (nextStage && nextStage !== prevStage) {
+        lastJobStageRef.current.set(String(jobId), nextStage);
+        const pid = pathIdFromEvent ?? extractPathIdFromJob(job);
+        if (pid) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.pathNodes(String(pid)),
+            exact: true,
+          });
+        }
+      }
+
       queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const existing =
@@ -343,6 +371,7 @@ export function PathProvider({ children }: PathProviderProps) {
     }
 
     if (event === "jobfailed") {
+      lastJobStageRef.current.delete(String(jobId));
       queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const existing =
@@ -377,6 +406,7 @@ export function PathProvider({ children }: PathProviderProps) {
     }
 
     if (event === "jobdone") {
+      lastJobStageRef.current.delete(String(jobId));
       const pathId = pathIdFromEvent ?? extractPathIdFromJob(job);
 
       // Optimistically mark placeholder done
@@ -413,6 +443,10 @@ export function PathProvider({ children }: PathProviderProps) {
                 const withoutPlaceholder = list.filter((p) => p?.jobId !== jobId);
                 return upsertById(withoutPlaceholder, stripJobFields(fresh), { replace: true });
               });
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.pathNodes(String(fresh.id)),
+                exact: true,
+              });
               return;
             }
           }
@@ -424,6 +458,7 @@ export function PathProvider({ children }: PathProviderProps) {
     }
 
     if (event === "jobcanceled") {
+      lastJobStageRef.current.delete(String(jobId));
       queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const existing =
@@ -457,6 +492,7 @@ export function PathProvider({ children }: PathProviderProps) {
     }
 
     if (event === "jobrestarted") {
+      lastJobStageRef.current.delete(String(jobId));
       queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const existing =

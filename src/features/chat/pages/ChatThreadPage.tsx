@@ -45,6 +45,32 @@ type ChatMessageItem = Partial<ChatMessageModel> & {
 
 const BOTTOM_THRESHOLD = 32;
 
+export function ChatThreadPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <div className="space-y-3 py-2" aria-busy="true">
+      <div className="flex justify-end">
+        <Skeleton className="h-11 w-[240px] rounded-3xl bg-muted/30" />
+      </div>
+      <div className="flex justify-start">
+        <Skeleton className="h-16 w-[340px] rounded-3xl bg-muted/30" />
+      </div>
+      <div className="flex justify-end">
+        <Skeleton className="h-11 w-[180px] rounded-3xl bg-muted/30" />
+      </div>
+    </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      <Container size="md" className="page-pad-compact">
+        {body}
+      </Container>
+    </div>
+  );
+}
+
 interface DocBlock {
   id?: string;
   type?: string;
@@ -1043,20 +1069,10 @@ export default function ChatThreadPage() {
         }
       `}</style>
 
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto">
+          <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto">
         <Container size="md" className="page-pad-compact">
           {loading && !thread ? (
-            <div className="space-y-3 py-2">
-              <div className="flex justify-end">
-                <Skeleton className="h-11 w-[240px] rounded-3xl bg-muted/30" />
-              </div>
-              <div className="flex justify-start">
-                <Skeleton className="h-16 w-[340px] rounded-3xl bg-muted/30" />
-              </div>
-              <div className="flex justify-end">
-                <Skeleton className="h-11 w-[180px] rounded-3xl bg-muted/30" />
-              </div>
-            </div>
+            <ChatThreadPageSkeleton embedded />
           ) : null}
 
           {blockNodeId && blockId ? (

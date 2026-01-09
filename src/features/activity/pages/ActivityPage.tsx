@@ -14,6 +14,7 @@ import { Container } from "@/shared/layout/Container";
 import { usePaths } from "@/app/providers/PathProvider";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 import type { Activity, NodeActivity, Path, PathNode } from "@/shared/types/models";
 
 type ActivityBlock = {
@@ -66,6 +67,53 @@ function extractBlocks(contentJSON: unknown): ActivityBlock[] | null {
     return (obj as { content: ActivityBlock[] }).content;
   }
   return null;
+}
+
+export function ActivityPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
+  const body = (
+    <>
+      <div className="mb-8 flex items-center justify-between border-b border-border pb-6">
+        <div className="flex-1">
+          <Skeleton className="h-9 w-28 rounded-full" />
+        </div>
+        <div className="flex-1 flex justify-center">
+          <Skeleton className="h-4 w-56 rounded-full" />
+        </div>
+        <div className="flex-1 flex justify-end">
+          <Skeleton className="h-9 w-28 rounded-full" />
+        </div>
+      </div>
+
+      <div className="space-y-8">
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-10/12 rounded-full" />
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-4 w-16 rounded-full" />
+            <Skeleton className="h-4 w-20 rounded-full" />
+            <Skeleton className="h-4 w-24 rounded-full" />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <SkeletonText lines={5} className="max-w-[72ch]" />
+          <Skeleton className="h-[220px] w-full rounded-2xl" />
+          <SkeletonText lines={4} className="max-w-[72ch]" />
+        </div>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div aria-busy="true">{body}</div>;
+  }
+
+  return (
+    <div className="page-surface" aria-busy="true">
+      <Container size="2xl" className="page-pad-compact">
+        {body}
+      </Container>
+    </div>
+  );
 }
 
 export default function ActivityPage() {
@@ -187,13 +235,7 @@ export default function ActivityPage() {
   };
 
   if (loading && !activity) {
-    return (
-      <div className="page-surface">
-        <Container size="2xl" className="page-pad-compact text-sm text-muted-foreground">
-          {t("common.loading")}
-        </Container>
-      </div>
-    );
+    return <ActivityPageSkeleton />;
   }
 
   if (!activity) {
