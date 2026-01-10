@@ -77,12 +77,6 @@ function upsertById<T extends { id?: string | null }>(
   return out;
 }
 
-function stripJobFields(path: Path): Path {
-  // eslint-disable-next-line no-unused-vars
-  const { jobType, jobStatus, jobStage, jobProgress, jobMessage, ...rest } = path;
-  return rest;
-}
-
 function attachJobFields(
   path: Path,
   {
@@ -205,15 +199,28 @@ export function PathProvider({ children }: PathProviderProps) {
     staleTime: 30_000,
     refetchInterval: (query) => {
       const data = query.state.data ?? [];
-      const hasPending = data.some((p) => {
+      let hasFastPending = false;
+      let hasSlowPending = false;
+      for (const p of data) {
         const id = String(p?.id || "");
-        if (id.startsWith("job:")) return true;
+        if (id.startsWith("job:")) {
+          hasFastPending = true;
+          break;
+        }
         const jobId = String(p?.jobId || "");
-        if (!jobId) return false;
+        if (!jobId) continue;
         const jobStatus = String(p?.jobStatus || "").toLowerCase();
-        return jobStatus === "queued" || jobStatus === "running";
-      });
-      return hasPending ? 5_000 : false;
+        if (jobStatus === "queued" || jobStatus === "running") {
+          hasFastPending = true;
+          break;
+        }
+        if (jobStatus === "waiting_user") {
+          hasSlowPending = true;
+        }
+      }
+      if (hasFastPending) return 5_000;
+      if (hasSlowPending) return 15_000;
+      return false;
     },
     queryFn: async () => {
       const loaded = await apiListPaths();
@@ -296,7 +303,19 @@ export function PathProvider({ children }: PathProviderProps) {
     const jobId = payload.job_id ?? job?.id ?? null;
     const pathIdFromEvent = payload.path_id ?? payload.pathId ?? null;
 
-    if (!jobId || jobType !== "learning_build") return;
+    if (!jobId) return;
+
+    // Node avatars are generated in a follow-up job after the path build completes.
+    // Refresh the node list when that job finishes so avatars appear without a manual reload.
+    if (jobType === "node_avatar_render") {
+      if (event !== "jobdone" && event !== "jobfailed") return;
+      const pid = pathIdFromEvent ?? extractPathIdFromJob(job);
+      if (!pid) return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pathNodes(String(pid)), exact: true });
+      return;
+    }
+
+    if (jobType !== "learning_build") return;
 
     if (event === "jobcreated") {
       queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
@@ -441,7 +460,7 @@ export function PathProvider({ children }: PathProviderProps) {
               queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
                 const list = Array.isArray(prev) ? prev : [];
                 const withoutPlaceholder = list.filter((p) => p?.jobId !== jobId);
-                return upsertById(withoutPlaceholder, stripJobFields(fresh), { replace: true });
+                return upsertById(withoutPlaceholder, fresh, { replace: true });
               });
               void queryClient.invalidateQueries({
                 queryKey: queryKeys.pathNodes(String(fresh.id)),
@@ -604,7 +623,7 @@ export function PathProvider({ children }: PathProviderProps) {
         if (fresh?.id) {
           queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
             const list = Array.isArray(prev) ? prev : [];
-            return upsertById(list, stripJobFields(fresh), { replace: true });
+            return upsertById(list, fresh, { replace: true });
           });
         }
         return fresh;
@@ -690,7 +709,7 @@ export function PathProvider({ children }: PathProviderProps) {
       if (fresh?.id) {
         queryClient.setQueryData<Path[]>(queryKeys.paths(), (prev) => {
           const list = Array.isArray(prev) ? prev : [];
-          return upsertById(list, stripJobFields(fresh), { replace: true });
+          return upsertById(list, fresh, { replace: true });
         });
       }
       return fresh;

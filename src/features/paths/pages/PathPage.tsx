@@ -250,10 +250,11 @@ export default function PathPage() {
   const jobStatus = String(path?.jobStatus || "").toLowerCase();
   const jobStage = String(path?.jobStage || "");
   const isFailed = Boolean(showGen && jobStatus === "failed");
+  const isCanceled = Boolean(showGen && jobStatus === "canceled");
   const isDone =
     Boolean(showGen) &&
     (jobStatus === "succeeded" || jobStatus === "success" || stageLabel(jobStage) === "Done");
-  const showProgress = Boolean(showGen && !isFailed && !isDone);
+  const showProgress = Boolean(showGen && !isFailed && !isDone && !isCanceled);
   const progressPct = showProgress ? clampPct(path?.jobProgress) : 0;
 
   return (
@@ -278,6 +279,8 @@ export default function PathPage() {
                   <div className="text-sm font-medium text-foreground">
                     {isFailed
                       ? t("paths.generation.failed")
+                      : isCanceled
+                        ? t("chat.pathGeneration.canceled")
                       : stageLabel(jobStage) || t("paths.generation.generating")}
                   </div>
                   {path?.jobMessage ? (

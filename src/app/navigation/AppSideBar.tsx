@@ -178,9 +178,10 @@ function buildProgressState(path: Path | null | undefined) {
       path?.jobMessage
   );
   const isFailed = showGen && jobStatus === "failed";
+  const isCanceled = showGen && jobStatus === "canceled";
   const isDone =
     showGen && (jobStatus === "succeeded" || jobStatus === "success" || stageLabel(jobStage) === "Done");
-  const showProgress = showGen && !isFailed && !isDone;
+  const showProgress = showGen && !isFailed && !isDone && !isCanceled;
   return { showProgress, progressPct: showProgress ? clampPct(path?.jobProgress) : 0 };
 }
 

@@ -4,6 +4,7 @@ import { AlertCircle, Maximize2, X } from "lucide-react";
 
 import { cn } from "@/shared/lib/utils";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { getAccessToken } from "@/shared/services/StorageService";
 
 type ImageLightboxProps = {
   src: string;
@@ -27,10 +28,34 @@ export function ImageLightbox({
   const [loaded, setLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
+  const resolveImageSrc = (raw: string) => {
+    const trimmed = String(raw || "").trim();
+    if (!trimmed) return trimmed;
+    if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return trimmed;
+
+    const apiBase = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+    let resolved = trimmed;
+    if (apiBase && apiBase.startsWith("http") && trimmed.startsWith("/api")) {
+      resolved = apiBase.endsWith("/api") ? `${apiBase}${trimmed.slice("/api".length)}` : `${apiBase}${trimmed}`;
+    }
+
+    const token = getAccessToken();
+    if (!token) return resolved;
+    if (resolved.includes("token=")) return resolved;
+
+    const isApiURL =
+      (apiBase && resolved.startsWith(apiBase)) || resolved.startsWith("/api/");
+    if (!isApiURL) return resolved;
+
+    return `${resolved}${resolved.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  };
+
+  const resolvedSrc = resolveImageSrc(src);
+
   useEffect(() => {
     setLoaded(false);
     setHasError(false);
-  }, [src]);
+  }, [resolvedSrc]);
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +98,7 @@ export function ImageLightbox({
           ) : (
             <>
               <img
-                src={src}
+                src={resolvedSrc}
                 alt={alt || t("common.image")}
                 onLoad={() => setLoaded(true)}
                 onError={() => setHasError(true)}
@@ -109,7 +134,7 @@ export function ImageLightbox({
                 <X className="h-6 w-6" />
               </button>
               <img
-                src={src}
+                src={resolvedSrc}
                 alt={alt || t("common.image")}
                 className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl"
                 onClick={(e) => e.stopPropagation()}

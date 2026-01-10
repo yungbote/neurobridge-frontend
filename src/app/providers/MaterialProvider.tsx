@@ -86,13 +86,20 @@ export function MaterialProvider({ children }: MaterialProviderProps) {
     if (lastMessage.channel !== user.id) return;
 
     const event = String(lastMessage.event || "").toLowerCase();
-    if (event !== "jobcreated" && event !== "jobdone" && event !== "jobfailed") return;
+    if (event !== "jobcreated" && event !== "jobdone" && event !== "jobfailed" && event !== "jobprogress") return;
 
     const payload = asJobPayload(lastMessage.data);
     if (!payload) return;
     const job = payload.job as { job_type?: string; jobType?: string } | undefined;
     const jobType = String(payload.job_type ?? job?.job_type ?? job?.jobType ?? "").toLowerCase();
-    if (jobType !== "learning_build") return;
+
+    // Reload material files when jobs that create/update them run.
+    // - `ingest_chunks` is where thumbnail_asset_id gets written.
+    // - `web_resources_seed` can add new web materials.
+    // - `learning_build` still serves as a coarse "everything done" signal.
+    if (jobType !== "learning_build" && jobType !== "ingest_chunks" && jobType !== "web_resources_seed") return;
+    // Avoid spamming reloads during long learning_build runs; we only need the final snapshot.
+    if (event === "jobprogress" && jobType === "learning_build") return;
 
     scheduleReload();
   }, [connected, isAuthenticated, lastMessage, scheduleReload, user?.id]);

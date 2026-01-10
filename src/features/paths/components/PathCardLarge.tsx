@@ -98,17 +98,20 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
     path.jobMessage;
 
   const isFailed = showGen && jobStatus === "failed";
+  const isCanceled = showGen && jobStatus === "canceled";
   const isDone =
     showGen &&
     (jobStatus === "succeeded" || jobStatus === "success" || stageLabel(jobStage) === "Done");
-  const showProgress = showGen && !isFailed && !isDone;
+  const showProgress = showGen && !isFailed && !isDone && !isCanceled;
 
   const progressPercentage = showProgress ? jobProgress : 0;
 
   const titleText = showGen
     ? isFailed
       ? t("paths.generation.failed")
-      : stageLabel(jobStage) || t("paths.generation.generating")
+      : isCanceled
+        ? t("chat.pathGeneration.canceled")
+        : stageLabel(jobStage) || t("paths.generation.generating")
     : path.title || t("paths.untitled");
 
   const subText = showGen
@@ -125,7 +128,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   const strokeDashoffset =
     circumference - (progressPercentage / 100) * circumference;
 
-  const canRetry = Boolean(path.jobId) && isFailed;
+  const canRetry = Boolean(path.jobId) && (isFailed || isCanceled);
   const canTrash = isFailed && !isPlaceholder;
   const showFailedActions = canRetry || canTrash;
 
