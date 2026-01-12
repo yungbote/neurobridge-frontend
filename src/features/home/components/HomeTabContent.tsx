@@ -266,13 +266,16 @@ function HomeSectionIcon({ iconKey }: { iconKey?: string }) {
     <div
       aria-hidden="true"
       className={cn(
-        "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60",
+        "relative inline-flex shrink-0 items-center justify-center rounded-full border border-border/60",
+        // Responsive sizing: 36px mobile, 40px tablet, 44px desktop
+        "h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11",
         "bg-gradient-to-br from-background/80 via-background/60 to-muted/30 shadow-sm backdrop-blur-sm",
         "ring-1 ring-inset ring-white/10 dark:ring-white/5",
         "shadow-[0_1px_0_rgba(255,255,255,0.10)_inset]"
       )}
     >
-      <Icon className="h-4 w-4 text-muted-foreground" />
+      {/* Responsive icon sizing */}
+      <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px] md:h-5 md:w-5 text-muted-foreground" />
     </div>
   );
 }
@@ -542,7 +545,8 @@ export function HomeTabContent({
       if (recent.length > 0) {
         return (
           <div className="w-full">
-            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+            {/* Responsive grid: 1 col on mobile, 2 on tablet, 3+ on desktop */}
+            <div className="grid gap-4 xs:gap-5 sm:gap-6 grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),340px))] lg:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),380px))]">
               {recent.map((path) => (
                 <PathCardLarge key={path.id} path={path} />
               ))}
@@ -555,7 +559,8 @@ export function HomeTabContent({
       if (orderedFiles.length > 0) {
         return (
           <div className="w-full">
-            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+            {/* Responsive grid: 1 col on mobile, 2 on tablet, 3+ on desktop */}
+            <div className="grid gap-4 xs:gap-5 sm:gap-6 grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),340px))] lg:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),380px))]">
               {orderedFiles.slice(0, 24).map((file) => (
                 <MaterialCardLarge key={file.id} file={file} />
               ))}
@@ -603,7 +608,8 @@ export function HomeTabContent({
 
   return (
     <div className="w-full">
-      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+      {/* Responsive grid for filtered view */}
+      <div className="grid gap-4 xs:gap-5 sm:gap-6 grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),340px))] lg:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),380px))]">
         {filtered.map((path) => (
           <PathCardLarge key={path.id} path={path} />
         ))}
@@ -1015,7 +1021,8 @@ function HomeTopicAllGrid({ nodeId, seedItems }: { nodeId: string; seedItems: Ho
 
   return (
     <div className="w-full">
-      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+      {/* Responsive grid for topic focus view */}
+      <div className="grid gap-4 xs:gap-5 sm:gap-6 grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),340px))] lg:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),380px))]">
         {loadedItems.map((item) => (
           <m.div
             key={`${item.kind}:${item.id}`}
@@ -1033,9 +1040,9 @@ function HomeTopicAllGrid({ nodeId, seedItems }: { nodeId: string; seedItems: Ho
           ? Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={`topic-grid-skel:${i}`}
-                className="h-[280px] w-full max-w-[360px] rounded-xl border border-border/60 bg-muted/20 p-4"
+                className="h-[260px] xs:h-[270px] sm:h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4"
               >
-                <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                <Skeleton className="h-32 xs:h-34 sm:h-36 w-full rounded-lg bg-muted/30" />
                 <div className="mt-4 space-y-2">
                   <Skeleton className="h-4 w-3/4 bg-muted/30" />
                   <Skeleton className="h-4 w-1/2 bg-muted/30" />
@@ -1366,11 +1373,19 @@ function HomeRail({
   if (!allItems || allItems.length === 0) return null;
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-end justify-between gap-4">
-        <div className="flex items-end gap-3">
+    <section className="space-y-3 sm:space-y-4 md:space-y-5">
+      {/* Section header - responsive layout */}
+      <div className="flex items-center sm:items-end justify-between gap-3 sm:gap-4">
+        <div className="flex items-center sm:items-end gap-2.5 sm:gap-3 min-w-0">
           <HomeSectionIcon iconKey={iconKey} />
-          <h2 className="font-brand text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          {/* Responsive title: truncate on mobile, full on desktop */}
+          <h2 className={cn(
+            "font-brand font-bold tracking-tight text-foreground",
+            // Responsive typography
+            "text-lg xs:text-xl sm:text-2xl md:text-[28px] lg:text-3xl",
+            // Truncate on very small screens
+            "truncate sm:text-clip"
+          )}>
             {title}
           </h2>
 
@@ -1379,52 +1394,57 @@ function HomeRail({
               <button
                 type="button"
                 className={cn(
-                  "group ms-1 inline-flex h-8 items-center justify-center transition-colors",
+                  "group ms-1 inline-flex items-center justify-center transition-colors",
+                  // Touch-friendly sizing (44px on mobile, 32px on desktop)
+                  "h-11 sm:h-8",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
+                  // Touch optimizations
+                  "touch-manipulation -webkit-tap-highlight-color-transparent",
+                  "active:scale-95",
                   filter === "all"
-                    ? "w-8 rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted/40 hover:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
+                    ? "w-11 sm:w-8 rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted/40 hover:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
                     : "rounded-full p-0 text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
-	                )}
-	                aria-label={
-	                  filter === "paths"
-	                    ? t("home.filter.aria.paths")
-	                    : filter === "files"
-	                      ? t("home.filter.aria.files")
-	                      : t("home.filter.aria.cards")
-	                }
-	                title={
-	                  filter === "all"
-	                    ? t("home.filter.title.filter")
-	                    : filter === "paths"
-	                      ? t("home.filter.title.showingPaths")
-	                      : t("home.filter.title.showingFiles")
-	                }
-	              >
-	                {filter === "paths" ? (
-	                  <Badge
+                )}
+                aria-label={
+                  filter === "paths"
+                    ? t("home.filter.aria.paths")
+                    : filter === "files"
+                      ? t("home.filter.aria.files")
+                      : t("home.filter.aria.cards")
+                }
+                title={
+                  filter === "all"
+                    ? t("home.filter.title.filter")
+                    : filter === "paths"
+                      ? t("home.filter.title.showingPaths")
+                      : t("home.filter.title.showingFiles")
+                }
+              >
+                {filter === "paths" ? (
+                  <Badge
                     className={cn(
                       "pointer-events-none transition-colors",
                       "group-hover:bg-muted/40 group-hover:text-foreground",
                       "group-data-[state=open]:bg-muted/50 group-data-[state=open]:text-foreground"
-	                    )}
-	                  >
-	                    {t("home.filter.badge.path")}
-	                  </Badge>
-	                ) : filter === "files" ? (
-	                  <Badge
+                    )}
+                  >
+                    {t("home.filter.badge.path")}
+                  </Badge>
+                ) : filter === "files" ? (
+                  <Badge
                     className={cn(
                       "pointer-events-none transition-colors",
                       "group-hover:bg-muted/40 group-hover:text-foreground",
                       "group-data-[state=open]:bg-muted/50 group-data-[state=open]:text-foreground"
-	                    )}
-	                  >
-	                    {t("home.filter.badge.file")}
-	                  </Badge>
-	                ) : (
-	                  <Filter className="h-4 w-4" />
-	                )}
-	              </button>
-	            </DropdownMenuTrigger>
+                    )}
+                  >
+                    {t("home.filter.badge.file")}
+                  </Badge>
+                ) : (
+                  <Filter className="h-4 w-4" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
 	            <DropdownMenuContent align="start" sideOffset={8} className="w-48">
 	              <DropdownMenuLabel>{t("home.filter.label.show")}</DropdownMenuLabel>
 	              <DropdownMenuSeparator />
@@ -1453,33 +1473,54 @@ function HomeRail({
             <Button
               type="button"
               variant="ghost"
-	              size="sm"
-	              className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
-	              onClick={onViewAll}
-	              aria-label={t("home.viewAll.aria", { title })}
-	            >
-	              {t("home.viewAll")}
-	            </Button>
-	          ) : (
-	            <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
-	              <DialogTrigger asChild>
-	                <Button
-	                  type="button"
-	                  variant="ghost"
-	                  size="sm"
-	                  className="h-9 rounded-full px-3 font-brand text-sm text-muted-foreground hover:text-foreground"
-	                  aria-label={t("home.viewAll.aria", { title })}
-	                >
-	                  {t("home.viewAll")}
-	                </Button>
-	              </DialogTrigger>
-              <DialogContent ref={viewAllScrollRef} className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
+              size="sm"
+              className={cn(
+                "rounded-full font-brand text-muted-foreground hover:text-foreground",
+                // Responsive sizing: touch-friendly on mobile
+                "h-10 sm:h-9 px-3 sm:px-3",
+                "text-sm sm:text-sm",
+                // Touch optimizations
+                "touch-manipulation -webkit-tap-highlight-color-transparent",
+                "active:scale-[0.97]",
+                // Shrink to fit on small screens
+                "flex-shrink-0"
+              )}
+              onClick={onViewAll}
+              aria-label={t("home.viewAll.aria", { title })}
+            >
+              {t("home.viewAll")}
+            </Button>
+          ) : (
+            <Dialog open={viewAllOpen} onOpenChange={setViewAllOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "rounded-full font-brand text-muted-foreground hover:text-foreground",
+                    // Responsive sizing: touch-friendly on mobile
+                    "h-10 sm:h-9 px-3 sm:px-3",
+                    "text-sm sm:text-sm",
+                    // Touch optimizations
+                    "touch-manipulation -webkit-tap-highlight-color-transparent",
+                    "active:scale-[0.97]",
+                    // Shrink to fit on small screens
+                    "flex-shrink-0"
+                  )}
+                  aria-label={t("home.viewAll.aria", { title })}
+                >
+                  {t("home.viewAll")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent ref={viewAllScrollRef} className="w-[95vw] max-w-6xl max-h-[90vh] sm:max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle className="font-brand text-2xl sm:text-3xl">
+                  <DialogTitle className="font-brand text-xl xs:text-2xl sm:text-3xl">
                     {title}
                   </DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+                {/* Responsive grid inside dialog */}
+                <div className="grid gap-4 xs:gap-5 sm:gap-6 grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),340px))] lg:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),380px))]">
                   {visibleItems.slice(0, Math.max(0, viewAllRenderCount || 0)).map((item) => (
                     <m.div
                       key={`${item.kind}:${item.id}`}
@@ -1500,9 +1541,9 @@ function HomeRail({
                     Array.from({ length: 6 }).map((_, i) => (
                       <div
                         key={`viewall-skel:${i}`}
-                        className="h-[280px] w-full max-w-[360px] rounded-xl border border-border/60 bg-muted/20 p-4"
+                        className="h-[260px] xs:h-[270px] sm:h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4"
                       >
-                        <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                        <Skeleton className="h-32 xs:h-34 sm:h-36 w-full rounded-lg bg-muted/30" />
                         <div className="mt-4 space-y-2">
                           <Skeleton className="h-4 w-3/4 bg-muted/30" />
                           <Skeleton className="h-4 w-1/2 bg-muted/30" />
@@ -1517,10 +1558,21 @@ function HomeRail({
         ) : null}
       </div>
 
-      <div className="relative -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      {/* Rail container - full-bleed on mobile, contained on desktop */}
+      <div className="relative -mx-4 px-4 xs:-mx-5 xs:px-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div
           ref={railRef}
-          className="scrollbar-none flex gap-6 overflow-x-auto overscroll-x-contain pb-1 scroll-smooth snap-x snap-proximity"
+          className={cn(
+            "scrollbar-none flex overflow-x-auto overscroll-x-contain pb-2 scroll-smooth",
+            // Snap behavior: mandatory on mobile for that native carousel feel
+            "snap-x snap-mandatory sm:snap-proximity",
+            // Responsive gaps: tighter on mobile, spacious on desktop
+            "gap-3 xs:gap-4 sm:gap-5 md:gap-6",
+            // Touch optimizations
+            "touch-pan-x -webkit-tap-highlight-color-transparent",
+            // Smooth momentum scrolling
+            "-webkit-overflow-scrolling-touch"
+          )}
           style={{
             WebkitOverflowScrolling: "touch",
             paddingInlineStart: Math.max(0, range.start) * stridePx,
@@ -1542,11 +1594,15 @@ function HomeRail({
               return (
                 <div
                   key={`rail-skel:${idx}`}
-                  className="shrink-0 snap-start w-[320px] sm:w-[360px]"
+                  className={cn(
+                    "shrink-0 snap-center sm:snap-start",
+                    // Responsive card widths: nearly full on mobile, fixed on desktop
+                    "w-[280px] xs:w-[300px] sm:w-[320px] md:w-[340px] lg:w-[360px]"
+                  )}
                   aria-hidden="true"
                 >
-                  <div className="h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4">
-                    <Skeleton className="h-36 w-full rounded-lg bg-muted/30" />
+                  <div className="h-[260px] xs:h-[270px] sm:h-[280px] w-full rounded-xl border border-border/60 bg-muted/20 p-4">
+                    <Skeleton className="h-32 xs:h-34 sm:h-36 w-full rounded-lg bg-muted/30" />
                     <div className="mt-4 space-y-2">
                       <Skeleton className="h-4 w-3/4 bg-muted/30" />
                       <Skeleton className="h-4 w-1/2 bg-muted/30" />
@@ -1558,7 +1614,11 @@ function HomeRail({
             return (
               <div
                 key={`${item.kind}:${item.id}`}
-                className="shrink-0 snap-start w-[320px] sm:w-[360px]"
+                className={cn(
+                  "shrink-0 snap-center sm:snap-start",
+                  // Responsive card widths: nearly full on mobile, fixed on desktop
+                  "w-[280px] xs:w-[300px] sm:w-[320px] md:w-[340px] lg:w-[360px]"
+                )}
               >
                 {item.kind === "material" ? (
                   <MaterialCardLarge file={item.file} />
@@ -1570,29 +1630,45 @@ function HomeRail({
           })}
         </div>
 
+        {/* Gradient fade indicators - responsive width */}
         <div
           className={cn(
-            "pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background to-transparent transition-opacity",
+            "pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-background to-transparent transition-opacity",
+            "w-8 xs:w-10 sm:w-12 md:w-16",
             canScrollPrev ? "opacity-100" : "opacity-0"
           )}
         />
         <div
           className={cn(
-            "pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent transition-opacity",
+            "pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-background to-transparent transition-opacity",
+            "w-8 xs:w-10 sm:w-12 md:w-16",
             canScrollNext ? "opacity-100" : "opacity-0"
           )}
         />
 
+        {/* Scroll buttons - hidden on mobile (native touch scroll), visible on sm+ */}
         {canScrollPrev && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-border bg-background/80 shadow-sm backdrop-blur-sm"
+            className={cn(
+              "absolute top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/90 shadow-md backdrop-blur-sm",
+              // Hidden on mobile (use native swipe), visible on tablet+
+              "hidden sm:flex",
+              // Responsive positioning
+              "left-0 sm:left-1 md:left-2",
+              // Responsive sizing: 40px tablet, 44px desktop
+              "h-10 w-10 md:h-11 md:w-11",
+              // Touch optimizations
+              "touch-manipulation -webkit-tap-highlight-color-transparent",
+              "hover:bg-background hover:border-border/80 hover:shadow-lg",
+              "active:scale-95 active:bg-background/80"
+            )}
             aria-label={t("home.scroll.prev", { title })}
             onClick={() => scrollByCards(-1)}
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-5 w-5 md:h-6 md:w-6" />
           </Button>
         )}
 
@@ -1601,11 +1677,23 @@ function HomeRail({
             type="button"
             variant="ghost"
             size="icon"
-            className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-border bg-background/80 shadow-sm backdrop-blur-sm"
+            className={cn(
+              "absolute top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/90 shadow-md backdrop-blur-sm",
+              // Hidden on mobile (use native swipe), visible on tablet+
+              "hidden sm:flex",
+              // Responsive positioning
+              "right-0 sm:right-1 md:right-2",
+              // Responsive sizing: 40px tablet, 44px desktop
+              "h-10 w-10 md:h-11 md:w-11",
+              // Touch optimizations
+              "touch-manipulation -webkit-tap-highlight-color-transparent",
+              "hover:bg-background hover:border-border/80 hover:shadow-lg",
+              "active:scale-95 active:bg-background/80"
+            )}
             aria-label={t("home.scroll.next", { title })}
             onClick={() => scrollByCards(1)}
           >
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-5 w-5 md:h-6 md:w-6" />
           </Button>
         )}
       </div>

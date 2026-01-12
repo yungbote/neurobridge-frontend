@@ -29,7 +29,7 @@ export function PathsPageSkeleton({ embedded = false }: { embedded?: boolean } =
         <SkeletonText lines={2} className="max-w-lg" />
       </div>
 
-      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
         {Array.from({ length: 6 }).map((_, i) => (
           // eslint-disable-next-line react/no-array-index-key
           <PathCardLargeSkeleton key={i} />
@@ -85,7 +85,7 @@ export default function PathsPage() {
             icon={<FolderOpen className="h-7 w-7" />}
           />
         ) : (
-          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
             <AnimatePresence initial={false}>
               {list.map((p) => (
                 <m.div

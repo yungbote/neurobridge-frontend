@@ -52,18 +52,24 @@ export function ActivityPanel() {
 
   const Content = (
     <div className="flex h-full flex-col">
-      <div className="h-14 flex items-center justify-between border-b border-border px-5 py-4">
+      <div className="h-14 sm:h-14 flex items-center justify-between border-b border-border px-4 sm:px-5 py-3 sm:py-4">
         <h1 className="text-sm font-medium text-foreground">{t("nav.activity")}</h1>
         <IconButton
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-full"
+          className={cn(
+            // Touch-friendly sizing (44px on mobile, 32px on desktop)
+            "h-11 w-11 sm:h-8 sm:w-8 rounded-full",
+            // Touch optimizations
+            "touch-manipulation -webkit-tap-highlight-color-transparent",
+            "active:scale-95 active:bg-muted/60"
+          )}
           label={t("activity.close")}
           shortcut="Esc"
           onClick={() => setOpen(false)}
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5 sm:h-4 sm:w-4" />
         </IconButton>
       </div>
 

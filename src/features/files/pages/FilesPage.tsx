@@ -19,7 +19,7 @@ export function FilesPageSkeleton({ embedded = false }: { embedded?: boolean } =
         <SkeletonText lines={2} className="max-w-lg" />
       </div>
 
-      <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
         {Array.from({ length: 6 }).map((_, i) => (
           // eslint-disable-next-line react/no-array-index-key
           <MaterialCardLargeSkeleton key={i} />
@@ -77,7 +77,7 @@ export default function FilesPage() {
             icon={<Files className="h-7 w-7" />}
           />
         ) : (
-          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
             <AnimatePresence initial={false}>
               {visible.map((file) => (
                 <m.div

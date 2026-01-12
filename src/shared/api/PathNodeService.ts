@@ -189,3 +189,37 @@ export async function generateDrillForNode(
   );
   return resp.data?.drill ?? null;
 }
+
+export type QuickCheckAttemptAction = "submit" | "hint";
+
+export interface QuickCheckAttemptPayload {
+  action: QuickCheckAttemptAction;
+  answer?: string;
+  client_event_id?: string;
+  occurred_at?: string;
+  latency_ms?: number;
+  confidence?: number;
+}
+
+export interface QuickCheckAttemptResult {
+  status: "correct" | "try_again" | "wrong" | "hint";
+  is_correct: boolean;
+  feedback_md: string;
+  hint_md: string;
+  confidence: number;
+}
+
+export async function attemptQuickCheck(
+  pathNodeId: string,
+  blockId: string,
+  payload: QuickCheckAttemptPayload
+): Promise<QuickCheckAttemptResult | null> {
+  if (!pathNodeId) throw new Error("attemptQuickCheck: missing pathNodeId");
+  if (!blockId) throw new Error("attemptQuickCheck: missing blockId");
+  if (!payload || typeof payload !== "object") throw new Error("attemptQuickCheck: missing payload");
+  const resp = await axiosClient.post<{ result?: QuickCheckAttemptResult | null }>(
+    `/path-nodes/${pathNodeId}/quick-checks/${encodeURIComponent(blockId)}/attempt`,
+    payload
+  );
+  return resp.data?.result ?? null;
+}

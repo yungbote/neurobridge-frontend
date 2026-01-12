@@ -704,22 +704,43 @@ export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm text-muted-foreground">
-          Drag nodes · Drag background to pan · Scroll to zoom
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="text-xs sm:text-sm text-muted-foreground">
+          <span className="hidden sm:inline">Drag nodes · Drag background to pan · Scroll to zoom</span>
+          <span className="sm:hidden">Tap nodes · Pinch to zoom · Drag to pan</span>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={centerOnSelected}
-            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className={cn(
+              "rounded-full border border-border bg-background text-xs text-muted-foreground",
+              // Touch-friendly sizing (min 44px height on mobile)
+              "min-h-[44px] sm:min-h-[32px] px-4 sm:px-3 py-2 sm:py-1",
+              // Transitions
+              "nb-motion-fast motion-reduce:transition-none",
+              // Hover/active states
+              "hover:text-foreground active:bg-muted/60 active:scale-95",
+              // Touch optimizations
+              "touch-manipulation -webkit-tap-highlight-color-transparent"
+            )}
           >
             Center
           </button>
           <button
             type="button"
             onClick={resetView}
-            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className={cn(
+              "rounded-full border border-border bg-background text-xs text-muted-foreground",
+              // Touch-friendly sizing (min 44px height on mobile)
+              "min-h-[44px] sm:min-h-[32px] px-4 sm:px-3 py-2 sm:py-1",
+              // Transitions
+              "nb-motion-fast motion-reduce:transition-none",
+              // Hover/active states
+              "hover:text-foreground active:bg-muted/60 active:scale-95",
+              // Touch optimizations
+              "touch-manipulation -webkit-tap-highlight-color-transparent"
+            )}
           >
             Reset
           </button>
@@ -733,10 +754,15 @@ export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+        {/* Canvas container - order 1 on mobile, stays in place on desktop */}
         <div
           ref={containerRef}
           className={cn(
-            "relative h-[380px] overflow-hidden rounded-2xl border border-border bg-card sm:h-[480px] lg:h-[560px]"
+            "relative overflow-hidden rounded-2xl border border-border bg-card",
+            // Responsive height - smaller on mobile
+            "h-[280px] sm:h-[380px] md:h-[480px] lg:h-[560px]",
+            // Order first on mobile
+            "order-1 lg:order-none"
           )}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_#e0f2fe_0%,_transparent_55%)] opacity-60" />
@@ -754,7 +780,12 @@ export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
           <canvas ref={canvasRef} className="relative h-full w-full touch-none" />
         </div>
 
-        <aside className="rounded-xl border border-border bg-card p-4">
+        {/* Details panel - order 2 on mobile (below canvas) */}
+        <aside className={cn(
+          "rounded-xl border border-border bg-card p-4",
+          // Order after canvas on mobile
+          "order-2 lg:order-none"
+        )}>
           {selected ? (
             <div className="space-y-3">
               <div>

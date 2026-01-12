@@ -1034,7 +1034,18 @@ function ActionButton({ children, onClick, shortcut, ...props }: ActionButtonPro
     <button
       type="button"
       onClick={onClick}
-      className="cursor-pointer rounded-lg p-1.5 text-muted-foreground nb-motion-fast motion-reduce:transition-none hover:bg-muted/60 hover:text-foreground"
+      className={cn(
+        // Base styles
+        "cursor-pointer rounded-lg text-muted-foreground",
+        // Touch-friendly sizing (44px minimum)
+        "min-h-[44px] min-w-[44px] p-2.5 sm:min-h-[36px] sm:min-w-[36px] sm:p-1.5",
+        // Transitions and interactions
+        "nb-motion-fast motion-reduce:transition-none",
+        "hover:bg-muted/60 hover:text-foreground",
+        "active:bg-muted/80 active:scale-95",
+        // Touch optimizations
+        "touch-manipulation -webkit-tap-highlight-color-transparent"
+      )}
       {...props}
     >
       {children}

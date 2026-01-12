@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,11 +12,17 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Separator } from "@/shared/ui/separator";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { Textarea } from "@/shared/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
 import { MermaidDiagram } from "@/shared/components/MermaidDiagram";
+import {
+  attemptQuickCheck,
+  type QuickCheckAttemptAction,
+  type QuickCheckAttemptResult,
+} from "@/shared/api/PathNodeService";
 import type { JsonInput } from "@/shared/types/models";
 
 interface DocBlock {
@@ -53,6 +59,7 @@ interface DocShape {
 
 interface NodeDocRendererProps {
   doc?: JsonInput;
+  pathNodeId?: string;
   pendingBlocks?: Record<string, boolean | string>;
   blockFeedback?: Record<string, string>;
   undoableBlocks?: Record<string, boolean>;
@@ -90,6 +97,25 @@ function asUnknownArray(v: unknown): unknown[] {
 
 function safeString(v: unknown) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  if (typeof err === "string" && err.trim()) return err;
+  if (err instanceof Error && err.message) return err.message;
+  if (!err || typeof err !== "object") return fallback;
+  const maybeResponse = (err as { response?: { data?: { error?: unknown } } }).response;
+  const responseError = maybeResponse?.data?.error;
+  if (typeof responseError === "string" && responseError.trim()) return responseError;
+  return fallback;
+}
+
+function generateIdempotencyKey() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch (err) {
+    void err;
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 const sectionLabelByType: Record<string, string> = {
@@ -269,19 +295,147 @@ function svgToDataURL(svg: unknown) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(stripped)}`;
 }
 
-function QuickCheck({ promptMd, answerMd }: { promptMd?: string; answerMd?: string }) {
+function QuickCheck({
+  pathNodeId,
+  blockId,
+  promptMd,
+  answerMd,
+}: {
+  pathNodeId?: string;
+  blockId?: string;
+  promptMd?: string;
+  answerMd?: string;
+}) {
+  const [answer, setAnswer] = useState("");
+  const [result, setResult] = useState<QuickCheckAttemptResult | null>(null);
+  const [loadingAction, setLoadingAction] = useState<QuickCheckAttemptAction | null>(null);
+  const [error, setError] = useState("");
+
+  const status = safeString(result?.status).toLowerCase();
+  const statusMeta: { label: string; className: string } | null =
+    status === "correct"
+      ? { label: "Correct", className: "bg-emerald-500/10 text-emerald-700 border-emerald-600/20" }
+      : status === "try_again"
+        ? { label: "Try again", className: "bg-amber-500/10 text-amber-700 border-amber-600/20" }
+        : status === "wrong"
+          ? { label: "Wrong", className: "bg-rose-500/10 text-rose-700 border-rose-600/20" }
+          : status === "hint"
+            ? { label: "Hint", className: "bg-sky-500/10 text-sky-700 border-sky-600/20" }
+            : null;
+
+  const canUseBackend = Boolean(String(pathNodeId || "").trim() && String(blockId || "").trim());
+  const isBusy = loadingAction !== null;
+
+  const run = useCallback(
+    async (action: QuickCheckAttemptAction) => {
+      if (!canUseBackend) {
+        setError("Interactive checks are unavailable (missing node or block id).");
+        return;
+      }
+      if (action === "submit" && !answer.trim()) {
+        setError("Type an answer first.");
+        return;
+      }
+
+      setError("");
+      setLoadingAction(action);
+      const t0 =
+        typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+
+      try {
+        const res = await attemptQuickCheck(String(pathNodeId), String(blockId), {
+          action,
+          answer,
+          client_event_id: generateIdempotencyKey(),
+          occurred_at: new Date().toISOString(),
+          latency_ms: Math.max(
+            0,
+            Math.round(
+              (typeof performance !== "undefined" && typeof performance.now === "function"
+                ? performance.now()
+                : Date.now()) - t0
+            )
+          ),
+        });
+        if (!res) throw new Error("Empty response");
+        setResult(res);
+      } catch (err) {
+        setError(getErrorMessage(err, "Quick check failed."));
+      } finally {
+        setLoadingAction(null);
+      }
+    },
+    [answer, blockId, canUseBackend, pathNodeId]
+  );
+
   return (
     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick check</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick check</div>
+        {statusMeta ? (
+          <div className={cn("rounded-full border px-2 py-0.5 text-xs font-medium", statusMeta.className)}>
+            {statusMeta.label}
+          </div>
+        ) : null}
+      </div>
+
       <div className="mt-2 text-[16px] leading-7 text-foreground/90">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
           {safeString(promptMd)}
         </ReactMarkdown>
       </div>
-      <details className="mt-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground/90">
-          Reveal answer
-        </summary>
+
+      <div className="mt-4 space-y-3">
+        <Textarea
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          placeholder="Type your answer…"
+          rows={3}
+          className="min-h-[88px]"
+          disabled={!canUseBackend}
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!canUseBackend || isBusy || !answer.trim()}
+            onClick={() => void run("submit")}
+          >
+            {loadingAction === "submit" ? "Checking…" : "Check answer"}
+          </Button>
+          <Button type="button" variant="ghost" disabled={!canUseBackend || isBusy} onClick={() => void run("hint")}>
+            {loadingAction === "hint" ? "Getting hint…" : "Hint"}
+          </Button>
+        </div>
+
+        {error ? <div className="text-xs text-destructive">{error}</div> : null}
+
+        {safeString(result?.feedback_md).trim() ? (
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feedback</div>
+            <div dir="auto" className="mt-2 text-[15px] leading-7 text-foreground/90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {safeString(result?.feedback_md)}
+              </ReactMarkdown>
+            </div>
+          </div>
+        ) : null}
+
+        {safeString(result?.hint_md).trim() ? (
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hint</div>
+            <div dir="auto" className="mt-2 text-[15px] leading-7 text-foreground/90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {safeString(result?.hint_md)}
+              </ReactMarkdown>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <details className="mt-4">
+        <summary className="cursor-pointer text-sm font-medium text-foreground/90">Reveal answer</summary>
         <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 p-3 text-[16px] leading-7 text-foreground/90">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
             {safeString(answerMd)}
@@ -392,6 +546,7 @@ function BlockSkeleton({ type }: { type?: string }) {
 
 export function NodeDocRenderer({
   doc,
+  pathNodeId,
   pendingBlocks = {},
   blockFeedback = {},
   undoableBlocks = {},
@@ -852,7 +1007,14 @@ export function NodeDocRenderer({
         }
 
         if (type === "quick_check") {
-          return wrap(<QuickCheck promptMd={b?.prompt_md} answerMd={b?.answer_md} />);
+          return wrap(
+            <QuickCheck
+              pathNodeId={pathNodeId}
+              blockId={blockId}
+              promptMd={b?.prompt_md}
+              answerMd={b?.answer_md}
+            />
+          );
         }
 
         return null;

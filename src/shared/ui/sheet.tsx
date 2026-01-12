@@ -36,15 +36,16 @@ function SheetOverlay({
 }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay> & {
   animation?: "slide" | "fade" | "none";
 }) {
-  const base =
-    "fixed inset-0 z-[55] bg-black/50 " +
-    "data-[state=open]:opacity-100 data-[state=closed]:opacity-0 " +
-    "data-[state=closed]:pointer-events-none"
+  const base = [
+    "fixed inset-0 z-[55] bg-black/50",
+    "data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
+    "data-[state=closed]:pointer-events-none",
+  ].join(" ");
 
   const motion =
     animation === "none"
       ? "transition-none duration-0"
-      : "transition-opacity ease-[var(--nb-ease-out)] data-[state=open]:duration-[var(--nb-dur)] data-[state=closed]:duration-[var(--nb-dur-micro)]"
+      : "transition-opacity ease-[var(--nb-ease-out)] data-[state=open]:duration-[var(--nb-dur)] data-[state=closed]:duration-[var(--nb-dur-micro)]";
 
   return (
     <SheetPrimitive.Overlay
@@ -61,27 +62,36 @@ function SheetContent({
   side = "right",
   animation = "slide",
   forceMount,
+  showHandle = false,
   ...props
 }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
   side?: "top" | "bottom" | "left" | "right";
   animation?: "slide" | "fade" | "none";
   forceMount?: boolean;
+  showHandle?: boolean;
 }) {
-  const base =
-    "bg-background fixed z-[56] data-[state=closed]:-z-10 flex flex-col gap-4 shadow-lg outline-none " +
-    "data-[state=open]:opacity-100 data-[state=closed]:opacity-0 " +
-    "data-[state=closed]:pointer-events-none"
+  const isBottomSheet = side === "bottom";
+
+  const base = [
+    "bg-background fixed z-[56] flex flex-col shadow-2xl outline-none",
+    "data-[state=closed]:-z-10",
+    "data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
+    "data-[state=closed]:pointer-events-none",
+    // Touch optimizations
+    "touch-pan-y",
+    "-webkit-tap-highlight-color-transparent",
+  ].join(" ");
 
   const sidePos =
     side === "right"
-      ? "inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm"
+      ? "inset-y-0 right-0 h-full w-[85%] max-w-md border-l rounded-l-2xl safe-area-inset-right"
       : side === "left"
-        ? "inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm"
+        ? "inset-y-0 left-0 h-full w-[85%] max-w-md border-r rounded-r-2xl safe-area-inset-left"
         : side === "top"
-          ? "inset-x-0 top-0 w-full border-b"
-          : "inset-x-0 bottom-0 w-full border-t"
+          ? "inset-x-0 top-0 w-full border-b rounded-b-2xl max-h-[85vh] safe-area-inset-top"
+          : "inset-x-0 bottom-0 w-full border-t rounded-t-2xl max-h-[90vh] safe-area-inset-bottom";
 
-  // Default closed transform so it mounts offscreen (no “peek then slide away”)
+  // Default closed transform so it mounts offscreen (no "peek then slide away")
   const closedTransform =
     side === "right"
       ? "translate-x-full"
@@ -89,22 +99,21 @@ function SheetContent({
         ? "-translate-x-full"
         : side === "top"
           ? "-translate-y-full"
-          : "translate-y-full"
+          : "translate-y-full";
 
   const openTransform =
     side === "right" || side === "left"
       ? "data-[state=open]:translate-x-0"
-      : "data-[state=open]:translate-y-0"
+      : "data-[state=open]:translate-y-0";
 
   const motion =
     animation === "none"
       ? "transform-gpu transition-none duration-0"
       : animation === "fade"
         ? "transform-gpu transition-opacity ease-[var(--nb-ease-out)] duration-[var(--nb-dur)]"
-        : "transform-gpu transition-transform ease-[var(--nb-ease-out)] data-[state=open]:duration-[var(--nb-dur-panel)] data-[state=closed]:duration-[var(--nb-dur)]"
+        : "transform-gpu transition-transform ease-[var(--nb-ease-out)] data-[state=open]:duration-[var(--nb-dur-panel)] data-[state=closed]:duration-[var(--nb-dur)]";
 
-  const transform =
-    animation === "fade" ? "" : cn(closedTransform, openTransform)
+  const transform = animation === "fade" ? "" : cn(closedTransform, openTransform);
 
   return (
     <SheetPortal forceMount={forceMount}>
@@ -113,13 +122,36 @@ function SheetContent({
 
       <SheetPrimitive.Content
         data-slot="sheet-content"
-        forceMount={forceMount} // ✅ keep Content mounted if requested
+        forceMount={forceMount}
         className={cn(base, sidePos, motion, transform, className)}
         {...props}
       >
-        {children}
-        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 end-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
-          <XIcon className="size-4" />
+        {/* Grab handle for bottom sheets */}
+        {(showHandle || isBottomSheet) && (
+          <div className="flex justify-center pt-3 pb-2 shrink-0">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          {children}
+        </div>
+        <SheetPrimitive.Close
+          className={cn(
+            "ring-offset-background focus:ring-ring absolute rounded-full",
+            "transition-all nb-duration-micro nb-ease-out motion-reduce:transition-none",
+            "hover:bg-muted hover:opacity-100 active:scale-95",
+            "focus:ring-2 focus:ring-offset-2 focus:outline-hidden",
+            "disabled:pointer-events-none",
+            // Touch-friendly size
+            "size-11 flex items-center justify-center opacity-70",
+            "[&_svg]:size-5",
+            // Position based on side
+            isBottomSheet ? "top-2 end-2" : "top-4 end-4",
+            // Tap highlight removal
+            "-webkit-tap-highlight-color-transparent touch-manipulation"
+          )}
+        >
+          <XIcon />
           <span className="sr-only">Close</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>

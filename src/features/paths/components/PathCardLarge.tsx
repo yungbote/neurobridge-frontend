@@ -164,21 +164,43 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   }, [activePathId, clearActivePath, path.id, reload, reloadMaterials]);
 
   const card = (
-    <Card className="group relative w-full max-w-[360px] nb-motion-fast motion-reduce:transition-none hover:border-foreground/20 hover:shadow-md">
-      <div className="absolute right-4 top-4 z-10 opacity-0 transition-opacity nb-duration-micro nb-ease-out group-hover:opacity-100 group-focus-within:opacity-100">
+    <Card className={cn(
+      "group relative w-full",
+      // Responsive max-width for small screens
+      "max-w-[calc(100vw-2rem)] sm:max-w-[360px]",
+      // Transitions and interactions
+      "nb-motion-fast motion-reduce:transition-none",
+      "hover:border-foreground/20 hover:shadow-md",
+      // Touch interactions
+      "active:scale-[0.99] touch-manipulation"
+    )}>
+      {/* Options button - visible on hover/focus on desktop, always visible on mobile */}
+      <div className="absolute right-3 top-3 sm:right-4 sm:top-4 z-10 opacity-100 sm:opacity-0 transition-opacity nb-duration-micro nb-ease-out sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-	            <button
-	              type="button"
-	              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/60 text-muted-foreground shadow-sm backdrop-blur-sm nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-	              aria-label={t("paths.options")}
-	              title={t("common.options")}
-	              onClick={(e) => {
-	                e.preventDefault();
-	                e.stopPropagation();
-	              }}
-	            >
-              <Ellipsis className="h-4 w-4" />
+            <button
+              type="button"
+              className={cn(
+                "inline-flex items-center justify-center rounded-full",
+                "border border-border/60 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm",
+                // Touch-friendly size
+                "h-11 w-11 sm:h-9 sm:w-9",
+                // Transitions and interactions
+                "nb-motion-fast motion-reduce:transition-none",
+                "hover:bg-muted/60 hover:text-foreground",
+                "active:scale-95 active:bg-muted/80",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
+                // Touch optimizations
+                "touch-manipulation -webkit-tap-highlight-color-transparent"
+              )}
+              aria-label={t("paths.options")}
+              title={t("common.options")}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <Ellipsis className="h-5 w-5 sm:h-4 sm:w-4" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={10} className="w-44">
@@ -280,7 +302,11 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
 
           {showMedia && (
             <div className="flex justify-center">
-              <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/30 shadow-sm">
+              <div className={cn(
+                "w-full overflow-hidden rounded-2xl border border-border/60 bg-muted/30 shadow-sm",
+                // Responsive max-width
+                "max-w-full sm:max-w-[320px]"
+              )}>
                 <div className="aspect-[16/9]">
                   {showCover && coverUrl ? (
                     <img
@@ -338,7 +364,7 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
 export function PathCardLargeSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn("cursor-default", className)}>
-      <div className="group relative w-full max-w-[360px] rounded-xl border bg-card py-6 shadow-sm">
+      <div className="group relative w-full max-w-[calc(100vw-2rem)] sm:max-w-[360px] rounded-xl border bg-card py-6 shadow-sm">
         <div className="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6">
           <div className="space-y-3">
             <div className="flex min-h-[110px] items-start justify-between gap-3">
@@ -360,7 +386,7 @@ export function PathCardLargeSkeleton({ className }: { className?: string }) {
             </div>
 
             <div className="flex justify-center">
-              <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-sm">
+              <div className="w-full max-w-full sm:max-w-[320px] overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-sm">
                 <div className="aspect-[16/9]">
                   <Skeleton className="h-full w-full rounded-none" />
                 </div>

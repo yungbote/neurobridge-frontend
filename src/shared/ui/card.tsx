@@ -7,7 +7,14 @@ function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
     <div
       data-slot="card"
       className={cn(
+        // Base styles
         "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+        // Responsive padding adjustments
+        "px-0",
+        // Touch-friendly interactions
+        "-webkit-tap-highlight-color-transparent",
+        // Smooth transitions for hover/focus states
+        "transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none",
         className
       )}
       {...props}

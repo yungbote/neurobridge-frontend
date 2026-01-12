@@ -1,6 +1,6 @@
 import { useLayoutEffect, type ReactNode } from "react";
 import { matchPath, useLocation } from "react-router-dom";
-import { SidebarProvider } from "@/shared/ui/sidebar";
+import { SidebarProvider, SwipeEdgeZone } from "@/shared/ui/sidebar";
 import { AppSideBar } from "@/app/navigation/AppSideBar";
 import { AppNavBar } from "@/app/navigation/AppNavBar";
 import { useAuth } from "@/app/providers/AuthProvider";
@@ -43,6 +43,9 @@ export default function Layout({ children }: LayoutProps) {
       <UserDialogsProvider>
         {/* TODO: Activity Panel should only be visible on the associated chat page */}
         <ActivityPanelProvider>
+          {/* Edge swipe zone for mobile sidebar */}
+          {isAuthenticated && <SwipeEdgeZone side="left" />}
+
           <div className="flex w-full min-h-svh">
             {isAuthenticated && <AppSideBar />}
 

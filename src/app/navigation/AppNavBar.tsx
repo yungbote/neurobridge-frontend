@@ -121,12 +121,12 @@ export function AppNavBar() {
   return (
     <nav
       id="app-navbar"
-      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 safe-area-inset-top"
     >
       <Container
         as="div"
         size={isAuthenticated ? "app" : "lg"}
-        className="relative flex h-14 items-center gap-3"
+        className="relative flex h-14 sm:h-16 items-center gap-2 sm:gap-3"
       >
         {/* LEFT: Sidebar Trigger + Logo */}
         <div className="flex items-center gap-2">
@@ -170,11 +170,11 @@ export function AppNavBar() {
         )}
 
         {showPathTabs && (
-          <div className="flex flex-1 justify-center">
+          <div className="flex flex-1 justify-center overflow-hidden">
             <div
               role="tablist"
               aria-label={t("paths.sections")}
-              className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-muted/40 p-1 shadow-sm backdrop-blur scrollbar-none"
+              className="flex max-w-full items-center gap-0.5 sm:gap-1 overflow-x-auto rounded-full border border-border/60 bg-muted/40 p-0.5 sm:p-1 shadow-sm backdrop-blur-lg scrollbar-none touch-pan-x"
             >
               {PATH_NAV_TABS.map((tab) => {
                 const Icon = tab.icon;
@@ -187,14 +187,23 @@ export function AppNavBar() {
                     aria-selected={isActive}
                     onClick={() => handlePathTabClick(tab.id)}
                     className={cn(
-                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium nb-motion-fast motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 sm:text-sm",
+                      // Touch-friendly sizing and interaction
+                      "inline-flex items-center gap-1.5 sm:gap-2 rounded-full",
+                      "px-2.5 py-2 sm:px-3.5 sm:py-2",
+                      "min-h-[40px] sm:min-h-[36px]",
+                      "text-xs sm:text-sm font-medium",
+                      // Animation and focus
+                      "nb-motion-fast motion-reduce:transition-none",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
+                      "active:scale-[0.97] touch-manipulation -webkit-tap-highlight-color-transparent",
+                      // Active/inactive states
                       isActive
                         ? "bg-foreground text-background shadow-sm"
-                        : "text-muted-foreground hover:text-foreground hover:bg-background/70"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/70 active:bg-background/80"
                     )}
                   >
-                    <Icon className="h-4 w-4" />
-                    <span className="whitespace-nowrap">{t(tab.labelKey)}</span>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="whitespace-nowrap hidden xs:inline">{t(tab.labelKey)}</span>
                   </button>
                 );
               })}

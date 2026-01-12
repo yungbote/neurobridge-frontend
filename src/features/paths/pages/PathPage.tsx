@@ -54,13 +54,15 @@ function PathOutlineSkeleton() {
 export function PathPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
     <>
-      <div className="mb-12 space-y-4">
-        <Skeleton className="h-12 w-10/12 rounded-full" />
-        <SkeletonText lines={3} className="max-w-2xl" />
+      {/* Header skeleton - responsive */}
+      <div className="mb-8 sm:mb-10 md:mb-12 space-y-3 sm:space-y-4">
+        <Skeleton className="h-9 xs:h-10 sm:h-12 w-[90%] sm:w-10/12 rounded-full" />
+        <SkeletonText lines={2} className="max-w-2xl" />
       </div>
 
-      <div className="mb-12">
-        <Skeleton className="mb-6 h-4 w-40 rounded-full" />
+      {/* Outline skeleton - responsive */}
+      <div className="mb-8 sm:mb-10 md:mb-12">
+        <Skeleton className="mb-4 sm:mb-6 h-4 w-32 sm:w-40 rounded-full" />
         <PathOutlineSkeleton />
       </div>
     </>
@@ -260,19 +262,29 @@ export default function PathPage() {
   return (
     <div className="page-surface">
       <Container size="app" className="page-pad">
-        <div className="mb-12 space-y-4">
-          <h1 className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+        {/* Header section - responsive */}
+        <div className="mb-8 sm:mb-10 md:mb-12 space-y-3 sm:space-y-4">
+          <h1 className={cn(
+            "text-balance font-semibold tracking-tight text-foreground",
+            // Responsive typography
+            "text-2xl xs:text-3xl sm:text-4xl md:text-[44px] lg:text-5xl"
+          )}>
             {displayTitle}
           </h1>
-          <p className="text-pretty text-lg leading-relaxed text-muted-foreground">
+          <p className={cn(
+            "text-pretty leading-relaxed text-muted-foreground",
+            // Responsive typography
+            "text-sm xs:text-base sm:text-lg"
+          )}>
             {displayDescription}
           </p>
 
+          {/* Generation progress card - responsive */}
           {showGen ? (
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1.5">
-                  <div className="flex items-center gap-2">
+            <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-muted/20 p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1 sm:space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <Badge>{t("paths.inProgress")}</Badge>
                     {isFailed ? <Badge variant="destructive">{t("common.failed")}</Badge> : null}
                   </div>
@@ -284,19 +296,19 @@ export default function PathPage() {
                       : stageLabel(jobStage) || t("paths.generation.generating")}
                   </div>
                   {path?.jobMessage ? (
-                    <div className="text-xs text-muted-foreground">{path.jobMessage}</div>
+                    <div className="text-[11px] xs:text-xs text-muted-foreground">{path.jobMessage}</div>
                   ) : null}
                 </div>
 
                 {path?.jobId ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     {showProgress ? (
-                      <div className="min-w-[140px]">
-                        <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <div className="flex-1 sm:flex-none sm:min-w-[140px]">
+                        <div className="mb-1 flex items-center justify-between text-[10px] xs:text-[11px] text-muted-foreground">
                           <span>{progressPct}%</span>
                           <span>{t("paths.generation.generating")}</span>
                         </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted/60">
+                        <div className="h-1.5 sm:h-2 w-full overflow-hidden rounded-full bg-muted/60">
                           <div
                             className="h-full rounded-full bg-primary transition-[width] nb-duration nb-ease-out motion-reduce:transition-none"
                             style={{ width: `${progressPct}%` }}
@@ -304,7 +316,12 @@ export default function PathPage() {
                         </div>
                       </div>
                     ) : null}
-                    <Button asChild variant="outline" size="sm">
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 h-9 sm:h-8 touch-manipulation"
+                    >
                       <Link to={`/paths/build/${path.jobId}`}>{t("sidebar.openChat")}</Link>
                     </Button>
                   </div>
@@ -333,8 +350,9 @@ export default function PathPage() {
           />
         ) : (
           <>
-            <div className="mb-12">
-              <h2 className="mb-6 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            {/* Outline section - responsive */}
+            <div className="mb-8 sm:mb-10 md:mb-12">
+              <h2 className="mb-4 sm:mb-6 text-xs sm:text-sm font-medium uppercase tracking-wide text-muted-foreground">
                 {t("paths.outline")}
               </h2>
 
@@ -370,9 +388,19 @@ export default function PathPage() {
                           key={node.id}
                           type="button"
                           onClick={() => navigate(`/path-nodes/${node.id}`)}
-                          className="w-full rounded-xl border border-border bg-background px-4 py-4 text-start transition-colors hover:bg-muted/30"
+                          className={cn(
+                            "w-full rounded-xl border border-border bg-background text-start",
+                            // Touch-friendly sizing (min 48px height on mobile)
+                            "min-h-[56px] sm:min-h-[48px] px-3 py-3 sm:px-4 sm:py-4",
+                            // Transitions
+                            "nb-motion-fast motion-reduce:transition-none",
+                            // Hover/active states
+                            "hover:bg-muted/30 active:bg-muted/50 active:scale-[0.995]",
+                            // Touch optimizations
+                            "touch-manipulation -webkit-tap-highlight-color-transparent"
+                          )}
                         >
-                          <div className="flex items-start gap-3">
+                          <div className="flex items-start gap-2 sm:gap-3">
                             {indent > 0 ? (
                               <div
                                 aria-hidden="true"
@@ -382,7 +410,7 @@ export default function PathPage() {
                                 <CornerDownRight className="h-4 w-4" />
                               </div>
                             ) : null}
-                            <Avatar className="mt-0.5 h-6 w-6 shrink-0">
+                            <Avatar className="mt-0.5 h-7 w-7 sm:h-6 sm:w-6 shrink-0">
                               {avatarUrl ? (
                                 <AvatarImage src={avatarUrl} alt={`${node.title} avatar`} />
                               ) : null}
@@ -396,11 +424,11 @@ export default function PathPage() {
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-3">
-                                <h3 className="text-base font-medium text-foreground truncate">
+                              <div className="flex items-start justify-between gap-2 sm:gap-3">
+                                <h3 className="text-sm sm:text-base font-medium text-foreground truncate">
                                   {node.title}
                                 </h3>
-                                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                <ChevronRight className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4 shrink-0 text-muted-foreground" />
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {hasChildren
@@ -418,8 +446,20 @@ export default function PathPage() {
               )}
             </div>
 
-            <div className="flex justify-center pt-4">
-              <Button size="lg" className="px-8" onClick={onStart} disabled={!outline.firstLeaf}>
+            {/* Start button - responsive */}
+            <div className="flex justify-center pt-2 sm:pt-4">
+              <Button
+                size="lg"
+                className={cn(
+                  "px-6 sm:px-8",
+                  "h-12 sm:h-11",
+                  "text-base sm:text-sm",
+                  "touch-manipulation -webkit-tap-highlight-color-transparent",
+                  "active:scale-[0.97]"
+                )}
+                onClick={onStart}
+                disabled={!outline.firstLeaf}
+              >
                 {t("paths.start")}
               </Button>
             </div>

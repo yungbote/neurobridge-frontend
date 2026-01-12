@@ -6,6 +6,7 @@ import { PanelLeftIcon } from "lucide-react";
 import { useI18n } from "@/app/providers/I18nProvider";
 import { useIsMobile } from "@/app/providers/ViewportProvider";
 import { cn } from "@/shared/lib/utils";
+import { useSwipeGesture, useHapticFeedback } from "@/shared/hooks";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Separator } from "@/shared/ui/separator";
@@ -30,6 +31,7 @@ const SIDEBAR_WIDTH = "17rem";
 const SIDEBAR_WIDTH_MOBILE = "17rem";
 const SIDEBAR_WIDTH_ICON = "3.5rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+const SWIPE_EDGE_WIDTH = 24; // pixels from screen edge to trigger swipe
 
 type SidebarState = "expanded" | "collapsed";
 type SidebarVariant = "sidebar" | "floating" | "inset";
@@ -445,11 +447,56 @@ function Sidebar({
   );
 }
 
+/**
+ * SwipeEdgeZone - Invisible touch zone on the edge of the screen
+ * that allows swiping to open/close the sidebar on mobile
+ */
+interface SwipeEdgeZoneProps {
+  side?: "left" | "right";
+  enabled?: boolean;
+}
+
+function SwipeEdgeZone({ side = "left", enabled = true }: SwipeEdgeZoneProps) {
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+  const haptic = useHapticFeedback();
+
+  const { ref } = useSwipeGesture<HTMLDivElement>({
+    threshold: 50,
+    velocityThreshold: 0.3,
+    direction: "horizontal",
+    enabled: enabled && isMobile && !openMobile,
+    onSwipeRight: side === "left" ? () => {
+      haptic.lightTap();
+      setOpenMobile(true, { source: "user" });
+    } : undefined,
+    onSwipeLeft: side === "right" ? () => {
+      haptic.lightTap();
+      setOpenMobile(true, { source: "user" });
+    } : undefined,
+  });
+
+  // Only render on mobile when sidebar is closed
+  if (!isMobile || openMobile || !enabled) return null;
+
+  return (
+    <div
+      ref={ref}
+      aria-hidden="true"
+      className={cn(
+        "fixed inset-y-0 z-[60] touch-pan-y",
+        side === "left" ? "left-0" : "right-0"
+      )}
+      style={{ width: SWIPE_EDGE_WIDTH }}
+    />
+  );
+}
+
 type SidebarTriggerProps = React.ComponentPropsWithoutRef<typeof Button>;
 
 function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
   const { toggleSidebar, state, isMobile } = useSidebar();
   const { t } = useI18n();
+  const haptic = useHapticFeedback();
   const cursor = !isMobile && state === "collapsed" ? "e-resize" : !isMobile ? "w-resize" : undefined;
   const label = state === "collapsed" ? t("sidebar.expand") : t("sidebar.collapse");
 
@@ -459,15 +506,16 @@ function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn("size-9 rounded-xl", className)}
+      className={cn("size-11 rounded-xl touch-manipulation", className)}
       onClick={(event) => {
         onClick?.(event);
-        toggleSidebar(); // ✅ no stale openMobile reads ever
+        haptic.lightTap();
+        toggleSidebar();
       }}
       style={cursor ? { cursor } : undefined}
       {...props}
     >
-      <PanelLeftIcon />
+      <PanelLeftIcon className="size-5" />
       <span className="sr-only">{label}</span>
     </Button>
   );
@@ -682,7 +730,29 @@ function SidebarMenuItem({ className, ...props }: SidebarMenuItemProps) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full items-center justify-start gap-2.5 overflow-hidden rounded-xl px-3 py-2 text-start text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-9 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:[&>span:last-child]:hidden [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  cn(
+    "peer/menu-button flex w-full items-center justify-start gap-2.5 overflow-hidden rounded-xl px-3 py-2 text-start text-sm outline-hidden ring-sidebar-ring",
+    // Transitions
+    "transition-[width,height,padding] transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none",
+    // Hover/focus/active states
+    "hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground",
+    // Touch optimizations
+    "touch-manipulation -webkit-tap-highlight-color-transparent active:scale-[0.98]",
+    // Disabled state
+    "disabled:pointer-events-none disabled:opacity-50",
+    // Menu action spacing
+    "group-has-data-[sidebar=menu-action]/menu-item:pe-9",
+    // Accessibility
+    "aria-disabled:pointer-events-none aria-disabled:opacity-50",
+    // Active state
+    "data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground",
+    // Open state
+    "data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground",
+    // Collapsed icon mode
+    "group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:[&>span:last-child]:hidden",
+    // Child styling
+    "[&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
+  ),
   {
     variants: {
       variant: {
@@ -691,8 +761,9 @@ const sidebarMenuButtonVariants = cva(
           "bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]",
       },
       size: {
-        default: "h-9 text-sm",
-        sm: "h-8 text-xs",
+        // Touch-friendly sizes (44px minimum on mobile for default)
+        default: "h-11 sm:h-9 text-sm",
+        sm: "h-10 sm:h-8 text-xs",
         lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
       },
     },
@@ -897,8 +968,11 @@ function SidebarMenuSubButton({
       className={cn(
         "text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground flex min-w-0 items-center justify-start gap-2.5 overflow-hidden rounded-xl px-3 outline-hidden transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
         "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
-        size === "sm" && "h-8 text-xs",
-        size === "md" && "h-9 text-sm",
+        // Touch optimizations
+        "touch-manipulation -webkit-tap-highlight-color-transparent active:scale-[0.98]",
+        // Touch-friendly sizes (44px minimum on mobile)
+        size === "sm" && "h-10 sm:h-8 text-xs",
+        size === "md" && "h-11 sm:h-9 text-sm",
         "group-data-[collapsible=icon]:hidden",
         className
       )}
@@ -931,5 +1005,6 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
+  SwipeEdgeZone,
   useSidebar,
 };

@@ -25,6 +25,7 @@ import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
 import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
+import { cn } from "@/shared/lib/utils";
 import { Container } from "@/shared/layout/Container";
 import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -49,13 +50,13 @@ export function ChatThreadPageSkeleton({ embedded = false }: { embedded?: boolea
   const body = (
     <div className="space-y-3 py-2" aria-busy="true">
       <div className="flex justify-end">
-        <Skeleton className="h-11 w-[240px] rounded-3xl bg-muted/30" />
+        <Skeleton className="h-11 w-[min(240px,70%)] rounded-3xl bg-muted/30" />
       </div>
       <div className="flex justify-start">
-        <Skeleton className="h-16 w-[340px] rounded-3xl bg-muted/30" />
+        <Skeleton className="h-16 w-[min(340px,85%)] rounded-3xl bg-muted/30" />
       </div>
       <div className="flex justify-end">
-        <Skeleton className="h-11 w-[180px] rounded-3xl bg-muted/30" />
+        <Skeleton className="h-11 w-[min(180px,55%)] rounded-3xl bg-muted/30" />
       </div>
     </div>
   );
@@ -309,7 +310,14 @@ function GenerationCard({
           userToggledRef.current = true;
           setExpanded((v) => !v);
         }}
-        className="flex w-full items-center justify-between gap-3 py-1 text-start"
+        className={cn(
+          "flex w-full items-center justify-between gap-3 text-start",
+          // Touch-friendly sizing (min 44px height on mobile)
+          "min-h-[44px] sm:min-h-[36px] py-2 sm:py-1",
+          // Touch optimizations
+          "touch-manipulation -webkit-tap-highlight-color-transparent",
+          "active:bg-muted/20"
+        )}
         aria-expanded={expanded}
       >
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">

@@ -79,7 +79,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
 
           {/* Mobile tabs */}
           <div className="border-b border-border/60 bg-muted/20 sm:hidden">
-            <div className="scrollbar-none flex items-center gap-2 overflow-x-auto px-3 py-2">
+            <div className="scrollbar-none flex items-center gap-1 overflow-x-auto px-2 py-2 touch-pan-x -webkit-tap-highlight-color-transparent">
               {navItems.map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.id
@@ -89,8 +89,14 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                     type="button"
                     onClick={() => setActiveTab(item.id)}
                     className={[
-                      "flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium nb-motion-fast motion-reduce:transition-none",
-                      isActive ? "bg-muted/60 text-foreground" : "text-foreground/70 hover:bg-muted/50",
+                      "flex items-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium",
+                      // Touch-friendly sizing (min 44px height)
+                      "min-h-[44px] px-3 py-2",
+                      // Transitions
+                      "nb-motion-fast motion-reduce:transition-none",
+                      // Touch optimizations
+                      "touch-manipulation -webkit-tap-highlight-color-transparent active:scale-[0.97]",
+                      isActive ? "bg-muted/60 text-foreground" : "text-foreground/70 hover:bg-muted/50 active:bg-muted/40",
                     ].join(" ")}
                   >
                     <Icon className="size-4" />
@@ -291,11 +297,17 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
                         setUiThemeOpen(false);
                       }}
                       className={[
-                        "w-full rounded-2xl border px-3 py-3 text-start nb-motion-fast motion-reduce:transition-none",
+                        "w-full rounded-2xl border text-start",
+                        // Touch-friendly sizing (min 56px height on mobile)
+                        "min-h-[56px] sm:min-h-[48px] px-3 py-3",
+                        // Transitions
+                        "nb-motion-fast motion-reduce:transition-none",
+                        // Touch optimizations
+                        "touch-manipulation -webkit-tap-highlight-color-transparent active:scale-[0.98]",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         isActive
                           ? "border-foreground/40 bg-muted/40 shadow-sm"
-                          : "border-border/60 hover:border-foreground/30 hover:bg-muted/30",
+                          : "border-border/60 hover:border-foreground/30 hover:bg-muted/30 active:bg-muted/40",
                       ].join(" ")}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -380,8 +392,14 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
                 setLangOpen(false);
               }}
               className={[
-                "w-full px-4 py-3 flex items-center justify-between gap-3 text-sm text-foreground",
-                "hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+                "w-full flex items-center justify-between gap-3 text-sm text-foreground",
+                // Touch-friendly sizing (min 48px height on mobile)
+                "min-h-[48px] sm:min-h-[44px] px-4 py-3",
+                // Hover/active states
+                "hover:bg-muted/40 active:bg-muted/50",
+                // Touch optimizations
+                "touch-manipulation -webkit-tap-highlight-color-transparent",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
               ].join(" ")}
             >
               <div className="min-w-0">
@@ -412,8 +430,14 @@ function GeneralTab({ currentTheme, currentUiTheme, onChangeTheme, onChangeUiThe
                       setLangOpen(false);
                     }}
                     className={[
-                      "w-full px-4 py-3 flex items-center justify-between gap-3 text-sm text-foreground",
-                      "hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+                      "w-full flex items-center justify-between gap-3 text-sm text-foreground",
+                      // Touch-friendly sizing (min 48px height on mobile)
+                      "min-h-[48px] sm:min-h-[44px] px-4 py-3",
+                      // Hover/active states
+                      "hover:bg-muted/40 active:bg-muted/50",
+                      // Touch optimizations
+                      "touch-manipulation -webkit-tap-highlight-color-transparent",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
                     ].join(" ")}
                   >
                     <div className="min-w-0 flex items-start justify-between gap-4 flex-1">

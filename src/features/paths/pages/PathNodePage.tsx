@@ -54,27 +54,29 @@ type BlockFeedback = "" | "like" | "dislike";
 export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-8 space-y-3">
+      {/* Header skeleton - responsive */}
+      <div className="mb-6 sm:mb-8 space-y-2.5 sm:space-y-3">
         <div className="flex items-center gap-2">
-          <Skeleton className="h-9 w-24 rounded-full" />
-          <Skeleton className="h-4 w-44 rounded-full" />
+          <Skeleton className="h-8 sm:h-9 w-20 sm:w-24 rounded-full" />
+          <Skeleton className="h-3.5 sm:h-4 w-32 sm:w-44 rounded-full" />
         </div>
-        <Skeleton className="h-10 w-10/12 rounded-full" />
+        <Skeleton className="h-8 sm:h-10 w-[85%] sm:w-10/12 rounded-full" />
         <div className="flex flex-wrap gap-1.5 pt-1">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 6 }).map((_, i) => (
             // eslint-disable-next-line react/no-array-index-key
-            <Skeleton key={i} className="h-6 w-20 rounded-full" />
+            <Skeleton key={i} className="h-5 sm:h-6 w-16 sm:w-20 rounded-full" />
           ))}
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
-        <div className="px-6 py-8 sm:px-8 sm:py-10">
-          <div className="space-y-6">
-            <Skeleton className="h-6 w-44 rounded-full" />
-            <SkeletonText lines={6} className="max-w-[72ch]" />
-            <Skeleton className="h-[220px] w-full rounded-2xl" />
-            <SkeletonText lines={5} className="max-w-[72ch]" />
+      {/* Content skeleton - responsive */}
+      <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
+        <div className="px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
+          <div className="space-y-4 sm:space-y-6">
+            <Skeleton className="h-5 sm:h-6 w-36 sm:w-44 rounded-full" />
+            <SkeletonText lines={4} className="max-w-[72ch]" />
+            <Skeleton className="h-[160px] sm:h-[200px] md:h-[220px] w-full rounded-xl sm:rounded-2xl" />
+            <SkeletonText lines={3} className="max-w-[72ch]" />
           </div>
         </div>
       </div>
@@ -192,34 +194,44 @@ function FlashcardsDrill({ drill }: DrillProps) {
   const back = String(card.back_md ?? "");
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div>
+    <div className="space-y-3 sm:space-y-4">
+      {/* Header row - responsive */}
+      <div className="flex items-center justify-between text-[11px] xs:text-xs text-muted-foreground">
+        <div className="font-medium">
           {t("pathNode.drills.flashcards.count", { current: idx + 1, total: cards.length })}
         </div>
         <button
           type="button"
-          className="underline underline-offset-4 hover:text-foreground"
+          className={cn(
+            "underline underline-offset-4 hover:text-foreground",
+            // Touch-friendly sizing
+            "min-h-[44px] px-2 py-2",
+            "touch-manipulation -webkit-tap-highlight-color-transparent",
+            "active:opacity-70"
+          )}
           onClick={() => setShowBack((v) => !v)}
         >
           {showBack ? t("pathNode.drills.flashcards.showFront") : t("pathNode.drills.flashcards.showBack")}
         </button>
       </div>
 
+      {/* Card content - responsive */}
       <div
         className={cn(
-          "rounded-xl border border-border bg-muted/30 p-4",
-          "min-h-[180px] flex items-center"
+          "rounded-lg sm:rounded-xl border border-border bg-muted/30",
+          "p-3 sm:p-4",
+          "min-h-[160px] sm:min-h-[180px] flex items-center"
         )}
       >
-        <div className="w-full text-[15px] leading-relaxed text-foreground/90">
+        <div className="w-full text-sm sm:text-[15px] leading-relaxed text-foreground/90">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
             {showBack ? back : front}
           </ReactMarkdown>
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      {/* Navigation buttons - responsive */}
+      <div className="flex items-center justify-between gap-3 pt-1">
         <Button
           variant="outline"
           onClick={() => {
@@ -227,6 +239,12 @@ function FlashcardsDrill({ drill }: DrillProps) {
             setShowBack(false);
           }}
           disabled={idx <= 0}
+          className={cn(
+            "flex-1 sm:flex-none",
+            "h-11 sm:h-10",
+            "touch-manipulation -webkit-tap-highlight-color-transparent",
+            "active:scale-[0.97]"
+          )}
         >
           {t("common.previous")}
         </Button>
@@ -236,6 +254,12 @@ function FlashcardsDrill({ drill }: DrillProps) {
             setShowBack(false);
           }}
           disabled={idx >= cards.length - 1}
+          className={cn(
+            "flex-1 sm:flex-none",
+            "h-11 sm:h-10",
+            "touch-manipulation -webkit-tap-highlight-color-transparent",
+            "active:scale-[0.97]"
+          )}
         >
           {t("common.next")}
         </Button>
@@ -294,22 +318,25 @@ function QuizDrill({ drill }: DrillProps) {
     setRevealed(false);
   };
 
-	  return (
-	    <div className="space-y-4">
-	      <div className="flex items-center justify-between text-xs text-muted-foreground">
-	        <div>
-	          {t("pathNode.drills.quiz.count", { current: idx + 1, total: questions.length })}
-	        </div>
-	      </div>
+  return (
+    <div className="space-y-3 sm:space-y-4">
+      {/* Header row - responsive */}
+      <div className="flex items-center justify-between text-[11px] xs:text-xs text-muted-foreground">
+        <div className="font-medium">
+          {t("pathNode.drills.quiz.count", { current: idx + 1, total: questions.length })}
+        </div>
+      </div>
 
-      <div className="rounded-xl border border-border bg-muted/30 p-4">
-        <div className="text-[15px] leading-relaxed text-foreground/90">
+      {/* Question prompt - responsive */}
+      <div className="rounded-lg sm:rounded-xl border border-border bg-muted/30 p-3 sm:p-4">
+        <div className="text-sm sm:text-[15px] leading-relaxed text-foreground/90">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
             {String(q.prompt_md ?? "")}
           </ReactMarkdown>
         </div>
       </div>
 
+      {/* Options - responsive */}
       <div className="space-y-2">
         {options.map((opt, i) => {
           const isCorrect = revealed && answerId != null && opt.id === answerId;
@@ -320,8 +347,17 @@ function QuizDrill({ drill }: DrillProps) {
               type="button"
               onClick={() => select(opt.id)}
               className={cn(
-                "w-full text-start rounded-lg border px-3 py-2 text-sm transition-colors",
-                "border-border hover:bg-muted/40",
+                "w-full text-start rounded-lg border",
+                // Responsive typography
+                "text-sm sm:text-[15px]",
+                // Touch-friendly sizing (min 48px height)
+                "min-h-[48px] px-3 sm:px-4 py-3",
+                // Transitions
+                "nb-motion-fast motion-reduce:transition-none",
+                // Base and hover states
+                "border-border hover:bg-muted/40 active:bg-muted/60 active:scale-[0.995]",
+                // Touch optimizations
+                "touch-manipulation -webkit-tap-highlight-color-transparent",
                 isCorrect && "border-success/50 bg-success/10",
                 isWrong && "border-destructive/50 bg-destructive/10"
               )}
@@ -332,36 +368,53 @@ function QuizDrill({ drill }: DrillProps) {
         })}
       </div>
 
-	      {revealed ? (
-	        <div className="rounded-xl border border-border bg-background p-4">
-	          <div className="text-xs font-medium text-muted-foreground">{t("pathNode.drills.quiz.explanation")}</div>
-	          <div className="mt-2 text-[15px] leading-relaxed text-foreground/90">
-	            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
-	              {String(q.explanation_md ?? "")}
-	            </ReactMarkdown>
-	          </div>
-	        </div>
-	      ) : null}
+      {/* Explanation - responsive */}
+      {revealed ? (
+        <div className="rounded-lg sm:rounded-xl border border-border bg-background p-3 sm:p-4">
+          <div className="text-[11px] xs:text-xs font-medium text-muted-foreground">{t("pathNode.drills.quiz.explanation")}</div>
+          <div className="mt-1.5 sm:mt-2 text-sm sm:text-[15px] leading-relaxed text-foreground/90">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
+              {String(q.explanation_md ?? "")}
+            </ReactMarkdown>
+          </div>
+        </div>
+      ) : null}
 
-      <div className="flex items-center justify-between pt-1">
-	        <Button
-	          variant="outline"
-	          onClick={() => {
-	            setIdx((v) => Math.max(0, v - 1));
-	            setSelected(null);
-	            setRevealed(false);
-	          }}
-	          disabled={idx <= 0}
-	        >
-	          {t("common.previous")}
-	        </Button>
-	        <Button onClick={next} disabled={idx >= questions.length - 1}>
-	          {t("common.next")}
-	        </Button>
-	      </div>
-	    </div>
-	  );
-	}
+      {/* Navigation buttons - responsive */}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <Button
+          variant="outline"
+          onClick={() => {
+            setIdx((v) => Math.max(0, v - 1));
+            setSelected(null);
+            setRevealed(false);
+          }}
+          disabled={idx <= 0}
+          className={cn(
+            "flex-1 sm:flex-none",
+            "h-11 sm:h-10",
+            "touch-manipulation -webkit-tap-highlight-color-transparent",
+            "active:scale-[0.97]"
+          )}
+        >
+          {t("common.previous")}
+        </Button>
+        <Button
+          onClick={next}
+          disabled={idx >= questions.length - 1}
+          className={cn(
+            "flex-1 sm:flex-none",
+            "h-11 sm:h-10",
+            "touch-manipulation -webkit-tap-highlight-color-transparent",
+            "active:scale-[0.97]"
+          )}
+        >
+          {t("common.next")}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function PathNodePage() {
   const { id: nodeId } = useParams<{ id: string }>();
@@ -876,26 +929,50 @@ export default function PathNodePage() {
     <div className="page-surface">
       <Container size="2xl" className="page-pad">
         <div className="mx-auto w-full max-w-5xl">
-	          <div className="mb-8 space-y-3">
-	            <div className="flex items-center gap-2">
-	              <Button variant="ghost" size="sm" onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}>
-	                {t("common.back")}
-	              </Button>
+          {/* Header section - responsive */}
+          <div className="mb-6 sm:mb-8 space-y-2.5 sm:space-y-3">
+            {/* Breadcrumb row - responsive */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => (path?.id ? navigate(`/paths/${path.id}`) : navigate(-1))}
+                className={cn(
+                  "h-9 sm:h-8 px-3 sm:px-2.5 rounded-full",
+                  "text-sm sm:text-xs",
+                  "touch-manipulation -webkit-tap-highlight-color-transparent",
+                  "active:scale-[0.97]"
+                )}
+              >
+                {t("common.back")}
+              </Button>
               {path?.title ? (
-                <div className="text-xs text-muted-foreground truncate">{path.title}</div>
+                <div className="text-[11px] xs:text-xs sm:text-xs text-muted-foreground truncate max-w-[50vw] sm:max-w-none">
+                  {path.title}
+                </div>
               ) : null}
             </div>
 
-	            <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground">
-	              {node?.title || (loading ? t("pathNode.loading") : t("pathNode.node"))}
-	            </h1>
+            {/* Title - responsive typography */}
+            <h1 className={cn(
+              "text-balance font-semibold tracking-tight text-foreground",
+              "text-2xl xs:text-[26px] sm:text-3xl md:text-[32px] lg:text-4xl"
+            )}>
+              {node?.title || (loading ? t("pathNode.loading") : t("pathNode.node"))}
+            </h1>
 
+            {/* Concept tags - responsive */}
             {conceptLabels.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="flex flex-wrap gap-1 xs:gap-1.5 pt-0.5 sm:pt-1">
                 {conceptLabels.slice(0, 18).map((label, idx) => (
                   <span
                     key={`${conceptKeys[idx] ?? label}:${idx}`}
-                    className="rounded-full border border-border/60 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground"
+                    className={cn(
+                      "rounded-full border border-border/60 bg-muted/30 text-muted-foreground",
+                      // Responsive sizing
+                      "px-2 py-0.5 sm:px-2.5 sm:py-1",
+                      "text-[10px] xs:text-[11px] sm:text-xs"
+                    )}
                   >
                     {label}
                   </span>
@@ -904,26 +981,35 @@ export default function PathNodePage() {
             ) : null}
           </div>
 
-	          {err ? (
-	            <div className="mb-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-	              {t("pathNode.loadFailed")}
-	            </div>
-	          ) : null}
+          {/* Error state - responsive */}
+          {err ? (
+            <div className="mb-4 sm:mb-6 rounded-xl sm:rounded-2xl border border-border/60 bg-muted/30 p-3 sm:p-4 text-sm text-muted-foreground">
+              {t("pathNode.loadFailed")}
+            </div>
+          ) : null}
 
-	          {drills.length > 0 ? (
-	            <div className="mb-8 rounded-2xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur">
-	              <div className="flex items-center justify-between gap-3">
-	                <div>
-	                  <div className="text-sm font-medium text-foreground">{t("pathNode.drills.recommended")}</div>
-	                  <div className="text-xs text-muted-foreground">{t("pathNode.drills.subtitle")}</div>
-	                </div>
-	              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
+          {/* Drills section - responsive */}
+          {drills.length > 0 ? (
+            <div className="mb-6 sm:mb-8 rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 p-3 sm:p-4 shadow-sm backdrop-blur">
+              <div className="flex items-start sm:items-center justify-between gap-2 sm:gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">{t("pathNode.drills.recommended")}</div>
+                  <div className="text-xs text-muted-foreground hidden xs:block">{t("pathNode.drills.subtitle")}</div>
+                </div>
+              </div>
+              {/* Drill buttons - responsive grid on mobile, flex on desktop */}
+              <div className="mt-2.5 sm:mt-3 flex flex-wrap gap-2">
                 {drills.map((d) => (
                   <Button
                     key={d.kind}
                     variant="secondary"
                     onClick={() => openDrill(d.kind, d.label)}
+                    className={cn(
+                      // Touch-friendly on mobile
+                      "h-10 sm:h-9 px-4 sm:px-3 text-sm",
+                      "touch-manipulation -webkit-tap-highlight-color-transparent",
+                      "active:scale-[0.97]"
+                    )}
                   >
                     {d.label || d.kind}
                   </Button>
@@ -932,11 +1018,13 @@ export default function PathNodePage() {
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
-            <div className="px-6 py-8 sm:px-8 sm:py-10">
+          {/* Main content container - responsive */}
+          <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
+            <div className="px-4 py-5 xs:px-5 xs:py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
               {doc ? (
                 <NodeDocRenderer
                   doc={doc}
+                  pathNodeId={nodeId}
                   pendingBlocks={pendingBlocks}
                   blockFeedback={blockFeedback}
                   undoableBlocks={undoableBlocks}
@@ -952,13 +1040,14 @@ export default function PathNodePage() {
             </div>
           </div>
 
-          <Separator className="my-10" />
+          {/* Footer separator and helper - responsive */}
+          <Separator className="my-6 sm:my-8 md:my-10" />
 
-	          <div className="text-xs text-muted-foreground">
-	            {t("pathNode.drills.helper")}
-	          </div>
-	        </div>
-	      </Container>
+          <div className="text-[11px] xs:text-xs text-muted-foreground pb-2 sm:pb-0">
+            {t("pathNode.drills.helper")}
+          </div>
+        </div>
+      </Container>
 
 	      <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
 	        <DialogContent>
@@ -1044,17 +1133,18 @@ export default function PathNodePage() {
 	        </DialogContent>
 	      </Dialog>
 
+      {/* Drill drawer - responsive width */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent side="right" className="w-[92vw] sm:w-[520px]">
+        <SheetContent side="right" className="w-[95vw] xs:w-[92vw] sm:w-[520px] md:w-[560px]">
           <SheetHeader>
-            <SheetTitle>{drawerTitle}</SheetTitle>
+            <SheetTitle className="text-lg xs:text-xl sm:text-2xl">{drawerTitle}</SheetTitle>
           </SheetHeader>
 
-	          <div className="mt-4">
-	            {drawerLoading ? (
-	              <div className="text-sm text-muted-foreground">{t("common.generating")}</div>
-	            ) : drawerError ? (
-              <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+          <div className="mt-3 sm:mt-4">
+            {drawerLoading ? (
+              <div className="text-sm text-muted-foreground">{t("common.generating")}</div>
+            ) : drawerError ? (
+              <div className="rounded-lg sm:rounded-xl border border-border bg-muted/30 p-3 sm:p-4 text-sm text-muted-foreground">
                 {drawerError}
               </div>
             ) : drillPayload ? (
@@ -1062,12 +1152,12 @@ export default function PathNodePage() {
                 {drawerKind === "flashcards" ? <FlashcardsDrill drill={drillPayload} /> : null}
                 {drawerKind === "quiz" ? <QuizDrill drill={drillPayload} /> : null}
               </>
-	            ) : (
-	              <div className="text-sm text-muted-foreground">{t("pathNode.drill.noneLoaded")}</div>
-	            )}
-	          </div>
-	        </SheetContent>
-	      </Sheet>
+            ) : (
+              <div className="text-sm text-muted-foreground">{t("pathNode.drill.noneLoaded")}</div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

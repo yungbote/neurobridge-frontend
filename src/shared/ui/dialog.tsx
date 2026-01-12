@@ -17,7 +17,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px]",
+      "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm",
       "nb-anim-ease-out motion-reduce:animate-none",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
       "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
@@ -33,8 +33,9 @@ const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     showCloseButton?: boolean;
+    mobileFullScreen?: boolean;
   }
->(({ className, children, showCloseButton = true, ...props }, ref) => {
+>(({ className, children, showCloseButton = true, mobileFullScreen = false, ...props }, ref) => {
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -43,23 +44,70 @@ const DialogContent = React.forwardRef<
         ref={ref}
         data-slot="dialog-content"
         className={cn(
-          "bg-card/80 text-foreground fixed top-[50%] left-[50%] z-[51] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-border/40 p-6 shadow-2xl backdrop-blur-xl backdrop-saturate-150 sm:max-w-lg",
+          // Base styles
+          "bg-card text-foreground fixed z-[51] grid gap-4 border border-border/40 shadow-2xl",
+          "backdrop-blur-xl backdrop-saturate-150",
           "transform-gpu will-change-transform",
+          // Animation
           "nb-anim-ease-out motion-reduce:animate-none",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
-          "data-[state=open]:zoom-in-98 data-[state=closed]:zoom-out-98",
-          "data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:slide-out-to-bottom-2",
           "data-[state=open]:nb-anim-duration data-[state=closed]:nb-anim-duration-micro",
+          // Mobile: slide up from bottom like iOS sheets
+          mobileFullScreen
+            ? [
+                // Mobile full screen with safe areas
+                "inset-0 rounded-none p-0",
+                "safe-area-inset-top safe-area-inset-bottom",
+                "data-[state=open]:slide-in-from-bottom-full data-[state=closed]:slide-out-to-bottom-full",
+                // Tablet+: centered modal
+                "sm:inset-auto sm:top-[50%] sm:left-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%]",
+                "sm:w-full sm:max-w-lg sm:rounded-2xl sm:p-6",
+                "sm:data-[state=open]:slide-in-from-bottom-2 sm:data-[state=closed]:slide-out-to-bottom-2",
+                "sm:data-[state=open]:zoom-in-98 sm:data-[state=closed]:zoom-out-98",
+              ].join(" ")
+            : [
+                // Default: centered modal with mobile-friendly sizing
+                "top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%]",
+                "w-[calc(100%-2rem)] max-w-lg rounded-2xl p-6",
+                "max-h-[calc(100vh-4rem)] overflow-y-auto",
+                // Mobile: slide up, Desktop: zoom
+                "data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4",
+                "sm:data-[state=open]:slide-in-from-bottom-2 sm:data-[state=closed]:slide-out-to-bottom-2",
+                "sm:data-[state=open]:zoom-in-98 sm:data-[state=closed]:zoom-out-98",
+              ].join(" "),
           className
         )}
         {...props}
       >
+        {/* Mobile grab handle for sheet-like feel */}
+        {mobileFullScreen && (
+          <div className="sm:hidden flex justify-center pt-3 pb-1">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+          </div>
+        )}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="ring-offset-background focus:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground absolute top-4 end-4 rounded-full p-1 opacity-70 transition-opacity nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-muted hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className={cn(
+              // Base close button styles
+              "ring-offset-background focus:ring-ring absolute rounded-full opacity-70",
+              "transition-all nb-duration-micro nb-ease-out motion-reduce:transition-none",
+              "hover:bg-muted hover:opacity-100 active:scale-95",
+              "focus:ring-2 focus:ring-offset-2 focus:outline-hidden",
+              "disabled:pointer-events-none",
+              "[&_svg]:pointer-events-none [&_svg]:shrink-0",
+              // Touch-friendly size (44x44 minimum)
+              "size-11 flex items-center justify-center",
+              "[&_svg]:size-5",
+              // Position - mobile needs more padding
+              mobileFullScreen
+                ? "top-2 end-2 sm:top-4 sm:end-4 sm:size-9 sm:[&_svg]:size-4"
+                : "top-3 end-3 sm:top-4 sm:end-4",
+              // Tap highlight removal
+              "-webkit-tap-highlight-color-transparent touch-manipulation"
+            )}
           >
             <XIcon />
             <span className="sr-only">Close</span>

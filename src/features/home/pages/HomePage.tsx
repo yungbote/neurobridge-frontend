@@ -14,6 +14,7 @@ import { Bookmark, CheckCircle2, Clock, History, Home } from "lucide-react";
 import { Container } from "@/shared/layout/Container";
 import { Button } from "@/shared/ui/button";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { cn } from "@/shared/lib/utils";
 import { getLibraryTaxonomySnapshot } from "@/shared/api/LibraryService";
 import { getHomeSectionIcon } from "@/features/home/lib/homeSectionIcons";
 import { queryKeys } from "@/shared/query/queryKeys";
@@ -39,18 +40,32 @@ function HomeTabTopicIcon({
   const TopicIcon = getHomeSectionIcon(iconKey) ?? Home;
 
   return (
-    <span
+    <button
+      type="button"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
         onReturnHome();
       }}
-      className="group/topic relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground nb-motion-fast motion-reduce:transition-none hover:bg-muted/40 hover:text-foreground"
+      className={cn(
+        "group/topic relative inline-flex shrink-0 items-center justify-center rounded-full text-muted-foreground",
+        // Touch-friendly sizing (44px on mobile, 32px on desktop)
+        "h-11 w-11 sm:h-8 sm:w-8",
+        // Transitions
+        "nb-motion-fast motion-reduce:transition-none",
+        // Hover/focus states
+        "hover:bg-muted/40 hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30",
+        // Touch optimizations
+        "touch-manipulation -webkit-tap-highlight-color-transparent",
+        "active:scale-95 active:bg-muted/60"
+      )}
       title={t("home.backToHome")}
+      aria-label={t("home.backToHome")}
     >
       <TopicIcon className="h-5 w-5 opacity-100 nb-motion-fast motion-reduce:transition-none group-hover/topic:opacity-0" />
       <Home className="absolute h-5 w-5 opacity-0 nb-motion-fast motion-reduce:transition-none group-hover/topic:opacity-100" />
-    </span>
+    </button>
   );
 }
 
@@ -473,11 +488,20 @@ export default function HomePage() {
   return (
     <div className="page-surface">
       <Container size="app" className="page-pad">
-        <div className="flex flex-col gap-3 items-center text-center">
-          <h1 className="font-brand text-balance break-words text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+        {/* Welcome section - responsive */}
+        <div className="flex flex-col gap-2 xs:gap-2.5 sm:gap-3 items-center text-center">
+          <h1 className={cn(
+            "font-brand text-balance break-words font-bold tracking-tight text-foreground",
+            // Responsive typography: scales from mobile to desktop
+            "text-2xl xs:text-3xl sm:text-4xl md:text-[44px] lg:text-5xl"
+          )}>
             {t("home.welcome", { name: firstName })}
           </h1>
-          <p className="max-w-xl text-pretty text-base font-medium text-foreground/80 sm:text-lg">
+          <p className={cn(
+            "max-w-xl text-pretty font-medium text-foreground/80",
+            // Responsive typography
+            "text-sm xs:text-base sm:text-lg"
+          )}>
             {t("home.subtitle")}
           </p>
         </div>

@@ -699,7 +699,10 @@ export const AnimatedChatbar = ({
             <div
               ref={filesStripRef}
               className={cn(
-                "flex items-start gap-2 overflow-x-auto overscroll-x-contain pb-1 scroll-smooth snap-x snap-proximity select-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
+                "flex items-start gap-2 overflow-x-auto overscroll-x-contain pb-1 scroll-smooth snap-x snap-proximity select-none",
+                "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
+                // Touch optimizations
+                "touch-pan-x -webkit-tap-highlight-color-transparent",
                 isDraggingFilesStrip ? "cursor-grabbing" : "cursor-grab"
               )}
               style={{ WebkitOverflowScrolling: "touch" }}
@@ -732,12 +735,19 @@ export const AnimatedChatbar = ({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="absolute start-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
+                className={cn(
+                  "absolute start-0 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border",
+                  // Touch-friendly sizing (44px on mobile, 32px on desktop)
+                  "h-11 w-11 sm:h-8 sm:w-8",
+                  // Touch optimizations
+                  "touch-manipulation -webkit-tap-highlight-color-transparent",
+                  "active:scale-95 active:bg-background/60"
+                )}
                 label={t("chat.files.scroll.prev")}
                 shortcut="Left"
                 onClick={() => scrollFilesBy(-1)}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-5 w-5 sm:h-4 sm:w-4" />
               </IconButton>
             )}
 
@@ -747,12 +757,19 @@ export const AnimatedChatbar = ({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute end-0 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border"
+                  className={cn(
+                    "absolute end-0 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border",
+                    // Touch-friendly sizing (44px on mobile, 32px on desktop)
+                    "h-11 w-11 sm:h-8 sm:w-8",
+                    // Touch optimizations
+                    "touch-manipulation -webkit-tap-highlight-color-transparent",
+                    "active:scale-95 active:bg-background/60"
+                  )}
                   label={t("chat.files.scroll.next")}
                   shortcut="Right"
                   onClick={() => scrollFilesBy(1)}
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-5 w-5 sm:h-4 sm:w-4" />
                 </IconButton>
                 <div
                   className={cn(
@@ -764,21 +781,21 @@ export const AnimatedChatbar = ({
             )}
           </div>
         )}
-        <div className={cn("flex items-center", isNavbar ? "gap-2" : "gap-2 sm:gap-3")}>
+        <div className={cn("flex items-center", isNavbar ? "gap-1.5" : "gap-2 sm:gap-3")}>
           {!disableUploads && (
             <IconButton
               type="button"
               variant="ghost"
               size="icon"
               className={cn(
-                "rounded-full shrink-0 hover:bg-muted",
-                isNavbar ? "h-8 w-8" : "h-8 w-8 sm:h-9"
+                "rounded-full shrink-0 hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent",
+                isNavbar ? "h-10 w-10 sm:h-8 sm:w-8" : "h-11 w-11 sm:h-10 sm:w-10"
               )}
               label={t("chat.files.attach")}
               shortcut="Cmd/Ctrl+O"
               onClick={() => fileInputRef.current?.click()}
             >
-              <Plus className="h-5 w-5 sm:h-5 sm:w-5" />
+              <Plus className="h-5 w-5" />
             </IconButton>
           )}
           {showFilesPill && (
@@ -858,19 +875,17 @@ export const AnimatedChatbar = ({
               )}
             />
           </div>
-          <div
-            className="flex items-center gap-1 sm:gap-2 shrink-0"
-          >
+          <div className="flex items-center gap-1 shrink-0">
             {!isNavbar && (
               <IconButton
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 sm:h-9 rounded-full hover:bg-muted"
+                className="h-11 w-11 sm:h-10 sm:w-10 rounded-full hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent"
                 label={t("chat.voiceInput")}
                 shortcut="V"
               >
-                <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
+                <Mic className="h-5 w-5" />
               </IconButton>
             )}
             <IconButton
@@ -879,19 +894,17 @@ export const AnimatedChatbar = ({
               size="icon"
               disabled={sendDisabled}
               className={cn(
-                cn(
-                  "rounded-full hover:bg-muted",
-                  isNavbar ? "h-8 w-8" : "h-8 w-8 sm:h-9 sm:w-9"
-                ),
-                sendDisabled && "text-muted-foreground/40 hover:bg-transparent"
+                "rounded-full hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent",
+                isNavbar ? "h-10 w-10 sm:h-8 sm:w-8" : "h-11 w-11 sm:h-10 sm:w-10",
+                sendDisabled && "text-muted-foreground/40 hover:bg-transparent active:scale-100"
               )}
               label={isCancelMode ? t("chat.cancelGeneration") : t("chat.send")}
               shortcut={isCancelMode ? "Esc" : "Enter"}
             >
               {isGenerating || isCancelMode ? (
-                <Square className="h-4 w-4 sm:h-4 sm:w-4 fill-current" />
+                <Square className="h-4 w-4 fill-current" />
               ) : (
-                <ArrowUp className="h-4 w-4 sm:h-4 sm:w-4" />
+                <ArrowUp className="h-5 w-5" />
               )}
             </IconButton>
           </div>

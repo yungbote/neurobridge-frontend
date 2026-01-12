@@ -55,7 +55,29 @@ const DropdownMenuItem = React.forwardRef<
     data-inset={inset}
     data-variant={variant}
     className={cn(
-      "nb-motion-fast motion-reduce:transition-none focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+      // Base styles
+      "relative flex cursor-pointer items-center gap-2.5 rounded-lg text-sm outline-hidden select-none",
+      // Touch-friendly sizing (44px minimum height on mobile)
+      "min-h-[44px] sm:min-h-[36px] px-3 py-2.5 sm:px-2.5 sm:py-2",
+      // Transitions
+      "nb-motion-fast motion-reduce:transition-none",
+      // Focus and active states
+      "focus:bg-accent focus:text-accent-foreground",
+      "active:bg-accent/80",
+      // Destructive variant
+      "data-[variant=destructive]:text-destructive",
+      "data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20",
+      "data-[variant=destructive]:focus:text-destructive",
+      "data-[variant=destructive]:*:[svg]:!text-destructive",
+      // Icons
+      "[&_svg:not([class*='text-'])]:text-muted-foreground",
+      "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+      // Disabled
+      "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      // Inset
+      "data-[inset]:pl-8",
+      // Touch optimizations
+      "touch-manipulation -webkit-tap-highlight-color-transparent",
       className
     )}
     {...props}
