@@ -29,7 +29,7 @@ export function NavigationTabs({
   return (
     <header className={cn(
       "w-full",
-      isNavbar ? "bg-transparent border-b-0" : "border-b border-border/50 bg-background/80 backdrop-blur-sm",
+      isNavbar ? "bg-transparent border-b-0" : "border-b border-border/50 bg-background",
       className
     )}>
       <Container as="nav" size="app">
@@ -38,13 +38,13 @@ export function NavigationTabs({
           className={cn(
             "flex items-center overflow-x-auto scrollbar-none",
             // Mobile: compact horizontal pills | Desktop: traditional tabs
-            "py-2.5 sm:py-0",
-            // Mobile: centered pills | Desktop: left-aligned tabs
-            "justify-start sm:justify-start",
+            "py-3 sm:py-1",
+            // Center tabs horizontally
+            "justify-center",
             // Responsive height
-            "min-h-[52px] sm:h-14 md:h-16",
+            "min-h-[56px] sm:h-16 md:h-[72px]",
             // Responsive gaps
-            "gap-1.5 xs:gap-2 sm:gap-1 md:gap-2 lg:gap-4",
+            "gap-2 xs:gap-2.5 sm:gap-2 md:gap-3 lg:gap-5",
             // Touch optimizations
             "touch-pan-x -webkit-tap-highlight-color-transparent",
             // Smooth momentum scrolling on iOS
@@ -60,15 +60,15 @@ export function NavigationTabs({
               className={cn(
                 "font-brand relative flex cursor-pointer items-center whitespace-nowrap font-medium",
                 // Touch-friendly sizing (48px on mobile, 44px tablet, 40px desktop)
-                "min-h-[44px] xs:min-h-[44px] sm:min-h-[44px] md:min-h-[40px]",
+                "min-h-[48px] xs:min-h-[48px] sm:min-h-[48px] md:min-h-[44px]",
                 // Pill style on mobile, underline style on desktop
                 "rounded-full sm:rounded-none",
                 // Responsive padding: pill padding on mobile, minimal on desktop
-                "px-4 xs:px-5 sm:px-3 md:px-4 lg:px-5 py-2.5 sm:py-3",
+                "px-5 xs:px-6 sm:px-4 md:px-5 lg:px-6 py-3 sm:py-4",
                 // Gap between icon and label
-                "gap-2 sm:gap-2 md:gap-2.5",
+                "gap-2.5 sm:gap-2.5 md:gap-3",
                 // Typography: larger on mobile for readability, scale up on desktop
-                "text-[15px] xs:text-base sm:text-sm md:text-base lg:text-lg",
+                "text-base xs:text-lg sm:text-base md:text-lg lg:text-xl",
                 // Transitions
                 "nb-motion-fast motion-reduce:transition-none",
                 // Mobile: pill background for active | Desktop: text color + underline
@@ -83,7 +83,7 @@ export function NavigationTabs({
             >
               {/* Icon with responsive sizing */}
               {tab.icon && (
-                <span className="flex-shrink-0 [&>svg]:h-[18px] [&>svg]:w-[18px] sm:[&>svg]:h-4 sm:[&>svg]:w-4 md:[&>svg]:h-5 md:[&>svg]:w-5">
+                <span className="flex-shrink-0 [&>svg]:h-5 [&>svg]:w-5 sm:[&>svg]:h-[18px] sm:[&>svg]:w-[18px] md:[&>svg]:h-6 md:[&>svg]:w-6">
                   {tab.icon}
                 </span>
               )}
@@ -105,5 +105,3 @@ export function NavigationTabs({
     </header>
   );
 }
-
-

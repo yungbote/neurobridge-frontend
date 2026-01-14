@@ -657,7 +657,7 @@ export function ConceptGraphView({ pathId }: ConceptGraphViewProps) {
 
         const fontSize = clamp(11 * scale, 9, 16);
         ctx.fillStyle = isDark ? "rgba(226,232,240,0.95)" : "rgba(15,23,42,0.92)";
-        ctx.font = `600 ${fontSize}px Riforma, ui-sans-serif, system-ui`;
+        ctx.font = `600 ${fontSize}px "Source Serif 4", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         const label = String(n.label || "").trim();

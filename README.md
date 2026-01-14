@@ -2,6 +2,12 @@
 
 React + TypeScript + Vite app.
 
+## Docs
+- Frontend docs index: `docs/frontend/README.md`
+- Abstracted overview: `docs/frontend/abstracted-overview.md`
+- Developer guide: `docs/frontend/developer.md`
+- Module walkthrough: `docs/frontend/module-walkthrough.md`
+
 ## Local dev (recommended)
 Use Docker Compose from `neurobridge-infra/local/`:
 - `docker compose up --build`

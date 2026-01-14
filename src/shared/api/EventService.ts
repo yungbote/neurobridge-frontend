@@ -9,6 +9,9 @@ function normalizeEvent(e: ClientEvent): Record<string, unknown> {
   if (e.pathId) out.path_id = e.pathId;
   if (e.pathNodeId) out.path_node_id = e.pathNodeId;
   if (e.activityId) out.activity_id = e.activityId;
+  if (e.activityVariant) out.activity_variant = e.activityVariant;
+  if (e.modality) out.modality = e.modality;
+  if (Array.isArray(e.conceptIds) && e.conceptIds.length > 0) out.concept_ids = e.conceptIds;
   if (e.data !== undefined) out.data = e.data;
   return out;
 }

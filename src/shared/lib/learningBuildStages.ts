@@ -43,15 +43,18 @@ export function stageLabel(stage: string | null | undefined): string | null {
   }
   const s = normalizeStage(raw).toLowerCase();
   if (s === "queued") return "Queued";
+  if (s === "web_resources_seed") return "Seeding sources";
   if (s === "ingest_chunks") return "Ingesting";
+  if (s === "path_intake") return "Clarifying your goal";
+  if (s === "path_structure_dispatch") return "Structuring paths";
   if (s === "embed_chunks") return "Embedding";
   if (s === "material_set_summarize") return "Summarizing materials";
-  if (s === "concept_graph_build") return "Building concept graph";
-  if (s === "concept_cluster_build") return "Clustering concepts";
-  if (s === "chain_signature_build") return "Building signatures";
   if (s === "user_profile_refresh") return "Refreshing profile";
   if (s === "teaching_patterns_seed") return "Seeding teaching patterns";
-  if (s === "path_intake") return "Clarifying your goal";
+  if (s === "concept_graph_build") return "Building concept graph";
+  if (s === "material_kg_build") return "Building knowledge graph";
+  if (s === "concept_cluster_build") return "Clustering concepts";
+  if (s === "chain_signature_build") return "Building signatures";
   if (s === "path_plan_build") return "Planning path";
   if (s === "path_cover_render") return "Generating path avatar";
   if (s === "node_avatar_render") return "Generating unit avatars";
@@ -71,15 +74,18 @@ export function stageLabel(stage: string | null | undefined): string | null {
 }
 
 export const learningBuildStageOrder = [
+  "web_resources_seed",
   "ingest_chunks",
+  "path_intake",
+  "path_structure_dispatch",
   "embed_chunks",
   "material_set_summarize",
-  "concept_graph_build",
-  "concept_cluster_build",
-  "chain_signature_build",
   "user_profile_refresh",
   "teaching_patterns_seed",
-  "path_intake",
+  "concept_graph_build",
+  "material_kg_build",
+  "concept_cluster_build",
+  "chain_signature_build",
   "path_plan_build",
   "path_cover_render",
   "node_avatar_render",

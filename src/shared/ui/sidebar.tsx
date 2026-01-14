@@ -333,9 +333,10 @@ function Sidebar({
   collapsible = "offcanvas",
   className,
   children,
+  onClickCapture,
   ...props
 }: SidebarProps) {
-  const { isMobile, state, openMobile, setOpenMobile, suppressMobileAnim } =
+  const { isMobile, state, openMobile, setOpenMobile, toggleSidebar, suppressMobileAnim } =
     useSidebar();
 
   if (collapsible === "none") {
@@ -346,6 +347,7 @@ function Sidebar({
           "bg-sidebar/95 text-sidebar-foreground flex h-full w-(--sidebar-width) flex-col border-e border-sidebar-border/60 backdrop-blur-sm",
           className
         )}
+        onClickCapture={onClickCapture}
         {...props}
       >
         {children}
@@ -372,6 +374,8 @@ function Sidebar({
   const containerWidth = isOffcanvas ? SIDEBAR_WIDTH : isExpanded ? SIDEBAR_WIDTH : iconShellWidth;
   const containerX = !isExpanded && isOffcanvas ? (side === "left" ? "-100%" : "100%") : "0%";
   const shellTransition = isExpanded ? nbTransitions.panel : nbTransitions.default;
+  const interactiveSelector =
+    'a,button,input,select,textarea,summary,[role="button"],[role="tab"],[role="menuitem"],[role="option"],[role="switch"],[role="checkbox"],[role="radio"],[data-clickable="true"]';
 
   return (
     <>
@@ -407,6 +411,18 @@ function Sidebar({
           data-variant={variant}
           data-side={side}
           data-slot="sidebar"
+          onClickCapture={(event) => {
+            onClickCapture?.(event);
+            if (event.defaultPrevented) return;
+            if (state !== "collapsed" || collapsible !== "icon") return;
+            if (event.button !== 0) return;
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            if (target.closest(interactiveSelector)) return;
+
+            event.preventDefault();
+            toggleSidebar();
+          }}
           {...props}
         >
           <m.div
@@ -436,7 +452,7 @@ function Sidebar({
             <div
               data-sidebar="sidebar"
               data-slot="sidebar-inner"
-              className="bg-sidebar/95 flex h-full w-full flex-col backdrop-blur-sm group-data-[variant=floating]:rounded-2xl group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border/60 group-data-[variant=floating]:shadow-md group-data-[variant=inset]:rounded-2xl group-data-[variant=inset]:border group-data-[variant=inset]:border-sidebar-border/60 group-data-[variant=inset]:shadow-sm"
+              className="bg-sidebar/95 flex h-full w-full flex-col backdrop-blur-sm group-data-[collapsible=icon]:bg-transparent group-data-[variant=floating]:rounded-2xl group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border/60 group-data-[variant=floating]:shadow-md group-data-[variant=inset]:rounded-2xl group-data-[variant=inset]:border group-data-[variant=inset]:border-sidebar-border/60 group-data-[variant=inset]:shadow-sm"
             >
               {children}
             </div>

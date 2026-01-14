@@ -13,7 +13,7 @@ import { cn } from "@/shared/lib/utils";
 import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 
 import { createChatThread, sendChatMessage } from "@/shared/api/ChatService";
-import { ingestEvents } from "@/shared/api/EventService";
+import { queueEvent } from "@/shared/services/EventQueue";
 import { getConceptGraph } from "@/shared/api/PathService";
 import {
   enqueuePathNodeDocPatch,
@@ -268,17 +268,55 @@ function FlashcardsDrill({ drill }: DrillProps) {
   );
 }
 
-function QuizDrill({ drill }: DrillProps) {
+function QuizDrill({
+  drill,
+  pathId,
+  pathNodeId,
+  defaultConceptKeys,
+  conceptIdByKey,
+}: DrillProps & {
+  pathId: string;
+  pathNodeId: string;
+  defaultConceptKeys: string[];
+  conceptIdByKey: Map<string, string>;
+}) {
   const { t } = useI18n();
   const questions = Array.isArray(drill?.questions) ? drill.questions : [];
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const quizSessionIdRef = useRef<string>("");
+  const questionShownAtRef = useRef<number>(Date.now());
+  const attemptByQuestionIdRef = useRef<Record<string, number>>({});
+  const firstAttemptStatsRef = useRef<{ correct: number; total: number; latencySum: number }>({
+    correct: 0,
+    total: 0,
+    latencySum: 0,
+  });
+  const sentCompletedRef = useRef<boolean>(false);
 
   useEffect(() => {
     setIdx(0);
     setSelected(null);
     setRevealed(false);
+    questionShownAtRef.current = Date.now();
+    quizSessionIdRef.current = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    attemptByQuestionIdRef.current = {};
+    firstAttemptStatsRef.current = { correct: 0, total: 0, latencySum: 0 };
+    sentCompletedRef.current = false;
+
+    if (questions.length > 0 && pathId && pathNodeId) {
+      queueEvent({
+        type: "quiz_started",
+        pathId,
+        pathNodeId,
+        data: {
+          source: "node_drill",
+          quiz_session_id: quizSessionIdRef.current,
+          question_count: questions.length,
+        },
+      });
+    }
   }, [drill]);
 
   if (questions.length === 0) {
@@ -306,16 +344,83 @@ function QuizDrill({ drill }: DrillProps) {
         ? String(legacyIndex)
         : null;
 
+  const conceptIdsForKeys = (keys: string[]) => {
+    const ids = (Array.isArray(keys) ? keys : [])
+      .map((k) => conceptIdByKey.get(String(k || "").trim()) || "")
+      .filter((v): v is string => Boolean(v));
+    return Array.from(new Set(ids));
+  };
+
   const select = (id: string) => {
     if (revealed) return;
     setSelected(id);
     setRevealed(true);
+
+    const qid = String(q.id ?? "").trim() || `q_${idx + 1}`;
+    const attemptN = (attemptByQuestionIdRef.current[qid] ?? 0) + 1;
+    attemptByQuestionIdRef.current[qid] = attemptN;
+
+    const latencyMs = Math.max(0, Date.now() - (questionShownAtRef.current || Date.now()));
+    const isCorrect = Boolean(answerId != null && id === answerId);
+
+    // Prefer question-level concept keys (if the generator provides them); fallback to node concept keys.
+    const qConceptKeys = Array.isArray((q as { concept_keys?: unknown }).concept_keys)
+      ? ((q as { concept_keys?: unknown }).concept_keys as unknown[]).map((k) => String(k || "").trim()).filter(Boolean)
+      : [];
+    const conceptKeys = qConceptKeys.length > 0 ? qConceptKeys : defaultConceptKeys;
+
+    queueEvent({
+      type: "question_answered",
+      pathId,
+      pathNodeId,
+      conceptIds: conceptIdsForKeys(conceptKeys),
+      data: {
+        source: "node_drill",
+        quiz_session_id: quizSessionIdRef.current,
+        question_id: qid,
+        question_index: idx,
+        question_count: questions.length,
+        attempt_n: attemptN,
+        selected_id: id,
+        answer_id: answerId,
+        is_correct: isCorrect,
+        latency_ms: latencyMs,
+      },
+    });
+
+    // Track completion stats on first attempt per question.
+    if (attemptN === 1) {
+      firstAttemptStatsRef.current.total += 1;
+      firstAttemptStatsRef.current.latencySum += latencyMs;
+      if (isCorrect) firstAttemptStatsRef.current.correct += 1;
+    }
+    if (!sentCompletedRef.current && firstAttemptStatsRef.current.total >= questions.length) {
+      sentCompletedRef.current = true;
+      const total = firstAttemptStatsRef.current.total || questions.length;
+      const correct = firstAttemptStatsRef.current.correct;
+      const avgLatencyMs = total > 0 ? Math.round(firstAttemptStatsRef.current.latencySum / total) : 0;
+      queueEvent({
+        type: "quiz_completed",
+        pathId,
+        pathNodeId,
+        data: {
+          source: "node_drill",
+          quiz_session_id: quizSessionIdRef.current,
+          question_count: questions.length,
+          correct,
+          total,
+          score: total > 0 ? correct / total : 0,
+          avg_latency_ms: avgLatencyMs,
+        },
+      });
+    }
   };
 
   const next = () => {
     setIdx((v) => Math.min(questions.length - 1, v + 1));
     setSelected(null);
     setRevealed(false);
+    questionShownAtRef.current = Date.now();
   };
 
   return (
@@ -457,6 +562,11 @@ export default function PathNodePage() {
   const [chatSubmitting, setChatSubmitting] = useState(false);
   const [chatError, setChatError] = useState("");
 
+  const openedAtRef = useRef<number>(Date.now());
+  const maxScrollPercentRef = useRef<number>(0);
+  const nodeConceptIdsRef = useRef<string[]>([]);
+  const pathIdRef = useRef<string>("");
+
   const feedbackStorageKey = useMemo(() => {
     if (!nodeId) return "";
     return `nodeDocFeedback:${nodeId}`;
@@ -517,6 +627,10 @@ export default function PathNodePage() {
   const conceptKeys = useMemo(() => extractConceptKeys(node), [node]);
 
   const pathId = node?.pathId || path?.id || "";
+  useEffect(() => {
+    pathIdRef.current = pathId;
+  }, [pathId]);
+
   const conceptGraphQuery = useQuery({
     queryKey: queryKeys.conceptGraph(pathId || "unknown"),
     enabled: Boolean(pathId),
@@ -534,6 +648,66 @@ export default function PathNodePage() {
     });
     return map;
   }, [conceptGraphQuery.data]);
+
+  const conceptIdByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    const concepts = conceptGraphQuery.data?.concepts ?? [];
+    concepts.forEach((c) => {
+      const key = String(c?.key ?? "").trim().toLowerCase();
+      const id = String(c?.canonicalConceptId ?? c?.id ?? "").trim();
+      if (key && id) map.set(key, id);
+    });
+    return map;
+  }, [conceptGraphQuery.data]);
+
+  const nodeConceptIds = useMemo(() => {
+    const ids = conceptKeys
+      .map((k) => conceptIdByKey.get(String(k || "").trim().toLowerCase()) || "")
+      .filter((v): v is string => Boolean(v));
+    return Array.from(new Set(ids));
+  }, [conceptKeys, conceptIdByKey]);
+
+  useEffect(() => {
+    nodeConceptIdsRef.current = nodeConceptIds;
+  }, [nodeConceptIds]);
+
+  // Record exposure as aggregated scroll depth + dwell time (production-safe: one event per node view).
+  useEffect(() => {
+    if (!nodeId) return;
+    openedAtRef.current = Date.now();
+    maxScrollPercentRef.current = 0;
+
+    const onScroll = () => {
+      const docEl = document.documentElement;
+      const scrollTop = typeof docEl.scrollTop === "number" ? docEl.scrollTop : window.scrollY || 0;
+      const scrollHeight = typeof docEl.scrollHeight === "number" ? docEl.scrollHeight : 0;
+      const clientHeight = typeof docEl.clientHeight === "number" ? docEl.clientHeight : window.innerHeight || 1;
+      const denom = Math.max(1, scrollHeight - clientHeight);
+      const pct = Math.max(0, Math.min(100, Math.round((scrollTop / denom) * 100)));
+      if (pct > maxScrollPercentRef.current) maxScrollPercentRef.current = pct;
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      const dwellMs = Math.max(0, Date.now() - (openedAtRef.current || Date.now()));
+      const maxPercent = Math.max(0, Math.min(100, Math.round(maxScrollPercentRef.current || 0)));
+      queueEvent({
+        type: "scroll_depth",
+        pathId: pathIdRef.current || "",
+        pathNodeId: nodeId,
+        conceptIds: nodeConceptIdsRef.current,
+        data: {
+          source: "node_doc",
+          percent: maxPercent,
+          max_percent: maxPercent,
+          dwell_ms: dwellMs,
+        },
+      });
+    };
+  }, [nodeId]);
 
   const conceptLabels = useMemo(() => {
     return conceptKeys.map((k) => conceptNameByKey.get(k) ?? humanizeConceptKey(k));
@@ -671,7 +845,7 @@ export default function PathNodePage() {
   }, [connected, nodeId, loadDoc]);
 
   const recordFeedback = useCallback(
-    async (block: DocBlock, idx: number, next: BlockFeedback) => {
+    (block: DocBlock, idx: number, next: BlockFeedback) => {
       const blockId = String(block?.id ?? "").trim();
       if (!blockId) return;
       setBlockFeedback((prev) => {
@@ -684,22 +858,18 @@ export default function PathNodePage() {
         return updated;
       });
       if (!next) return;
-      try {
-        await ingestEvents([
-          {
-            type: `node_doc_block_${next}`,
-            pathId: node?.pathId ?? path?.id ?? "",
-            pathNodeId: nodeId ?? undefined,
-            data: {
-              block_id: blockId,
-              block_type: String(block?.type ?? ""),
-              block_index: idx,
-            },
-          },
-        ]);
-      } catch (err) {
-        console.warn("[PathNodePage] feedback ingest failed:", err);
-      }
+      const eventType = next === "like" ? "feedback_thumbs_up" : "feedback_thumbs_down";
+      queueEvent({
+        type: eventType,
+        pathId: node?.pathId ?? path?.id ?? "",
+        pathNodeId: nodeId ?? undefined,
+        data: {
+          source: "node_doc_block",
+          block_id: blockId,
+          block_type: String(block?.type ?? ""),
+          block_index: idx,
+        },
+      });
     },
     [nodeId, node?.pathId, path?.id]
   );
@@ -1150,7 +1320,15 @@ export default function PathNodePage() {
             ) : drillPayload ? (
               <>
                 {drawerKind === "flashcards" ? <FlashcardsDrill drill={drillPayload} /> : null}
-                {drawerKind === "quiz" ? <QuizDrill drill={drillPayload} /> : null}
+                {drawerKind === "quiz" ? (
+                  <QuizDrill
+                    drill={drillPayload}
+                    pathId={pathId}
+                    pathNodeId={nodeId ?? ""}
+                    defaultConceptKeys={conceptKeys}
+                    conceptIdByKey={conceptIdByKey}
+                  />
+                ) : null}
               </>
             ) : (
               <div className="text-sm text-muted-foreground">{t("pathNode.drill.noneLoaded")}</div>

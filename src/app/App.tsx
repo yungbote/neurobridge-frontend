@@ -6,7 +6,7 @@ import { AppRouter } from "@/app/router/AppRouter";
 
 const App = () => {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Layout>
         <AppRouter />
       </Layout>
@@ -15,7 +15,6 @@ const App = () => {
 };
 
 export default App;
-
 
 
 

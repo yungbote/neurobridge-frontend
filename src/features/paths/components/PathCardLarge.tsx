@@ -123,6 +123,12 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
   const isReady = String(path.status || "").toLowerCase() === "ready";
   const showMedia = !showGen && isReady;
   const showCover = showMedia && Boolean(coverUrl) && !coverError;
+  const isProgram = String(path.kind || "").toLowerCase() === "program";
+  const subpathsCount = (() => {
+    if (!isProgram || !meta) return null;
+    const raw = meta["subpaths"];
+    return Array.isArray(raw) ? raw.length : null;
+  })();
 
   const circumference = 2 * Math.PI * 45;
   const strokeDashoffset =
@@ -245,7 +251,10 @@ export function PathCardLarge({ path }: PathCardLargeProps) {
           <div className="flex min-h-[110px] items-start justify-between gap-3">
             <div className="flex-1 space-y-1.5">
 	              <div className="flex items-center justify-start gap-2">
-	                <Badge>{t("paths.path")}</Badge>
+	                <Badge>{isProgram ? t("paths.program") : t("paths.path")}</Badge>
+                  {typeof subpathsCount === "number" && subpathsCount > 0 ? (
+                    <Badge variant="subtle">{t("paths.tracksCount", { count: subpathsCount })}</Badge>
+                  ) : null}
 	                {isFailed && <Badge variant="destructive">{t("common.failed")}</Badge>}
 	              </div>
               <CardTitle className="line-clamp-2 text-balance text-lg leading-tight sm:text-xl">

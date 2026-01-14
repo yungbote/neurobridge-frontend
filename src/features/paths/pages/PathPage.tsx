@@ -8,6 +8,7 @@ import { usePaths } from "@/app/providers/PathProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
 import { listNodesForPath, recordPathView } from "@/shared/api/PathService";
 import { ConceptGraphView } from "@/features/paths/components/ConceptGraphView";
+import { PathCardLarge } from "@/features/paths/components/PathCardLarge";
 import { EmptyContent } from "@/shared/components/EmptyContent";
 import { PathMaterialsView } from "@/features/paths/components/PathMaterialsView";
 import { Container } from "@/shared/layout/Container";
@@ -87,7 +88,7 @@ export default function PathPage() {
   const { t } = useI18n();
   const [searchParams] = useSearchParams();
 
-  const { getById, activatePath, setActivePath } = usePaths();
+  const { getById, activatePath, setActivePath, paths } = usePaths();
   const { clearActiveLesson } = useLessons();
   const cached = pathId ? getById(pathId) : null;
 
@@ -103,6 +104,64 @@ export default function PathPage() {
   const isAudioView = viewParam === "audio";
   const isMindmapView = view === "graph";
   const isUnitView = !isMindmapView && !isMaterialsView && !isAudioView;
+  const isProgram = String(path?.kind || "").toLowerCase() === "program";
+
+  const childrenByParent = useMemo(() => {
+    const list = Array.isArray(paths) ? paths : [];
+    const byId = new Map<string, Path>();
+    for (const p of list) {
+      const id = String(p?.id || "");
+      if (id) byId.set(id, p);
+    }
+    const out = new Map<string, Path[]>();
+    for (const p of list) {
+      const id = String(p?.id || "");
+      const parentId = String(p?.parentPathId || "");
+      if (!id || !parentId || parentId === id || !byId.has(parentId)) continue;
+      const existing = out.get(parentId) ?? [];
+      existing.push(p);
+      out.set(parentId, existing);
+    }
+    for (const [pid, kids] of out.entries()) {
+      kids.sort((a, b) => {
+        const ai = typeof a?.sortIndex === "number" ? a.sortIndex : 0;
+        const bi = typeof b?.sortIndex === "number" ? b.sortIndex : 0;
+        if (ai !== bi) return ai - bi;
+        return String(a?.title || "").localeCompare(String(b?.title || ""));
+      });
+      out.set(pid, kids);
+    }
+    return out;
+  }, [paths]);
+
+  const programChildren = useMemo(() => {
+    if (!pathId) return [];
+    return childrenByParent.get(String(pathId)) ?? [];
+  }, [childrenByParent, pathId]);
+
+  const renderProgramTree = (parentId: string, visited: Set<string>): React.ReactNode => {
+    const children = childrenByParent.get(parentId) ?? [];
+    if (children.length === 0) return null;
+
+    return (
+      <div className={cn("mt-4 space-y-4", "border-l border-border/60 pl-4")}>
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          {children.map((p) => {
+            const pid = String(p?.id || "");
+            const nextVisited = new Set(visited);
+            const already = pid ? visited.has(pid) : true;
+            if (pid) nextVisited.add(pid);
+            return (
+              <div key={p.id} className="space-y-4">
+                <PathCardLarge path={p} />
+                {!already && pid ? renderProgramTree(pid, nextVisited) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     setPath(cached || null);
@@ -338,7 +397,15 @@ export default function PathPage() {
         </div>
 
         {isMindmapView ? (
-          <ConceptGraphView pathId={pathId} />
+          isProgram ? (
+            <EmptyContent
+              title={t("paths.program")}
+              message="This program doesn’t have a mindmap. Open a track to see its concept graph."
+              icon={<BookOpen className="h-7 w-7" />}
+            />
+          ) : (
+            <ConceptGraphView pathId={pathId} />
+          )
         ) : isMaterialsView ? (
           <PathMaterialsView pathId={pathId} />
         ) : isAudioView ? (
@@ -353,10 +420,20 @@ export default function PathPage() {
             {/* Outline section - responsive */}
             <div className="mb-8 sm:mb-10 md:mb-12">
               <h2 className="mb-4 sm:mb-6 text-xs sm:text-sm font-medium uppercase tracking-wide text-muted-foreground">
-                {t("paths.outline")}
+                {isProgram ? "Tracks" : t("paths.outline")}
               </h2>
 
-              {nodesLoading && nodes.length === 0 ? (
+              {isProgram ? (
+                programChildren.length === 0 ? (
+                  <EmptyContent
+                    title="No tracks yet"
+                    message="This program will show tracks once they’re created."
+                    icon={<BookOpen className="h-7 w-7" />}
+                  />
+                ) : (
+                  renderProgramTree(String(pathId), new Set([String(pathId)]))
+                )
+              ) : nodesLoading && nodes.length === 0 ? (
                 <PathOutlineSkeleton />
               ) : nodes.length === 0 ? (
                 <div className="rounded-2xl border border-border/60 bg-muted/20 p-8 text-center">
@@ -447,22 +524,24 @@ export default function PathPage() {
             </div>
 
             {/* Start button - responsive */}
-            <div className="flex justify-center pt-2 sm:pt-4">
-              <Button
-                size="lg"
-                className={cn(
-                  "px-6 sm:px-8",
-                  "h-12 sm:h-11",
-                  "text-base sm:text-sm",
-                  "touch-manipulation -webkit-tap-highlight-color-transparent",
-                  "active:scale-[0.97]"
-                )}
-                onClick={onStart}
-                disabled={!outline.firstLeaf}
-              >
-                {t("paths.start")}
-              </Button>
-            </div>
+            {!isProgram ? (
+              <div className="flex justify-center pt-2 sm:pt-4">
+                <Button
+                  size="lg"
+                  className={cn(
+                    "px-6 sm:px-8",
+                    "h-12 sm:h-11",
+                    "text-base sm:text-sm",
+                    "touch-manipulation -webkit-tap-highlight-color-transparent",
+                    "active:scale-[0.97]"
+                  )}
+                  onClick={onStart}
+                  disabled={!outline.firstLeaf}
+                >
+                  {t("paths.start")}
+                </Button>
+              </div>
+            ) : null}
           </>
         )}
       </Container>

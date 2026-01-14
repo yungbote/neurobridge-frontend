@@ -10,7 +10,7 @@ export const UI_THEME_OPTIONS: Array<{
     id: "classic",
     label: "Classic",
     description: "Clean neutrals with crisp contrast.",
-    swatches: ["#0f172a", "#e2e8f0", "#f8fafc"],
+    swatches: ["#0f172a", "#e2e8f0", "#faf7f2"],
   },
   {
     id: "slate",

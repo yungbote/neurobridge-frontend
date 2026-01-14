@@ -3,6 +3,11 @@ import type { JsonInput } from "./common";
 export interface Path {
   id: string;
   userId: string | null;
+  parentPathId: string | null;
+  rootPathId: string | null;
+  depth: number;
+  sortIndex: number;
+  kind: string;
   title: string;
   description: string;
   status: string;
@@ -44,6 +49,7 @@ export interface Concept {
   id: string;
   scope: string | null;
   scopeId: string | null;
+  canonicalConceptId?: string | null;
   parentId: string | null;
   depth: number;
   sortIndex: number;

@@ -681,11 +681,11 @@ export const AnimatedChatbar = ({
         className={cn(
           isNavbar
             ? `
-          relative bg-background/70 border border-border/60 dark:border-border rounded-full px-2 py-1.5
+          relative bg-card border border-border/60 dark:border-border rounded-full px-2 py-1.5
           shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none hover:shadow-md focus-within:shadow-md`
             : `
-          relative bg-background border border-border rounded-3xl px-3
-          sm:px-4 sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none
+          relative bg-card border border-border/60 dark:border-border rounded-3xl px-3
+          sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none
           hover:shadow-md focus-within:shadow-md`,
           isDragging && !disableUploads && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
         )}
@@ -731,22 +731,22 @@ export const AnimatedChatbar = ({
             </div>
 
             {canScrollPrev && (
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "absolute start-0 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border",
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                  "absolute start-0 top-1/2 -translate-y-1/2 rounded-full bg-card/90 backdrop-blur-sm shadow-sm border border-border",
                   // Touch-friendly sizing (44px on mobile, 32px on desktop)
                   "h-11 w-11 sm:h-8 sm:w-8",
                   // Touch optimizations
                   "touch-manipulation -webkit-tap-highlight-color-transparent",
-                  "active:scale-95 active:bg-background/60"
+                  "active:scale-95 active:bg-card/75"
                 )}
-                label={t("chat.files.scroll.prev")}
-                shortcut="Left"
-                onClick={() => scrollFilesBy(-1)}
-              >
+                  label={t("chat.files.scroll.prev")}
+                  shortcut="Left"
+                  onClick={() => scrollFilesBy(-1)}
+                >
                 <ChevronLeft className="h-5 w-5 sm:h-4 sm:w-4" />
               </IconButton>
             )}
@@ -758,12 +758,12 @@ export const AnimatedChatbar = ({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "absolute end-0 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm shadow-sm border border-border",
+                    "absolute end-0 top-1/2 -translate-y-1/2 rounded-full bg-card/90 backdrop-blur-sm shadow-sm border border-border",
                     // Touch-friendly sizing (44px on mobile, 32px on desktop)
                     "h-11 w-11 sm:h-8 sm:w-8",
                     // Touch optimizations
                     "touch-manipulation -webkit-tap-highlight-color-transparent",
-                    "active:scale-95 active:bg-background/60"
+                    "active:scale-95 active:bg-card/75"
                   )}
                   label={t("chat.files.scroll.next")}
                   shortcut="Right"
@@ -771,9 +771,9 @@ export const AnimatedChatbar = ({
                 >
                   <ChevronRight className="h-5 w-5 sm:h-4 sm:w-4" />
                 </IconButton>
-                <div
+                  <div
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 end-0 w-10 from-background to-transparent",
+                    "pointer-events-none absolute inset-y-0 end-0 w-10 from-card to-transparent",
                     "bg-gradient-to-l"
                   )}
                 />
@@ -781,126 +781,106 @@ export const AnimatedChatbar = ({
             )}
           </div>
         )}
-        <div className={cn("flex items-center", isNavbar ? "gap-1.5" : "gap-2 sm:gap-3")}>
-          {!disableUploads && (
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "rounded-full shrink-0 hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent",
-                isNavbar ? "h-10 w-10 sm:h-8 sm:w-8" : "h-11 w-11 sm:h-10 sm:w-10"
-              )}
-              label={t("chat.files.attach")}
-              shortcut="Cmd/Ctrl+O"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Plus className="h-5 w-5" />
-            </IconButton>
-          )}
-          {showFilesPill && (
-            <button
-              type="button"
-              onClick={() => setFiles([])}
-              className="inline-flex shrink-0 items-center rounded-full border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-muted"
-              aria-label={`Clear ${files.length} attached file${files.length === 1 ? "" : "s"}`}
-              title="Clear attached files"
-            >
-              {files.length} file{files.length === 1 ? "" : "s"}
-            </button>
-          )}
-          <div className="relative flex-1 min-w-0">
-            <div
-              aria-hidden="true"
-              className={cn(
-                cn(
-                  "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center transition-[opacity,transform] nb-duration nb-ease-out transform-gpu motion-reduce:transition-none",
-                  isNavbar ? "px-2" : "px-3"
-                ),
-                ghostClass
-              )}
-            >
-              <div className="relative flex min-w-0 items-center">
-                <span className="truncate text-sm sm:text-base text-muted-foreground">
-                  {placeholder}
-                </span>
-                <span
-                  className={cn(
-                    "ms-1 inline-block w-[2px] h-[1.05em] rounded-full bg-current align-[-0.125em]",
-                    phase === "typing" ? "text-foreground/60" : "text-muted-foreground/70"
-                  )}
-                  style={{
-                    transformOrigin: "center",
-                    willChange: "transform, opacity",
-                    animation: reducedMotion
-                      ? "none"
-                      : phase === "typing"
-                        ? "nbCaretPulse 1.35s ease-in-out infinite"
-                        : phase === "pause" || phase === "swap"
-                          ? "nbCaretBlink 1.05s step-end infinite"
-                          : "nbCaretBlink 0.75s step-end infinite",
-                    boxShadow: !reducedMotion && phase === "typing" ? "0 0 10px currentColor" : "none",
-                  }}
-                />
-                <div
-                  className={cn(
-                    "pointer-events-none absolute inset-y-0 end-0 w-10 from-background to-transparent",
-                    "bg-gradient-to-l"
-                  )}
-                />
-              </div>
-            </div>
-            <Input
-              ref={inputRef}
-              dir="auto"
-              type="text"
-              value={value}
-              disabled={isCancelMode || isGenerating}
-              onChange={(e) => setValue(e.target.value)}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              placeholder={isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask")}
-              aria-label={t("chat.input.aria")}
-              className={cn(
-                "w-full !bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground",
-                "border-0 outline-none",
-                "shadow-none ring-0 ring-offset-0 ring-offset-transparent",
-                "focus:shadow-none focus:ring-0 focus:ring-offset-0 focus:bg-transparent",
-                "focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-transparent",
-                "[--tw-ring-color:transparent] [--tw-ring-offset-color:transparent]",
-                "autofill:shadow-[inset_0_0_0px_1000px_transparent]",
-                "autofill:text-fill-foreground",
-                showGhost && "placeholder:opacity-0",
-                isNavbar && "h-8 text-sm"
-              )}
-            />
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {!isNavbar && (
+        {isNavbar ? (
+          /* Navbar variant: single row layout */
+          <div className="flex items-center gap-1.5">
+            {!disableUploads && (
               <IconButton
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 sm:h-10 sm:w-10 rounded-full hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent"
-                label={t("chat.voiceInput")}
-                shortcut="V"
+                className="h-10 w-10 sm:h-8 sm:w-8 rounded-full shrink-0 hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent"
+                label={t("chat.files.attach")}
+                shortcut="Cmd/Ctrl+O"
+                onClick={() => fileInputRef.current?.click()}
               >
-                <Mic className="h-5 w-5" />
+                <Plus className="h-5 w-5" />
               </IconButton>
             )}
-            <IconButton
-              type="submit"
-              variant="ghost"
-              size="icon"
-              disabled={sendDisabled}
-              className={cn(
-                "rounded-full hover:bg-muted active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent",
-                isNavbar ? "h-10 w-10 sm:h-8 sm:w-8" : "h-11 w-11 sm:h-10 sm:w-10",
-                sendDisabled && "text-muted-foreground/40 hover:bg-transparent active:scale-100"
-              )}
-              label={isCancelMode ? t("chat.cancelGeneration") : t("chat.send")}
-              shortcut={isCancelMode ? "Esc" : "Enter"}
-            >
+            {showFilesPill && (
+              <button
+                type="button"
+                onClick={() => setFiles([])}
+                className="inline-flex shrink-0 items-center rounded-full border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors nb-duration-micro nb-ease-out motion-reduce:transition-none hover:bg-muted"
+                aria-label={`Clear ${files.length} attached file${files.length === 1 ? "" : "s"}`}
+                title="Clear attached files"
+              >
+                {files.length} file{files.length === 1 ? "" : "s"}
+              </button>
+            )}
+            <div className="relative flex-1 min-w-0">
+              <div
+                aria-hidden="true"
+                className={cn(
+                  "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center px-2 transition-[opacity,transform] nb-duration nb-ease-out transform-gpu motion-reduce:transition-none",
+                  ghostClass
+                )}
+              >
+                <div className="relative flex min-w-0 items-center">
+                  <span className="truncate text-sm sm:text-base text-muted-foreground">
+                    {placeholder}
+                  </span>
+                  <span
+                    className={cn(
+                      "ms-1 inline-block w-[2px] h-[1.05em] rounded-full bg-current align-[-0.125em]",
+                      phase === "typing" ? "text-foreground/60" : "text-muted-foreground/70"
+                    )}
+                    style={{
+                      transformOrigin: "center",
+                      willChange: "transform, opacity",
+                      animation: reducedMotion
+                        ? "none"
+                        : phase === "typing"
+                          ? "nbCaretPulse 1.35s ease-in-out infinite"
+                          : phase === "pause" || phase === "swap"
+                            ? "nbCaretBlink 1.05s step-end infinite"
+                            : "nbCaretBlink 0.75s step-end infinite",
+                      boxShadow: !reducedMotion && phase === "typing" ? "0 0 10px currentColor" : "none",
+                    }}
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 end-0 w-10 from-card to-transparent bg-gradient-to-l" />
+                </div>
+              </div>
+              <Input
+                ref={inputRef}
+                dir="auto"
+                type="text"
+                value={value}
+                disabled={isCancelMode || isGenerating}
+                onChange={(e) => setValue(e.target.value)}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                placeholder={isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask")}
+                aria-label={t("chat.input.aria")}
+                className={cn(
+                  "w-full !bg-transparent text-sm text-foreground placeholder:text-muted-foreground h-8",
+                  "border-0 outline-none",
+                  "shadow-none ring-0 ring-offset-0 ring-offset-transparent",
+                  "focus:shadow-none focus:ring-0 focus:ring-offset-0 focus:bg-transparent",
+                  "focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-transparent",
+                  "[--tw-ring-color:transparent] [--tw-ring-offset-color:transparent]",
+                  "autofill:shadow-[inset_0_0_0px_1000px_transparent]",
+                  "autofill:text-fill-foreground",
+                  showGhost && "placeholder:opacity-0"
+                )}
+              />
+            </div>
+	            <IconButton
+	              type="submit"
+	              variant="ghost"
+	              size="icon"
+	              disabled={sendDisabled}
+	              className={cn(
+	                "h-10 w-10 sm:h-8 sm:w-8 rounded-xl",
+	                "border border-border/60 shadow-sm",
+	                "bg-muted-foreground/10 text-muted-foreground hover:bg-muted-foreground/15 hover:text-muted-foreground active:bg-muted-foreground/20 active:text-muted-foreground active:scale-95",
+	                "disabled:opacity-100",
+	                !sendDisabled &&
+	                  "bg-primary text-primary-foreground border-transparent hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80 active:text-primary-foreground"
+	              )}
+	              label={isCancelMode ? t("chat.cancelGeneration") : t("chat.send")}
+	              shortcut={isCancelMode ? "Esc" : "Enter"}
+	            >
               {isGenerating || isCancelMode ? (
                 <Square className="h-4 w-4 fill-current" />
               ) : (
@@ -908,7 +888,121 @@ export const AnimatedChatbar = ({
               )}
             </IconButton>
           </div>
-        </div>
+        ) : (
+          /* Default variant: two-row layout */
+          <div className="flex flex-col gap-4">
+            {/* Top row: Input */}
+            <div className="relative min-w-0">
+              <div
+                aria-hidden="true"
+                className={cn(
+                  "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center px-3 transition-[opacity,transform] nb-duration nb-ease-out transform-gpu motion-reduce:transition-none",
+                  ghostClass
+                )}
+              >
+                <div className="relative flex min-w-0 items-center">
+                  <span className="truncate text-sm sm:text-base text-muted-foreground">
+                    {placeholder}
+                  </span>
+                  <span
+                    className={cn(
+                      "ms-1 inline-block w-[2px] h-[1.05em] rounded-full bg-current align-[-0.125em]",
+                      phase === "typing" ? "text-foreground/60" : "text-muted-foreground/70"
+                    )}
+                    style={{
+                      transformOrigin: "center",
+                      willChange: "transform, opacity",
+                      animation: reducedMotion
+                        ? "none"
+                        : phase === "typing"
+                          ? "nbCaretPulse 1.35s ease-in-out infinite"
+                          : phase === "pause" || phase === "swap"
+                            ? "nbCaretBlink 1.05s step-end infinite"
+                            : "nbCaretBlink 0.75s step-end infinite",
+                      boxShadow: !reducedMotion && phase === "typing" ? "0 0 10px currentColor" : "none",
+                    }}
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 end-0 w-10 from-card to-transparent bg-gradient-to-l" />
+                </div>
+              </div>
+              <Input
+                ref={inputRef}
+                dir="auto"
+                type="text"
+                value={value}
+                disabled={isCancelMode || isGenerating}
+                onChange={(e) => setValue(e.target.value)}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                placeholder={isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask")}
+                aria-label={t("chat.input.aria")}
+                className={cn(
+                  "w-full h-10 !bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground",
+                  "border-0 outline-none",
+                  "shadow-none ring-0 ring-offset-0 ring-offset-transparent",
+                  "focus:shadow-none focus:ring-0 focus:ring-offset-0 focus:bg-transparent",
+                  "focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-transparent",
+                  "[--tw-ring-color:transparent] [--tw-ring-offset-color:transparent]",
+                  "autofill:shadow-[inset_0_0_0px_1000px_transparent]",
+                  "autofill:text-fill-foreground",
+                  showGhost && "placeholder:opacity-0"
+                )}
+              />
+            </div>
+            {/* Bottom row: + button (left), mic & send (right) */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                {!disableUploads && (
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-12 w-12 sm:h-11 sm:w-11 rounded-full shrink-0 hover:bg-muted/70 text-foreground active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent"
+                    label={t("chat.files.attach")}
+                    shortcut="Cmd/Ctrl+O"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Plus className="h-7 w-7" />
+                  </IconButton>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-12 w-12 sm:h-11 sm:w-11 rounded-full hover:bg-muted/70 text-foreground active:scale-95 touch-manipulation -webkit-tap-highlight-color-transparent"
+                  label={t("chat.voiceInput")}
+                  shortcut="V"
+                >
+                  <Mic className="h-7 w-7" />
+                </IconButton>
+	                <IconButton
+	                  type="submit"
+	                  variant="ghost"
+	                  size="icon"
+	                  disabled={sendDisabled}
+	                  className={cn(
+	                    "h-12 w-12 sm:h-11 sm:w-11 rounded-2xl",
+	                    "border border-border/60 shadow-sm",
+	                    "bg-muted-foreground/10 text-muted-foreground hover:bg-muted-foreground/15 hover:text-muted-foreground active:bg-muted-foreground/20 active:text-muted-foreground active:scale-95",
+	                    "disabled:opacity-100",
+	                    !sendDisabled &&
+	                      "bg-primary text-primary-foreground border-transparent hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80 active:text-primary-foreground"
+	                  )}
+	                  label={isCancelMode ? t("chat.cancelGeneration") : t("chat.send")}
+	                  shortcut={isCancelMode ? "Esc" : "Enter"}
+	                >
+                  {isGenerating || isCancelMode ? (
+                    <Square className="h-5 w-5 fill-current" />
+                  ) : (
+                    <ArrowUp className="h-7 w-7" />
+                  )}
+                </IconButton>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </form>
   );

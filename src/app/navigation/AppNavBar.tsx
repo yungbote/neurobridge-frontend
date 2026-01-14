@@ -59,6 +59,28 @@ export function AppNavBar() {
   const [authDialog, setAuthDialog] = useState<"login" | "signup" | null>(null);
   const { state, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const [navElevated, setNavElevated] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+        setNavElevated(scrollTop > 4);
+      });
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, []);
 
   const isPathContext = useMemo(() => {
     const path = location.pathname;
@@ -121,7 +143,12 @@ export function AppNavBar() {
   return (
     <nav
       id="app-navbar"
-      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 safe-area-inset-top"
+      className={cn(
+        "sticky top-0 z-50 w-full border-b safe-area-inset-top nb-motion motion-reduce:transition-none",
+        navElevated
+          ? "border-border/40 bg-background/95 backdrop-blur-lg supports-[backdrop-filter]:bg-background/90 shadow-sm"
+          : "border-transparent bg-background"
+      )}
     >
       <Container
         as="div"

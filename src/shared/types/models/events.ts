@@ -7,6 +7,9 @@ export interface ClientEvent {
   pathId?: string;
   pathNodeId?: string;
   activityId?: string;
+  activityVariant?: string;
+  modality?: string;
+  conceptIds?: string[];
   data?: JsonInput;
 }
 

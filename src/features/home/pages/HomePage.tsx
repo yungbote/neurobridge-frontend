@@ -459,6 +459,37 @@ export default function HomePage() {
     user.firstName && user.firstName.length > 0
       ? user.firstName.charAt(0).toUpperCase() + user.firstName.slice(1)
       : user.email;
+  const currentHour = new Date().getHours();
+  const greeting =
+    currentHour < 12
+      ? t("home.greeting.morning", { name: firstName })
+      : currentHour < 18
+        ? t("home.greeting.afternoon", { name: firstName })
+        : t("home.greeting.evening", { name: firstName });
+  const pathList = Array.isArray(paths) ? paths : [];
+  const materialList = Array.isArray(materialFiles) ? materialFiles : [];
+  const isEmptyHome = !pathsLoading && !materialsLoading && pathList.length === 0 && materialList.length === 0;
+
+  useEffect(() => {
+    if (!isEmptyHome) return;
+    if (activeTab !== "home") setActiveTab("home");
+    if (homeTopicFocus) setHomeTopicFocus(null);
+  }, [activeTab, homeTopicFocus, isEmptyHome]);
+
+  useLayoutEffect(() => {
+    if (!isEmptyHome) return;
+    if (chatbarDocked) setChatbarDocked(false);
+    if (tabsDocked) setTabsDocked(false);
+    if (homeChatbarHeight) setHomeChatbarHeight(0);
+    if (homeTabsHeight) setHomeTabsHeight(0);
+  }, [
+    chatbarDocked,
+    homeChatbarHeight,
+    homeTabsHeight,
+    isEmptyHome,
+    setChatbarDocked,
+    tabsDocked,
+  ]);
 
   const tabs: { id: HomeTabKey; label: string; icon?: React.ReactNode }[] = [
     homeTopicFocus && activeTab === "home"
@@ -486,90 +517,112 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="page-surface">
-      <Container size="app" className="page-pad">
-        {/* Welcome section - responsive */}
-        <div className="flex flex-col gap-2 xs:gap-2.5 sm:gap-3 items-center text-center">
-          <h1 className={cn(
-            "font-brand text-balance break-words font-bold tracking-tight text-foreground",
-            // Responsive typography: scales from mobile to desktop
-            "text-2xl xs:text-3xl sm:text-4xl md:text-[44px] lg:text-5xl"
-          )}>
-            {t("home.welcome", { name: firstName })}
-          </h1>
-          <p className={cn(
-            "max-w-xl text-pretty font-medium text-foreground/80",
-            // Responsive typography
-            "text-sm xs:text-base sm:text-lg"
-          )}>
-            {t("home.subtitle")}
-          </p>
+    <div className={cn(isEmptyHome ? "h-full overflow-hidden bg-background" : "page-surface")}>
+      {isEmptyHome ? (
+        <div className="h-full overflow-hidden flex flex-col justify-center pb-72 sm:pb-96">
+          <Container size="max-w-4xl" className="pb-4 sm:pb-5">
+            <div className="flex flex-col gap-2 xs:gap-2.5 sm:gap-3 items-center text-center">
+              <h1
+                className={cn(
+                  "font-brand text-balance break-words font-medium tracking-tight text-foreground",
+                  "text-2xl xs:text-3xl sm:text-4xl md:text-[44px] lg:text-5xl"
+                )}
+              >
+                {greeting}
+              </h1>
+            </div>
+          </Container>
+
+          <div className="pt-4 sm:pt-5">
+            <div ref={setHomeChatbarSlotRef} />
+            {chatbarPortalEl
+              ? createPortal(
+                  <AnimatedChatbar onSubmit={handleSubmit} respectReducedMotion={false} variant="default" />,
+                  chatbarPortalEl
+                )
+              : null}
+          </div>
         </div>
-      </Container>
+      ) : (
+        <>
+          <Container size="max-w-4xl" className="pt-10 sm:pt-16 pb-4 sm:pb-5">
+            <div className="flex flex-col gap-2 xs:gap-2.5 sm:gap-3 items-center text-center">
+              <h1
+                className={cn(
+                  "font-brand text-balance break-words font-medium tracking-tight text-foreground",
+                  "text-2xl xs:text-3xl sm:text-4xl md:text-[44px] lg:text-5xl"
+                )}
+              >
+                {greeting}
+              </h1>
+            </div>
+          </Container>
 
-      <div className="page-pad-compact">
-        <div
-          ref={setHomeChatbarSlotRef}
-          style={
-            chatbarDocked && homeChatbarHeight > 0
-              ? { minHeight: `${homeChatbarHeight}px` }
-              : undefined
-          }
-        />
-        {chatbarPortalEl
-          ? createPortal(
-              <AnimatedChatbar
-                onSubmit={handleSubmit}
-                respectReducedMotion={false}
-                variant={chatbarDocked ? "navbar" : "default"}
-              />,
-              chatbarPortalEl
-            )
-          : null}
-      </div>
+          <div className={cn("pt-3 sm:pt-4", chatbarDocked ? "pb-8 sm:pb-10" : "pb-12 sm:pb-16")}>
+            <div
+              ref={setHomeChatbarSlotRef}
+              style={
+                chatbarDocked && homeChatbarHeight > 0
+                  ? { minHeight: `${homeChatbarHeight}px` }
+                  : undefined
+              }
+            />
+            {chatbarPortalEl
+              ? createPortal(
+                  <AnimatedChatbar
+                    onSubmit={handleSubmit}
+                    respectReducedMotion={false}
+                    variant={chatbarDocked ? "navbar" : "default"}
+                  />,
+                  chatbarPortalEl
+                )
+              : null}
+          </div>
 
-      <div
-        ref={setHomeTabsSlotRef}
-        style={
-          tabsDocked && homeTabsHeight > 0
-            ? { minHeight: `${homeTabsHeight}px` }
-            : undefined
-        }
-      />
-      {tabsPortalEl
-        ? createPortal(
-            <NavigationTabs
-              tabs={tabs}
+          <div
+            ref={setHomeTabsSlotRef}
+            style={
+              tabsDocked && homeTabsHeight > 0
+                ? { minHeight: `${homeTabsHeight}px` }
+                : undefined
+            }
+          />
+          {tabsPortalEl
+            ? createPortal(
+                <NavigationTabs
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onTabChange={handleTabChange}
+                  variant={tabsDocked ? "navbar" : "page"}
+                />,
+                tabsPortalEl
+              )
+            : null}
+
+          <Container
+            size="app"
+            className="page-pad"
+            style={
+              tabsDocked
+                ? { minHeight: "calc(100vh - 56px)" }
+                : undefined
+            }
+          >
+            <div ref={homeContentTopRef} className="scroll-mt-24" />
+            <HomeTabContent
               activeTab={activeTab}
-              onTabChange={handleTabChange}
-              variant={tabsDocked ? "navbar" : "page"}
-            />,
-            tabsPortalEl
-          )
-        : null}
-
-      <Container
-        size="app"
-        className="page-pad"
-        style={
-          tabsDocked
-            ? { minHeight: "calc(100vh - 56px)" }
-            : undefined
-        }
-      >
-        <div ref={homeContentTopRef} className="scroll-mt-24" />
-        <HomeTabContent
-          activeTab={activeTab}
-          paths={paths || []}
-          materialFiles={materialFiles || []}
-          loading={pathsLoading}
-          materialsLoading={materialsLoading}
-          taxonomySnapshot={taxonomySnapshot}
-          taxonomyLoading={taxonomyLoading}
-          homeTopicFocus={activeTab === "home" ? homeTopicFocus : null}
-          onHomeTopicViewAll={handleHomeTopicViewAll}
-        />
-      </Container>
+              paths={pathList}
+              materialFiles={materialList}
+              loading={pathsLoading}
+              materialsLoading={materialsLoading}
+              taxonomySnapshot={taxonomySnapshot}
+              taxonomyLoading={taxonomyLoading}
+              homeTopicFocus={activeTab === "home" ? homeTopicFocus : null}
+              onHomeTopicViewAll={handleHomeTopicViewAll}
+            />
+          </Container>
+        </>
+      )}
     </div>
   );
 }

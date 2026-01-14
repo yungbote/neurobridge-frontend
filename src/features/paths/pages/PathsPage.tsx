@@ -21,6 +21,13 @@ function byUpdatedDesc(a: Path, b: Path) {
   return bd - ad;
 }
 
+function bySortThenUpdatedDesc(a: Path, b: Path) {
+  const ai = typeof a?.sortIndex === "number" ? a.sortIndex : 0;
+  const bi = typeof b?.sortIndex === "number" ? b.sortIndex : 0;
+  if (ai !== bi) return ai - bi;
+  return byUpdatedDesc(a, b);
+}
+
 export function PathsPageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
     <>
@@ -55,16 +62,72 @@ export default function PathsPage() {
   const { paths, loading } = usePaths();
   const { t } = useI18n();
 
-  const list = useMemo(() => {
+  const { roots, childrenByParent } = useMemo(() => {
     const rows = Array.isArray(paths) ? paths.slice() : [];
-    return rows
-      .filter((p) => !String(p?.id || "").startsWith("job:"))
-      .sort(byUpdatedDesc);
+    const clean = rows.filter((p) => !String(p?.id || "").startsWith("job:"));
+
+    const byId = new Map<string, Path>();
+    for (const p of clean) {
+      if (p?.id) byId.set(String(p.id), p);
+    }
+
+    const roots: Path[] = [];
+    const childrenByParent = new Map<string, Path[]>();
+
+    for (const p of clean) {
+      const id = String(p?.id || "");
+      if (!id) continue;
+      const parentId = String(p?.parentPathId || "");
+      if (parentId && parentId !== id && byId.has(parentId)) {
+        const existing = childrenByParent.get(parentId) ?? [];
+        existing.push(p);
+        childrenByParent.set(parentId, existing);
+      } else {
+        roots.push(p);
+      }
+    }
+
+    roots.sort(byUpdatedDesc);
+    for (const [pid, kids] of childrenByParent.entries()) {
+      kids.sort(bySortThenUpdatedDesc);
+      childrenByParent.set(pid, kids);
+    }
+
+    return { roots, childrenByParent };
   }, [paths]);
 
-  if (loading && list.length === 0) {
+  if (loading && roots.length === 0) {
     return <PathsPageSkeleton />;
   }
+
+  const renderTree = (parentId: string, visited: Set<string>) => {
+    const children = childrenByParent.get(parentId) ?? [];
+    if (children.length === 0) return null;
+
+    return (
+      <div
+        className={[
+          "mt-4 space-y-4",
+          "border-l border-border/60 pl-4",
+        ].filter(Boolean).join(" ")}
+      >
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          {children.map((p) => {
+            const pid = String(p?.id || "");
+            const nextVisited = new Set(visited);
+            const already = pid ? visited.has(pid) : true;
+            if (pid) nextVisited.add(pid);
+            return (
+              <div key={p.id} className="space-y-4">
+                <PathCardLarge path={p} />
+                {!already && pid ? renderTree(pid, nextVisited) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="page-surface">
@@ -78,16 +141,16 @@ export default function PathsPage() {
           </p>
         </div>
 
-        {list.length === 0 ? (
+        {roots.length === 0 ? (
           <EmptyContent
             title={t("sidebar.emptyPaths")}
             message={t("home.empty.default.description")}
             icon={<FolderOpen className="h-7 w-7" />}
           />
         ) : (
-          <div className="grid gap-4 sm:gap-6 grid-cols-1 xs:grid-cols-[repeat(auto-fill,minmax(min(100%,280px),360px))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,320px),360px))]">
+          <div className="space-y-8">
             <AnimatePresence initial={false}>
-              {list.map((p) => (
+              {roots.map((p) => (
                 <m.div
                   key={p.id}
                   layout="position"
@@ -98,6 +161,7 @@ export default function PathsPage() {
                   transition={nbTransitions.micro}
                 >
                   <PathCardLarge path={p} />
+                  {renderTree(p.id, new Set([String(p.id)]))}
                 </m.div>
               ))}
             </AnimatePresence>

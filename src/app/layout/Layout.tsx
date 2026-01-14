@@ -25,7 +25,8 @@ export default function Layout({ children }: LayoutProps) {
       matchPath({ path: "/path-nodes/:id", end: false }, location.pathname) ||
       matchPath({ path: "/activities/:id", end: false }, location.pathname)
   );
-  const hideBreadcrumbs = location.pathname.startsWith("/chat") || isPathContext || Boolean(activePathId);
+  const hideBreadcrumbs =
+    location.pathname === "/" || location.pathname.startsWith("/chat") || isPathContext || Boolean(activePathId);
 
   useLayoutEffect(() => {
     if (!isAuthenticated) return;
@@ -71,4 +72,3 @@ export default function Layout({ children }: LayoutProps) {
     </SidebarProvider>
   );
 }
-

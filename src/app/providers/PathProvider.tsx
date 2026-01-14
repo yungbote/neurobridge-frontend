@@ -127,6 +127,11 @@ function createPathSkeleton(input: Partial<Path> & Pick<Path, "id" | "title" | "
   return {
     id: input.id,
     userId: input.userId ?? null,
+    parentPathId: input.parentPathId ?? null,
+    rootPathId: input.rootPathId ?? null,
+    depth: typeof input.depth === "number" ? input.depth : 0,
+    sortIndex: typeof input.sortIndex === "number" ? input.sortIndex : 0,
+    kind: input.kind ?? "path",
     title: input.title ?? "",
     description: input.description ?? "",
     status: input.status ?? "draft",

@@ -1135,14 +1135,14 @@ export function AppSideBar() {
               </SidebarGroup>
             </>
           )
-	        ) : (
-	          <>
-	            <SidebarGroup className={cn(
-                "sticky top-0 z-20 bg-sidebar/95 backdrop-blur-sm pt-4",
-                !isCollapsed && "-mx-3 px-3"
+		        ) : (
+		          <>
+		            <SidebarGroup className={cn(
+                "sticky top-0 z-20 backdrop-blur-sm pt-4",
+                !isCollapsed && "bg-sidebar/95 -mx-3 px-3"
               )}>
-		              <SidebarGroupLabel>{t("sidebar.navigation")}</SidebarGroupLabel>
-		              <SidebarMenu className={cn(isCollapsed ? "items-center gap-2.5" : "gap-2.5")}>
+			              <SidebarGroupLabel>{t("sidebar.navigation")}</SidebarGroupLabel>
+			              <SidebarMenu className={cn(isCollapsed ? "items-center gap-2.5" : "gap-2.5")}>
 		                <SidebarMenuItem>
 		                  <SidebarMenuButton
 	                    asChild

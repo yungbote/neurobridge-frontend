@@ -300,16 +300,37 @@ function QuickCheck({
   blockId,
   promptMd,
   answerMd,
+  kind,
+  options,
 }: {
   pathNodeId?: string;
   blockId?: string;
   promptMd?: string;
   answerMd?: string;
+  kind?: unknown;
+  options?: unknown;
 }) {
   const [answer, setAnswer] = useState("");
   const [result, setResult] = useState<QuickCheckAttemptResult | null>(null);
   const [loadingAction, setLoadingAction] = useState<QuickCheckAttemptAction | null>(null);
   const [error, setError] = useState("");
+
+  const choiceOptions = useMemo(() => {
+    const arr = Array.isArray(options) ? options : [];
+    const out: Array<{ id: string; text: string }> = [];
+    const seen = new Set<string>();
+    for (const x of arr) {
+      if (!x || typeof x !== "object" || Array.isArray(x)) continue;
+      const id = safeString((x as { id?: unknown }).id).trim();
+      const text = safeString((x as { text?: unknown }).text).trim();
+      if (!id || !text || seen.has(id)) continue;
+      seen.add(id);
+      out.push({ id, text });
+    }
+    return out;
+  }, [options]);
+  const kindNorm = safeString(kind).toLowerCase().trim();
+  const isChoiceMode = choiceOptions.length > 0 || kindNorm === "mcq" || kindNorm === "true_false";
 
   const status = safeString(result?.status).toLowerCase();
   const statusMeta: { label: string; className: string } | null =
@@ -332,9 +353,16 @@ function QuickCheck({
         setError("Interactive checks are unavailable (missing node or block id).");
         return;
       }
-      if (action === "submit" && !answer.trim()) {
-        setError("Type an answer first.");
-        return;
+      if (action === "submit") {
+        const a = answer.trim();
+        if (!a) {
+          setError(isChoiceMode ? "Select an option first." : "Type an answer first.");
+          return;
+        }
+        if (isChoiceMode && choiceOptions.length > 0 && !choiceOptions.some((o) => o.id === a)) {
+          setError("Select an option first.");
+          return;
+        }
       }
 
       setError("");
@@ -365,7 +393,7 @@ function QuickCheck({
         setLoadingAction(null);
       }
     },
-    [answer, blockId, canUseBackend, pathNodeId]
+    [answer, blockId, canUseBackend, choiceOptions, isChoiceMode, pathNodeId]
   );
 
   return (
@@ -386,14 +414,48 @@ function QuickCheck({
       </div>
 
       <div className="mt-4 space-y-3">
-        <Textarea
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          placeholder="Type your answer…"
-          rows={3}
-          className="min-h-[88px]"
-          disabled={!canUseBackend}
-        />
+        {isChoiceMode && choiceOptions.length > 0 ? (
+          <div className="space-y-2">
+            {choiceOptions.map((o) => {
+              const selected = answer.trim() === o.id;
+              return (
+                <Button
+                  key={o.id}
+                  type="button"
+                  variant={selected ? "secondary" : "outline"}
+                  size="sm"
+                  disabled={!canUseBackend || isBusy}
+                  onClick={() => {
+                    setAnswer(o.id);
+                    setResult(null);
+                    setError("");
+                  }}
+                  className={cn(
+                    "h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-xl px-3 py-2 text-left",
+                    selected && "ring-1 ring-primary/20"
+                  )}
+                >
+                  <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-xs font-semibold">
+                    {o.id}
+                  </span>
+                  <span className="text-sm text-foreground/90">{o.text}</span>
+                </Button>
+              );
+            })}
+          </div>
+        ) : (
+          <Textarea
+            value={answer}
+            onChange={(e) => {
+              setAnswer(e.target.value);
+              if (result) setResult(null);
+            }}
+            placeholder="Type your answer…"
+            rows={3}
+            className="min-h-[88px]"
+            disabled={!canUseBackend || isBusy}
+          />
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button
@@ -1013,6 +1075,8 @@ export function NodeDocRenderer({
               blockId={blockId}
               promptMd={b?.prompt_md}
               answerMd={b?.answer_md}
+              kind={b?.kind}
+              options={b?.options}
             />
           );
         }

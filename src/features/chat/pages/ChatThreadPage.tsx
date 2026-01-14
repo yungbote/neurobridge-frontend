@@ -1283,16 +1283,16 @@ export default function ChatThreadPage() {
 
       <div className="shrink-0 sticky bottom-0 z-10 bg-background">
         <div className="relative pb-5">
-	          {showScrollToBottom && (
-	            <button
-	              type="button"
-	              onClick={() => scrollToBottom("smooth")}
-	              className="absolute left-1/2 top-0 z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-[calc(50%+6px)] items-center justify-center rounded-full border border-border bg-background/95 shadow-lg nb-motion-fast motion-reduce:transition-none hover:bg-muted"
-	              aria-label={t("chat.scrollToBottom")}
-	            >
-              <ArrowDown className="h-4 w-4 text-muted-foreground" />
-            </button>
-          )}
+		          {showScrollToBottom && (
+		            <button
+		              type="button"
+		              onClick={() => scrollToBottom("smooth")}
+		              className="absolute left-1/2 top-0 z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-[calc(50%+6px)] items-center justify-center rounded-full border border-border bg-card shadow-lg nb-motion-fast motion-reduce:transition-none hover:bg-muted"
+		              aria-label={t("chat.scrollToBottom")}
+		            >
+		              <ArrowDown className="h-4 w-4 text-muted-foreground" />
+		            </button>
+		          )}
           {thread ? (
             <>
               {sendError ? (

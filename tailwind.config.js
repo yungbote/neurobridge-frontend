@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        brand: ['"Riforma"', 'system-ui', 'sans-serif'],
+        brand: ['"Source Serif 4"', "ui-serif", "Georgia", "Cambria", '"Times New Roman"', "Times", "serif"],
         pragmata: ['"Pragmata Pro"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
         mono: ['"Pragmata Pro"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
@@ -26,7 +26,6 @@ module.exports = {
   },
   plugins: [],
 };
-
 
 
 

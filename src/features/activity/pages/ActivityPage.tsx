@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/shared/ui/button";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
@@ -8,7 +8,7 @@ import remarkGfm from "remark-gfm";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 
 import { getActivity } from "@/shared/api/ActivityService";
-import { ingestEvents } from "@/shared/api/EventService";
+import { queueEvent } from "@/shared/services/EventQueue";
 import { listActivitiesForNode } from "@/shared/api/PathNodeService";
 import { Container } from "@/shared/layout/Container";
 import { usePaths } from "@/app/providers/PathProvider";
@@ -129,6 +129,12 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(false);
 
   const [completed, setCompleted] = useState(false);
+  const openedAtRef = useRef<number>(Date.now());
+  const completedRef = useRef<boolean>(false);
+  const activeActivityIdRef = useRef<string>("");
+  const activePathIdRef = useRef<string>("");
+  const activeNodeIdRef = useRef<string>("");
+  const activeKindRef = useRef<string>("reading");
 
   useEffect(() => {
     let mounted = true;
@@ -144,6 +150,26 @@ export default function ActivityPage() {
         setPath(res.path);
         setNode(res.node);
         setCompleted(false);
+        completedRef.current = false;
+        openedAtRef.current = Date.now();
+        activeActivityIdRef.current = res.activity?.id ?? "";
+        activePathIdRef.current = res.path?.id ?? "";
+        activeNodeIdRef.current = res.node?.id ?? "";
+        activeKindRef.current = res.activity?.kind ?? "reading";
+
+        if (res.activity?.id) {
+          queueEvent({
+            type: "activity_started",
+            pathId: res.path?.id ?? undefined,
+            pathNodeId: res.node?.id ?? undefined,
+            activityId: res.activity.id,
+            activityVariant: "default",
+            data: {
+              source: "ui",
+              activity_kind: res.activity?.kind ?? "reading",
+            },
+          });
+        }
 
         const nodeId = res.pathNodeId ?? res.node?.id ?? null;
         if (nodeId) {
@@ -162,6 +188,23 @@ export default function ActivityPage() {
     load();
     return () => {
       mounted = false;
+      const aid = activeActivityIdRef.current;
+      if (!aid) return;
+      if (completedRef.current) return;
+      const dwellMs = Math.max(0, Date.now() - (openedAtRef.current || Date.now()));
+      queueEvent({
+        type: "activity_abandoned",
+        pathId: activePathIdRef.current || undefined,
+        pathNodeId: activeNodeIdRef.current || undefined,
+        activityId: aid,
+        activityVariant: "default",
+        data: {
+          source: "ui",
+          activity_kind: activeKindRef.current || "reading",
+          dwell_ms: dwellMs,
+          attempts: 1,
+        },
+      });
     };
   }, [activityId]);
 
@@ -183,21 +226,23 @@ export default function ActivityPage() {
     if (completed) return;
     if (!activity?.id) return;
     setCompleted(true);
-    try {
-      await ingestEvents([
-        {
-          clientEventId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          type: "activity_completed",
-          occurredAt: new Date().toISOString(),
-          pathId: path?.id ?? undefined,
-          pathNodeId: node?.id ?? undefined,
-          activityId: activity.id,
-          data: { source: "ui" },
-        },
-      ]);
-    } catch (err) {
-      console.warn("[ActivityPage] failed to ingest activity_completed:", err);
-    }
+    completedRef.current = true;
+    const dwellMs = Math.max(0, Date.now() - (openedAtRef.current || Date.now()));
+    queueEvent({
+      type: "activity_completed",
+      pathId: path?.id ?? undefined,
+      pathNodeId: node?.id ?? undefined,
+      activityId: activity.id,
+      activityVariant: "default",
+      data: {
+        source: "ui",
+        activity_kind: activity?.kind ?? "reading",
+        dwell_ms: dwellMs,
+        attempts: 1,
+        // For non-scored activities (e.g. reading), treat completion as weak positive evidence.
+        score: 1,
+      },
+    });
   }, [completed, activity?.id, path?.id, node?.id]);
   
 // TODO: Support for rendering video && Animation && Diagram (beyond image figures) Blocks

@@ -22,6 +22,19 @@ export function mapPath(raw: BackendPath | Path | null | undefined): Path | null
   return {
     id: String(row.id),
     userId: (row.user_id ?? row.userId ?? null) as string | null,
+    parentPathId: (row.parent_path_id ?? row.parentPathId ?? null) as string | null,
+    rootPathId: (row.root_path_id ?? row.rootPathId ?? null) as string | null,
+    depth:
+      typeof row.depth === "number"
+        ? row.depth
+        : 0,
+    sortIndex:
+      typeof row.sort_index === "number"
+        ? row.sort_index
+        : typeof row.sortIndex === "number"
+          ? row.sortIndex
+          : 0,
+    kind: String(row.kind ?? "path"),
     title: row.title ?? "",
     description: row.description ?? "",
     status: row.status ?? "",
@@ -80,6 +93,7 @@ export function mapConcept(raw: BackendConcept | Concept | null | undefined): Co
     id: String(row.id),
     scope: (row.scope ?? null) as string | null,
     scopeId: (row.scope_id ?? row.scopeId ?? null) as string | null,
+    canonicalConceptId: (row.canonical_concept_id ?? row.canonicalConceptId ?? null) as string | null,
     parentId: (row.parent_id ?? row.parentId ?? null) as string | null,
     depth: typeof row.depth === "number" ? row.depth : 0,
     sortIndex: typeof row.sort_index === "number" ? row.sort_index : row.sortIndex ?? 0,

@@ -3,6 +3,11 @@ import type { ISODateTimeString, JsonValue, UUID } from "./common";
 export interface BackendPath {
   id: UUID | string;
   user_id?: UUID | string | null;
+  parent_path_id?: UUID | string | null;
+  root_path_id?: UUID | string | null;
+  depth?: number | null;
+  sort_index?: number | null;
+  kind?: string | null;
   title?: string;
   description?: string;
   status?: string;
@@ -43,6 +48,7 @@ export interface BackendConcept {
   id: UUID | string;
   scope?: string | null;
   scope_id?: UUID | string | null;
+  canonical_concept_id?: UUID | string | null;
   parent_id?: UUID | string | null;
   depth?: number;
   sort_index?: number;
