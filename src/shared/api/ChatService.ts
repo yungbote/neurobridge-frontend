@@ -113,6 +113,15 @@ export async function listChatMessages(
   return messages;
 }
 
+export async function listPendingIntakeQuestions(limit = 10): Promise<ChatMessage[]> {
+  const resp = await axiosClient.get<{ messages?: BackendChatMessage[] | ChatMessage[] }>("/chat/intake/pending", {
+    params: { limit },
+  });
+  const messages = (resp.data?.messages || []).map(mapChatMessage).filter(Boolean) as ChatMessage[];
+  messages.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  return messages;
+}
+
 export async function sendChatMessage(
   threadId: string,
   content: string,

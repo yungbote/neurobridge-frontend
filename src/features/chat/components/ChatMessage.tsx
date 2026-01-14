@@ -1136,7 +1136,10 @@ const ChatMessage: ChatMessageComponent = ({
 	          <div
 	            dir="auto"
 	            className={cn(
-	              "text-[15px] leading-relaxed",
+	              "leading-relaxed",
+	              "[&_p]:font-brand [&_li]:font-brand [&_h1]:font-brand [&_h2]:font-brand [&_h3]:font-brand [&_h4]:font-brand [&_blockquote]:font-brand",
+	              "[&_p]:text-[16px] sm:[&_p]:text-[17px]",
+	              "[&_li]:text-[16px] sm:[&_li]:text-[17px]",
 	              "[&>p]:my-3 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0",
 	              "[&>ul]:my-3 [&>ol]:my-3",
 	              "[&>ul]:ps-5 [&>ol]:ps-5",

@@ -146,7 +146,7 @@ export function AppNavBar() {
       className={cn(
         "sticky top-0 z-50 w-full border-b safe-area-inset-top nb-motion motion-reduce:transition-none",
         navElevated
-          ? "border-border/40 bg-background/95 backdrop-blur-lg supports-[backdrop-filter]:bg-background/90 shadow-sm"
+          ? "border-border/40 bg-background/95 backdrop-blur-lg supports-[backdrop-filter]:bg-background/90 shadow-[0_10px_24px_-22px_rgba(0,0,0,0.12)] dark:shadow-[0_10px_28px_-22px_rgba(0,0,0,0.38)]"
           : "border-transparent bg-background"
       )}
     >

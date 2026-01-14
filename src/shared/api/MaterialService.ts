@@ -26,7 +26,15 @@ export async function uploadMaterialSet(
   }
 
   // IMPORTANT: don't set Content-Type manually for multipart; axios will set boundary
-  const resp = await axiosClient.post<BackendMaterialUploadResponse>("/material-sets/upload", formData);
+  // Uploads can take longer than typical API calls (local disk, large PDFs, remote blob store, etc).
+  // Keep this request-specific timeout generous without slowing down normal API calls.
+  const totalBytes = (files || []).reduce((sum, f) => sum + (f?.size ?? 0), 0);
+  const totalMB = Math.max(1, Math.ceil(totalBytes/(1024*1024)));
+  const timeoutMs = hasFiles ? Math.min(10*60_000, Math.max(60_000, totalMB*30_000)) : 30_000;
+
+  const resp = await axiosClient.post<BackendMaterialUploadResponse>("/material-sets/upload", formData, {
+    timeout: timeoutMs,
+  });
   return resp.data;
 }
 
@@ -97,7 +105,6 @@ export async function listUserMaterialFiles(): Promise<MaterialFile[]> {
   const raws = resp.data?.files || [];
   return raws.map(mapMaterialFile).filter(Boolean) as MaterialFile[];
 }
-
 
 
 

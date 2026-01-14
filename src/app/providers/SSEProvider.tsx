@@ -17,6 +17,7 @@ import type { SseMessage } from "@/shared/types/models";
 interface SSEContextValue {
   connected: boolean;
   lastMessage: SseMessage | null;
+  messages: SseMessage[];
   subscribeChannel: (channel: string) => Promise<void>;
   unsubscribeChannel: (channel: string) => Promise<void>;
 }
@@ -24,6 +25,7 @@ interface SSEContextValue {
 const SSEContext = createContext<SSEContextValue>({
   connected: false,
   lastMessage: null,
+  messages: [],
   subscribeChannel: async () => {},
   unsubscribeChannel: async () => {},
 });
@@ -35,6 +37,7 @@ interface SSEProviderProps {
 export function SSEProvider({ children }: SSEProviderProps) {
   const [connected, setConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<SseMessage | null>(null);
+  const [messages, setMessages] = useState<SseMessage[]>([]);
   const subscribedChannelsRef = useRef<Set<string>>(new Set());
   const initRef = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,6 +46,7 @@ export function SSEProvider({ children }: SSEProviderProps) {
   const resetState = useCallback(() => {
     setConnected(false);
     setLastMessage(null);
+    setMessages([]);
     subscribedChannelsRef.current.clear();
     if (retryTimer.current) {
       clearTimeout(retryTimer.current);
@@ -87,10 +91,16 @@ export function SSEProvider({ children }: SSEProviderProps) {
       try {
         const parsed = JSON.parse(evt.data) as Partial<SseMessage>;
         console.log("[SSEProvider] message:", evt.data);
-        setLastMessage({
+        const msg: SseMessage = {
           event: String(parsed.event ?? ""),
           channel: String(parsed.channel ?? ""),
           data: parsed.data ?? null,
+        };
+        setLastMessage(msg);
+        setMessages((prev) => {
+          const next = [...(Array.isArray(prev) ? prev : []), msg];
+          const max = 50;
+          return next.length > max ? next.slice(next.length - max) : next;
         });
       } catch (error) {
         console.warn(
@@ -164,6 +174,7 @@ export function SSEProvider({ children }: SSEProviderProps) {
   const value = {
     connected,
     lastMessage,
+    messages,
     subscribeChannel,
     unsubscribeChannel
   };
@@ -186,7 +197,6 @@ export function SSEGate({ children }: SSEGateProps) {
   }
   return <SSEProvider>{children}</SSEProvider>;
 }
-
 
 
 

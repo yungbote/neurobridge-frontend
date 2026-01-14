@@ -65,7 +65,7 @@ export function ChatThreadPageSkeleton({ embedded = false }: { embedded?: boolea
 
   return (
     <div className="page-surface" aria-busy="true">
-      <Container size="md" className="page-pad-compact">
+      <Container size="max-w-4xl" className="page-pad-compact">
         {body}
       </Container>
     </div>
@@ -1078,7 +1078,7 @@ export default function ChatThreadPage() {
       `}</style>
 
           <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto">
-        <Container size="md" className="page-pad-compact">
+        <Container size="max-w-4xl" className="page-pad-compact">
           {loading && !thread ? (
             <ChatThreadPageSkeleton embedded />
           ) : null}
@@ -1296,12 +1296,11 @@ export default function ChatThreadPage() {
           {thread ? (
             <>
               {sendError ? (
-                <Container size="md" className="pb-2 text-xs text-destructive">
+                <Container size="max-w-4xl" className="pb-2 text-xs text-destructive">
                   {sendError}
                 </Container>
               ) : null}
               <AnimatedChatbar
-                className="max-w-5xl"
                 disablePlaceholderAnimation
                 disableUploads
                 submitMode={learningBuildActive ? "cancel" : "send"}
@@ -1309,7 +1308,7 @@ export default function ChatThreadPage() {
               />
             </>
           ) : (
-            <Container size="md">
+            <Container size="max-w-4xl">
               <div className="h-14 w-full rounded-3xl border border-border bg-muted/30" />
             </Container>
           )}
