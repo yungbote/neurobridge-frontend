@@ -245,7 +245,7 @@ export const EN_MESSAGES = {
   "home.backToHome": "Back to Home",
   "home.welcome": "Welcome, {name}.",
   "home.greeting.morning": "☕ Morning, {name}",
-  "home.greeting.afternoon": "📚 Afternoon, {name}",
+  "home.greeting.afternoon": "☀️ Afternoon, {name}",
   "home.greeting.evening": "🌙 Evening, {name}",
   "home.subtitle": "Your workspace is ready. We'll keep adapting your resources and recommendations as you learn.",
   "home.tabs.inProgress": "In Progress",

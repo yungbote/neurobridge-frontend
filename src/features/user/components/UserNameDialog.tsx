@@ -4,6 +4,7 @@ import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 import { useI18n } from "@/app/providers/I18nProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { ColorPicker, AVATAR_COLORS } from "@/features/user/components/ColorPicker";
@@ -241,6 +242,14 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
 
   if (!user) return null;
 
+  const avatarUrl = String(user.avatarUrl ?? "").trim();
+  const hasAvatarUrl = Boolean(avatarUrl);
+  const initials =
+    (
+      (user.firstName?.[0] ?? "U") +
+      (user.lastName?.[0] ?? "")
+    ).toUpperCase();
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden">
@@ -250,13 +259,17 @@ export function UserNameDialog({ open, onOpenChange }: UserNameDialogProps) {
 
         <div className="flex flex-col items-center gap-4 px-6 pb-6 sm:px-8">
           <div className="relative group h-24 w-24 rounded-full sm:h-32 sm:w-32">
-            <div className="h-24 w-24 rounded-full overflow-hidden border border-border/60 sm:h-32 sm:w-32">
-              <img
-                src={user.avatarUrl || "/placeholder.svg"}
-                alt={t("user.profile.avatarAlt")}
-                className="h-full w-full object-cover"
-              />
-            </div>
+            <Avatar className="h-24 w-24 rounded-full overflow-hidden border border-border/60 sm:h-32 sm:w-32">
+              {hasAvatarUrl ? (
+                <AvatarImage src={avatarUrl} alt={t("user.profile.avatarAlt")} className="object-cover" />
+              ) : null}
+              <AvatarFallback
+                style={draftColor ? { backgroundColor: draftColor } : undefined}
+                className="text-lg font-semibold sm:text-xl"
+              >
+                {initials}
+              </AvatarFallback>
+            </Avatar>
 
             {/* LIVE color picker (writes via SSE, cancel reverts) */}
             <ColorPicker

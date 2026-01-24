@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Virtuoso } from "react-virtuoso";
 import {
   MessageSquare,
   RotateCcw,
@@ -55,6 +56,11 @@ interface DocBlock {
 interface DocShape {
   summary?: string;
   blocks?: DocBlock[];
+}
+
+interface SectionItem {
+  id: string;
+  blocks: Array<{ b: DocBlock; i: number }>;
 }
 
 interface NodeDocRendererProps {
@@ -163,6 +169,22 @@ function SectionBlock({
   );
 }
 
+const SectionList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ style, className, ...props }, ref) => (
+    <div ref={ref} style={style} className={cn("space-y-8", className)} {...props} />
+  )
+);
+
+SectionList.displayName = "SectionList";
+
+const BlockList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ style, className, ...props }, ref) => (
+    <div ref={ref} style={style} className={cn("space-y-10", className)} {...props} />
+  )
+);
+
+BlockList.displayName = "BlockList";
+
 function markdownComponents(): Components {
   return {
     p({ children }: { children?: React.ReactNode }) {
@@ -180,20 +202,23 @@ function markdownComponents(): Components {
         </a>
       );
     },
-    code({
-      inline,
-      className,
-      children,
-    }: {
-      inline?: boolean;
-      className?: string;
-      children?: React.ReactNode;
-    }) {
-      const raw = String(children || "");
-      const m = /language-([a-zA-Z0-9_-]+)/.exec(className || "");
-      const lang = m?.[1] || "";
-      if (inline) return <InlineCode>{raw}</InlineCode>;
-      return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
+    pre({ children }: { children?: React.ReactNode }) {
+      const child = React.Children.toArray(children)[0];
+      if (React.isValidElement(child)) {
+        const props = child.props as { className?: string; children?: React.ReactNode };
+        const raw = String(props.children || "");
+        const m = /language-([a-zA-Z0-9_-]+)/.exec(props.className || "");
+        const lang = m?.[1] || "";
+        return <CodeBlock language={lang}>{raw.replace(/\n$/, "")}</CodeBlock>;
+      }
+      return (
+        <pre className="my-4 overflow-x-auto rounded-xl border border-border/60 bg-muted/20 p-4 text-sm">
+          {children}
+        </pre>
+      );
+    },
+    code({ className, children }: { className?: string; children?: React.ReactNode }) {
+      return <InlineCode className={className}>{children}</InlineCode>;
     },
     ul({ children }: { children?: React.ReactNode }) {
       return <ul className="mt-4 first:mt-0 list-disc ps-5 space-y-2 text-foreground/90">{children}</ul>;
@@ -244,6 +269,9 @@ function inlineMarkdownComponents(): Components {
     ...base,
     p({ children }: { children?: React.ReactNode }) {
       return <span className="leading-relaxed">{children}</span>;
+    },
+    pre({ children }: { children?: React.ReactNode }) {
+      return <span>{children}</span>;
     },
     ul({ children }: { children?: React.ReactNode }) {
       return <span>{children}</span>;
@@ -620,9 +648,9 @@ export function NodeDocRenderer({
 }: NodeDocRendererProps) {
   const d = useMemo(() => normalizeDoc(doc), [doc]);
   const blocks = asArray<DocBlock>(d?.blocks);
-  const sections = useMemo(() => {
-    const out: Array<{ id: string; blocks: Array<{ b: DocBlock; i: number }> }> = [];
-    let current: { id: string; blocks: Array<{ b: DocBlock; i: number }> } = {
+  const sections = useMemo<SectionItem[]>(() => {
+    const out: SectionItem[] = [];
+    let current: SectionItem = {
       id: "intro",
       blocks: [],
     };
@@ -641,6 +669,438 @@ export function NodeDocRenderer({
     return out;
   }, [blocks]);
 
+  const renderBlock = useCallback(
+    (b: DocBlock, i: number) => {
+      const type = safeString(b?.type).toLowerCase();
+      const blockId = safeString(b?.id) || String(i);
+      const isPending = Boolean(pendingBlocks?.[blockId]);
+      const feedback = blockFeedback?.[blockId] || "";
+      const undoAllowed = type !== "figure" && type !== "video";
+      const canUndo = Boolean(undoableBlocks?.[blockId]) && undoAllowed;
+      const showActions = Boolean(onLike || onDislike || onRegenerate || onChat || onUndo);
+
+      if (type === "divider") return <Separator key={blockId} className="my-6" />;
+
+      const actionBar = showActions ? (
+        <div
+          className={cn(
+            "absolute -top-3 end-0 z-10 flex items-center gap-1 rounded-full border border-border/60",
+            "bg-card/90 px-1.5 py-1 shadow-sm backdrop-blur",
+            "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          )}
+        >
+          {onLike ? (
+            <ActionButton
+              label={feedback === "like" ? "Liked" : "Like"}
+              shortcut="L"
+              active={feedback === "like"}
+              onClick={() => onLike?.(b, i)}
+            >
+              <ThumbsUp className="h-3.5 w-3.5" />
+            </ActionButton>
+          ) : null}
+          {onDislike ? (
+            <ActionButton
+              label={feedback === "dislike" ? "Disliked" : "Dislike"}
+              shortcut="D"
+              active={feedback === "dislike"}
+              onClick={() => onDislike?.(b, i)}
+            >
+              <ThumbsDown className="h-3.5 w-3.5" />
+            </ActionButton>
+          ) : null}
+          {onRegenerate ? (
+            <ActionButton
+              label="Regenerate"
+              shortcut="R"
+              disabled={isPending}
+              onClick={() => onRegenerate?.(b, i)}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </ActionButton>
+          ) : null}
+          {onChat ? (
+            <ActionButton label="Chat" shortcut="C" onClick={() => onChat?.(b, i)}>
+              <MessageSquare className="h-3.5 w-3.5" />
+            </ActionButton>
+          ) : null}
+          {onUndo && undoAllowed ? (
+            <ActionButton
+              label={canUndo ? "Undo" : "Undo (unavailable)"}
+              shortcut="Cmd/Ctrl+Z"
+              disabled={!canUndo || isPending}
+              onClick={() => onUndo?.(b, i)}
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </ActionButton>
+          ) : null}
+        </div>
+      ) : null;
+
+      const wrap = (content: React.ReactNode) => (
+        <div key={blockId} className="group relative">
+          {actionBar}
+          {isPending ? (
+            <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex h-2 w-2 rounded-full bg-primary/70 animate-pulse" />
+                Regenerating this block
+              </div>
+              <BlockSkeleton type={type} />
+            </div>
+          ) : (
+            content
+          )}
+        </div>
+      );
+
+      if (type === "heading") {
+        const level = Number(b?.level || 2);
+        const text = safeString(b?.text);
+        if (level === 3) return wrap(<h3 className="text-balance text-xl font-semibold tracking-tight">{text}</h3>);
+        if (level === 4) return wrap(<h4 className="text-balance text-lg font-semibold tracking-tight">{text}</h4>);
+        return wrap(<h2 className="text-balance text-2xl font-semibold tracking-tight">{text}</h2>);
+      }
+
+      if (type === "paragraph") {
+        return wrap(
+          <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+              {safeString(b?.md)}
+            </ReactMarkdown>
+          </div>
+        );
+      }
+
+      if (type === "callout") {
+        const variant = safeString(b?.variant).toLowerCase();
+        const title = safeString(b?.title).trim();
+        const border =
+          variant === "warning"
+            ? "border-warning/40 bg-warning/10"
+            : variant === "tip"
+              ? "border-success/40 bg-success/10"
+              : "border-border/60 bg-muted/20";
+        return wrap(
+          <div className={cn("rounded-2xl border border-s-4 p-4", border)}>
+            {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
+            <div dir="auto" className={cn("text-[16px] leading-7 text-foreground/90", title && "mt-2")}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {safeString(b?.md)}
+              </ReactMarkdown>
+            </div>
+          </div>
+        );
+      }
+
+      const sectionLabel = sectionLabelByType[type];
+
+      if (
+        sectionLabel &&
+        [
+          "objectives",
+          "prerequisites",
+          "key_takeaways",
+          "common_mistakes",
+          "misconceptions",
+          "edge_cases",
+          "heuristics",
+          "connections",
+        ].includes(type)
+      ) {
+        const title = safeString(b?.title).trim();
+        const items = asUnknownArray(b?.items_md).map(safeString).map((s) => s.trim()).filter(Boolean);
+        if (items.length === 0) return null;
+        const md = toMarkdownBullets(items);
+        return wrap(
+          <SectionBlock label={sectionLabel} title={title}>
+            <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {md}
+              </ReactMarkdown>
+            </div>
+          </SectionBlock>
+        );
+      }
+
+      if (sectionLabel && type === "checklist") {
+        const title = safeString(b?.title).trim();
+        const items = asUnknownArray(b?.items_md).map(safeString).map((s) => s.trim()).filter(Boolean);
+        if (items.length === 0) return null;
+        return wrap(
+          <SectionBlock label={sectionLabel} title={title}>
+            <ul className="space-y-2">
+              {items.map((it, idx) => (
+                <li key={idx} className="flex items-start gap-2 text-[16px] leading-7 text-foreground/90">
+                  <span className="mt-1 inline-flex h-4 w-4 shrink-0 rounded-[5px] border border-border/60 bg-background" />
+                  <div dir="auto" className="min-w-0 flex-1">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                      {it}
+                    </ReactMarkdown>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </SectionBlock>
+        );
+      }
+
+      if (sectionLabel && type === "steps") {
+        const title = safeString(b?.title).trim();
+        const stepsMd = asUnknownArray(b?.steps_md).map(safeString).map((s) => s.trim()).filter(Boolean);
+        if (stepsMd.length === 0) return null;
+        const md = toMarkdownNumbered(stepsMd);
+        return wrap(
+          <SectionBlock label={sectionLabel} title={title}>
+            <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {md}
+              </ReactMarkdown>
+            </div>
+          </SectionBlock>
+        );
+      }
+
+      if (sectionLabel && type === "glossary") {
+        const title = safeString(b?.title).trim();
+        const terms = asUnknownArray(b?.terms)
+          .map((it) => {
+            if (!it || typeof it !== "object" || Array.isArray(it)) return null;
+            const term = safeString((it as { term?: unknown }).term).trim();
+            const definition = safeString((it as { definition_md?: unknown }).definition_md).trim();
+            if (!term || !definition) return null;
+            return { term, definition };
+          })
+          .filter((it): it is { term: string; definition: string } => Boolean(it));
+        if (terms.length === 0) return null;
+        return wrap(
+          <SectionBlock label={sectionLabel} title={title}>
+            <div className="space-y-3">
+              {terms.map((t, idx) => (
+                <div key={idx} className="grid gap-2 sm:grid-cols-[160px,1fr]">
+                  <div className="text-sm font-medium text-foreground/90">{t.term}</div>
+                  <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                      {t.definition}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionBlock>
+        );
+      }
+
+      if (sectionLabel && type === "faq") {
+        const title = safeString(b?.title).trim();
+        const qas = asUnknownArray(b?.qas)
+          .map((it) => {
+            if (!it || typeof it !== "object" || Array.isArray(it)) return null;
+            const q = safeString((it as { question_md?: unknown }).question_md).trim();
+            const a = safeString((it as { answer_md?: unknown }).answer_md).trim();
+            if (!q || !a) return null;
+            return { q, a };
+          })
+          .filter((it): it is { q: string; a: string } => Boolean(it));
+        if (qas.length === 0) return null;
+        return wrap(
+          <SectionBlock label={sectionLabel} title={title}>
+            <div className="space-y-2">
+              {qas.map((qa, idx) => (
+                <details key={idx} className="rounded-xl border border-border/60 bg-background/60 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-foreground/90">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={inlineMarkdownComponents()} skipHtml>
+                      {qa.q}
+                    </ReactMarkdown>
+                  </summary>
+                  <div dir="auto" className="mt-3 text-[16px] leading-7 text-foreground/90">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                      {qa.a}
+                    </ReactMarkdown>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </SectionBlock>
+        );
+      }
+
+      if (sectionLabel && ["intuition", "mental_model", "why_it_matters"].includes(type)) {
+        const title = safeString(b?.title).trim();
+        const md = safeString(b?.md).trim();
+        if (!md) return null;
+        return wrap(
+          <SectionBlock label={sectionLabel} title={title}>
+            <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {md}
+              </ReactMarkdown>
+            </div>
+          </SectionBlock>
+        );
+      }
+
+      if (type === "code") {
+        const raw = safeString(b?.code).replace(/\n$/, "");
+        const filename = safeString(b?.filename).trim();
+        const language = safeString(b?.language).trim();
+        return wrap(
+          <CodeBlock filename={filename || undefined} language={language || undefined}>
+            {raw}
+          </CodeBlock>
+        );
+      }
+
+      if (type === "figure") {
+        const url = safeString(b?.asset?.url).trim();
+        if (!url) return null;
+        const caption = safeString(b?.caption).trim();
+        return wrap(
+          <ImageLightbox
+            src={url}
+            alt={caption || "Figure"}
+            caption={caption}
+            frameClassName="bg-muted/20"
+          />
+        );
+      }
+
+      if (type === "video") {
+        const url = safeString(b?.url).trim();
+        if (!url) return null;
+        const caption = safeString(b?.caption).trim();
+        const yt = toYouTubeEmbedURL(url);
+        return wrap(
+          <div className="space-y-2">
+            {yt ? (
+              <div className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20">
+                <div className="aspect-video w-full">
+                  <iframe
+                    title={caption || "Video"}
+                    src={yt}
+                    className="h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            ) : isVideoURL(url) ? (
+              <video className="w-full rounded-2xl border border-border/60" controls src={url} />
+            ) : (
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline underline-offset-4 hover:text-foreground"
+              >
+                Open video
+              </a>
+            )}
+            {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
+          </div>
+        );
+      }
+
+      if (type === "diagram") {
+        const kind = safeString(b?.kind).toLowerCase();
+        const caption = safeString(b?.caption).trim();
+        if (kind === "svg") {
+          const dataUrl = svgToDataURL(b?.source);
+          if (!dataUrl) return null;
+          return wrap(
+            <ImageLightbox
+              src={dataUrl}
+              alt={caption || "Diagram"}
+              caption={caption}
+              frameClassName="bg-muted/20"
+            />
+          );
+        }
+        if (kind === "mermaid") {
+          return wrap(
+            <MermaidDiagram
+              source={safeString(b?.source)}
+              caption={caption}
+              alt={caption || "Diagram"}
+              frameClassName="bg-muted/20"
+            />
+          );
+        }
+        return wrap(
+          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagram</div>
+            <pre className="mt-2 overflow-x-auto text-sm text-foreground/90">
+              <code>{safeString(b?.source)}</code>
+            </pre>
+            {caption ? <div className="mt-2 text-xs text-muted-foreground">{caption}</div> : null}
+          </div>
+        );
+      }
+
+      if (type === "table") {
+        const caption = safeString(b?.caption).trim();
+        const columns = asArray(b?.columns).map(safeString).filter(Boolean);
+        const rows = asUnknownArray(b?.rows).map((r) => asUnknownArray(r).map(safeString));
+        if (columns.length === 0 || rows.length === 0) return null;
+        return wrap(
+          <div className="space-y-2">
+            <div className="overflow-x-auto rounded-2xl border border-border/60">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/30">
+                  <tr>
+                    {columns.map((c, idx) => (
+                      <th key={idx} className="px-3 py-2 text-start font-medium text-foreground/90">
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, ridx) => (
+                    <tr key={ridx} className="border-t border-border">
+                      {columns.map((_, cidx) => (
+                        <td key={cidx} className="px-3 py-2 text-foreground/80">
+                          {safeString(r[cidx])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
+          </div>
+        );
+      }
+
+      if (type === "quick_check") {
+        return wrap(
+          <QuickCheck
+            pathNodeId={pathNodeId}
+            blockId={blockId}
+            promptMd={b?.prompt_md}
+            answerMd={b?.answer_md}
+            kind={b?.kind}
+            options={b?.options}
+          />
+        );
+      }
+
+      return null;
+    },
+    [blockFeedback, onChat, onDislike, onLike, onRegenerate, onUndo, pathNodeId, pendingBlocks, undoableBlocks]
+  );
+
+  const renderSection = useCallback(
+    (_index: number, s: SectionItem) => (
+      <div className="rounded-3xl border border-border/60 bg-background/40 p-6 shadow-sm backdrop-blur-sm">
+        <div className="space-y-10">{s.blocks.map(({ b, i }) => renderBlock(b, i))}</div>
+      </div>
+    ),
+    [renderBlock]
+  );
+  const isSingleSection = sections.length === 1;
+
   if (!d || blocks.length === 0) {
     return <div className="text-sm text-muted-foreground">No unit doc yet.</div>;
   }
@@ -658,435 +1118,25 @@ export function NodeDocRenderer({
         </div>
       ) : null}
 
-      <div className="space-y-8">
-        {sections.map((s) => (
-          <div
-            key={s.id}
-            className="rounded-3xl border border-border/60 bg-background/40 p-6 shadow-sm backdrop-blur-sm"
-          >
-            <div className="space-y-10">
-              {s.blocks.map(({ b, i }) => {
-        const type = safeString(b?.type).toLowerCase();
-        const blockId = safeString(b?.id) || String(i);
-        const isPending = Boolean(pendingBlocks?.[blockId]);
-        const feedback = blockFeedback?.[blockId] || "";
-        const undoAllowed = type !== "figure" && type !== "video";
-        const canUndo = Boolean(undoableBlocks?.[blockId]) && undoAllowed;
-        const showActions = Boolean(onLike || onDislike || onRegenerate || onChat || onUndo);
-
-        if (type === "divider") return <Separator key={i} className="my-6" />;
-
-        const actionBar = showActions ? (
-          <div
-            className={cn(
-              "absolute -top-3 end-0 z-10 flex items-center gap-1 rounded-full border border-border/60",
-              "bg-card/90 px-1.5 py-1 shadow-sm backdrop-blur",
-              "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-            )}
-          >
-            {onLike ? (
-              <ActionButton
-                label={feedback === "like" ? "Liked" : "Like"}
-                shortcut="L"
-                active={feedback === "like"}
-                onClick={() => onLike?.(b, i)}
-              >
-                <ThumbsUp className="h-3.5 w-3.5" />
-              </ActionButton>
-            ) : null}
-            {onDislike ? (
-              <ActionButton
-                label={feedback === "dislike" ? "Disliked" : "Dislike"}
-                shortcut="D"
-                active={feedback === "dislike"}
-                onClick={() => onDislike?.(b, i)}
-              >
-                <ThumbsDown className="h-3.5 w-3.5" />
-              </ActionButton>
-            ) : null}
-            {onRegenerate ? (
-              <ActionButton
-                label="Regenerate"
-                shortcut="R"
-                disabled={isPending}
-                onClick={() => onRegenerate?.(b, i)}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </ActionButton>
-            ) : null}
-            {onChat ? (
-              <ActionButton label="Chat" shortcut="C" onClick={() => onChat?.(b, i)}>
-                <MessageSquare className="h-3.5 w-3.5" />
-              </ActionButton>
-            ) : null}
-            {onUndo && undoAllowed ? (
-              <ActionButton
-                label={canUndo ? "Undo" : "Undo (unavailable)"}
-                shortcut="Cmd/Ctrl+Z"
-                disabled={!canUndo || isPending}
-                onClick={() => onUndo?.(b, i)}
-              >
-                <Undo2 className="h-3.5 w-3.5" />
-              </ActionButton>
-            ) : null}
-          </div>
-        ) : null;
-
-        const wrap = (content: React.ReactNode) => (
-          <div key={blockId} className="group relative">
-            {actionBar}
-            {isPending ? (
-            <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-              <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="inline-flex h-2 w-2 rounded-full bg-primary/70 animate-pulse" />
-                Regenerating this block
-              </div>
-              <BlockSkeleton type={type} />
-            </div>
-            ) : (
-              content
-            )}
-          </div>
-        );
-
-        if (type === "heading") {
-          const level = Number(b?.level || 2);
-          const text = safeString(b?.text);
-          if (level === 3) return wrap(<h3 className="text-balance text-xl font-semibold tracking-tight">{text}</h3>);
-          if (level === 4) return wrap(<h4 className="text-balance text-lg font-semibold tracking-tight">{text}</h4>);
-          return wrap(<h2 className="text-balance text-2xl font-semibold tracking-tight">{text}</h2>);
-        }
-
-        if (type === "paragraph") {
-          return wrap(
-            <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                {safeString(b?.md)}
-              </ReactMarkdown>
-            </div>
-          );
-        }
-
-        if (type === "callout") {
-          const variant = safeString(b?.variant).toLowerCase();
-          const title = safeString(b?.title).trim();
-          const border =
-            variant === "warning"
-              ? "border-warning/40 bg-warning/10"
-              : variant === "tip"
-              ? "border-success/40 bg-success/10"
-              : "border-border/60 bg-muted/20";
-          return wrap(
-            <div className={cn("rounded-2xl border border-s-4 p-4", border)}>
-              {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
-              <div dir="auto" className={cn("text-[16px] leading-7 text-foreground/90", title && "mt-2")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                  {safeString(b?.md)}
-                </ReactMarkdown>
-              </div>
-            </div>
-          );
-        }
-
-        const sectionLabel = sectionLabelByType[type];
-
-        if (
-          sectionLabel &&
-          [
-            "objectives",
-            "prerequisites",
-            "key_takeaways",
-            "common_mistakes",
-            "misconceptions",
-            "edge_cases",
-            "heuristics",
-            "connections",
-          ].includes(type)
-        ) {
-          const title = safeString(b?.title).trim();
-          const items = asUnknownArray(b?.items_md).map(safeString).map((s) => s.trim()).filter(Boolean);
-          if (items.length === 0) return null;
-          const md = toMarkdownBullets(items);
-          return wrap(
-            <SectionBlock label={sectionLabel} title={title}>
-              <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                  {md}
-                </ReactMarkdown>
-              </div>
-            </SectionBlock>
-          );
-        }
-
-        if (sectionLabel && type === "checklist") {
-          const title = safeString(b?.title).trim();
-          const items = asUnknownArray(b?.items_md).map(safeString).map((s) => s.trim()).filter(Boolean);
-          if (items.length === 0) return null;
-          return wrap(
-            <SectionBlock label={sectionLabel} title={title}>
-              <ul className="space-y-2">
-                {items.map((it, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-[16px] leading-7 text-foreground/90">
-                    <span className="mt-1 inline-flex h-4 w-4 shrink-0 rounded-[5px] border border-border/60 bg-background" />
-                    <div dir="auto" className="min-w-0 flex-1">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                        {it}
-                      </ReactMarkdown>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </SectionBlock>
-          );
-        }
-
-        if (sectionLabel && type === "steps") {
-          const title = safeString(b?.title).trim();
-          const stepsMd = asUnknownArray(b?.steps_md).map(safeString).map((s) => s.trim()).filter(Boolean);
-          if (stepsMd.length === 0) return null;
-          const md = toMarkdownNumbered(stepsMd);
-          return wrap(
-            <SectionBlock label={sectionLabel} title={title}>
-              <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                  {md}
-                </ReactMarkdown>
-              </div>
-            </SectionBlock>
-          );
-        }
-
-        if (sectionLabel && type === "glossary") {
-          const title = safeString(b?.title).trim();
-          const terms = asUnknownArray(b?.terms)
-            .map((it) => {
-              if (!it || typeof it !== "object" || Array.isArray(it)) return null;
-              const term = safeString((it as { term?: unknown }).term).trim();
-              const definition = safeString((it as { definition_md?: unknown }).definition_md).trim();
-              if (!term || !definition) return null;
-              return { term, definition };
-            })
-            .filter((it): it is { term: string; definition: string } => Boolean(it));
-          if (terms.length === 0) return null;
-          return wrap(
-            <SectionBlock label={sectionLabel} title={title}>
-              <div className="space-y-3">
-                {terms.map((t, idx) => (
-                  <div key={idx} className="grid gap-2 sm:grid-cols-[160px,1fr]">
-                    <div className="text-sm font-medium text-foreground/90">{t.term}</div>
-                    <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                        {t.definition}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SectionBlock>
-          );
-        }
-
-        if (sectionLabel && type === "faq") {
-          const title = safeString(b?.title).trim();
-          const qas = asUnknownArray(b?.qas)
-            .map((it) => {
-              if (!it || typeof it !== "object" || Array.isArray(it)) return null;
-              const q = safeString((it as { question_md?: unknown }).question_md).trim();
-              const a = safeString((it as { answer_md?: unknown }).answer_md).trim();
-              if (!q || !a) return null;
-              return { q, a };
-            })
-            .filter((it): it is { q: string; a: string } => Boolean(it));
-          if (qas.length === 0) return null;
-          return wrap(
-            <SectionBlock label={sectionLabel} title={title}>
-              <div className="space-y-2">
-                {qas.map((qa, idx) => (
-                  <details key={idx} className="rounded-xl border border-border/60 bg-background/60 p-3">
-                    <summary className="cursor-pointer text-sm font-medium text-foreground/90">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={inlineMarkdownComponents()} skipHtml>
-                        {qa.q}
-                      </ReactMarkdown>
-                    </summary>
-                    <div dir="auto" className="mt-3 text-[16px] leading-7 text-foreground/90">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                        {qa.a}
-                      </ReactMarkdown>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </SectionBlock>
-          );
-        }
-
-        if (sectionLabel && ["intuition", "mental_model", "why_it_matters"].includes(type)) {
-          const title = safeString(b?.title).trim();
-          const md = safeString(b?.md).trim();
-          if (!md) return null;
-          return wrap(
-            <SectionBlock label={sectionLabel} title={title}>
-              <div dir="auto" className="text-[16px] leading-7 text-foreground/90">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-                  {md}
-                </ReactMarkdown>
-              </div>
-            </SectionBlock>
-          );
-        }
-
-        if (type === "code") {
-          const raw = safeString(b?.code).replace(/\n$/, "");
-          const filename = safeString(b?.filename).trim();
-          const language = safeString(b?.language).trim();
-          return wrap(
-            <CodeBlock filename={filename || undefined} language={language || undefined}>
-              {raw}
-            </CodeBlock>
-          );
-        }
-
-        if (type === "figure") {
-          const url = safeString(b?.asset?.url).trim();
-          if (!url) return null;
-          const caption = safeString(b?.caption).trim();
-          return wrap(
-            <ImageLightbox
-              src={url}
-              alt={caption || "Figure"}
-              caption={caption}
-              frameClassName="bg-muted/20"
-            />
-          );
-        }
-
-        if (type === "video") {
-          const url = safeString(b?.url).trim();
-          if (!url) return null;
-          const caption = safeString(b?.caption).trim();
-          const yt = toYouTubeEmbedURL(url);
-          return wrap(
-            <div className="space-y-2">
-              {yt ? (
-                <div className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20">
-                  <div className="aspect-video w-full">
-                    <iframe
-                      title={caption || "Video"}
-                      src={yt}
-                      className="h-full w-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                </div>
-              ) : isVideoURL(url) ? (
-                <video className="w-full rounded-2xl border border-border/60" controls src={url} />
-              ) : (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm underline underline-offset-4 hover:text-foreground"
-                >
-                  Open video
-                </a>
-              )}
-              {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
-            </div>
-          );
-        }
-
-        if (type === "diagram") {
-          const kind = safeString(b?.kind).toLowerCase();
-          const caption = safeString(b?.caption).trim();
-          if (kind === "svg") {
-            const dataUrl = svgToDataURL(b?.source);
-            if (!dataUrl) return null;
-            return wrap(
-              <ImageLightbox
-                src={dataUrl}
-                alt={caption || "Diagram"}
-                caption={caption}
-                frameClassName="bg-muted/20"
-              />
-            );
-          }
-          if (kind === "mermaid") {
-            return wrap(
-              <MermaidDiagram
-                source={safeString(b?.source)}
-                caption={caption}
-                alt={caption || "Diagram"}
-                frameClassName="bg-muted/20"
-              />
-            );
-          }
-          return wrap(
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagram</div>
-              <pre className="mt-2 overflow-x-auto text-sm text-foreground/90">
-                <code>{safeString(b?.source)}</code>
-              </pre>
-              {caption ? <div className="mt-2 text-xs text-muted-foreground">{caption}</div> : null}
-            </div>
-          );
-        }
-
-        if (type === "table") {
-          const caption = safeString(b?.caption).trim();
-          const columns = asArray(b?.columns).map(safeString).filter(Boolean);
-          const rows = asUnknownArray(b?.rows).map((r) => asUnknownArray(r).map(safeString));
-          if (columns.length === 0 || rows.length === 0) return null;
-          return wrap(
-            <div className="space-y-2">
-              <div className="overflow-x-auto rounded-2xl border border-border/60">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/30">
-                    <tr>
-                      {columns.map((c, idx) => (
-                        <th key={idx} className="px-3 py-2 text-start font-medium text-foreground/90">
-                          {c}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, ridx) => (
-                      <tr key={ridx} className="border-t border-border">
-                        {columns.map((_, cidx) => (
-                          <td key={cidx} className="px-3 py-2 text-foreground/80">
-                            {safeString(r[cidx])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
-            </div>
-          );
-        }
-
-        if (type === "quick_check") {
-          return wrap(
-            <QuickCheck
-              pathNodeId={pathNodeId}
-              blockId={blockId}
-              promptMd={b?.prompt_md}
-              answerMd={b?.answer_md}
-              kind={b?.kind}
-              options={b?.options}
-            />
-          );
-        }
-
-        return null;
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
+      {isSingleSection ? (
+        <div className="rounded-3xl border border-border/60 bg-background/40 p-6 shadow-sm backdrop-blur-sm">
+          <Virtuoso
+            data={sections[0]?.blocks ?? []}
+            useWindowScroll
+            components={{ List: BlockList }}
+            computeItemKey={(index, item) => safeString(item?.b?.id) || `block:${item?.i ?? index}`}
+            itemContent={(_index, item) => renderBlock(item.b, item.i)}
+          />
+        </div>
+      ) : (
+        <Virtuoso
+          data={sections}
+          useWindowScroll
+          components={{ List: SectionList }}
+          computeItemKey={(index, item) => item.id || `section:${index}`}
+          itemContent={renderSection}
+        />
+      )}
     </div>
   );
 }

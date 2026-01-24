@@ -665,6 +665,22 @@ export default function ChatThreadPage() {
     const tid = String(data.thread_id ?? data.threadId ?? "");
     if (tid && tid !== String(threadId)) return;
 
+    if (event === "JobCreated") {
+      const job = (data.job || null) as Record<string, unknown> | null;
+      const jobType = String((data.job_type ?? job?.job_type ?? job?.jobType ?? "") || "").toLowerCase();
+      if (jobType !== "learning_build") return;
+
+      const jid = String((data.job_id ?? job?.id ?? job?.jobId ?? "") || "");
+      if (!jid) return;
+
+      // If the backend re-attaches this thread to a new build job (e.g., after splitting an upload),
+      // switch the generation card + activity panel to follow the newest job.
+      setThread((prev) => (prev ? { ...prev, jobId: jid } : prev));
+      startedAtRef.current = Date.now();
+      setActiveJobId(String(jid));
+      return;
+    }
+
     if (event === "ChatMessageCreated" || event === "ChatMessageDone") {
       const msg = mapChatMessage(data.message as ChatMessageModel | null);
       if (!msg) return;

@@ -426,6 +426,34 @@ export default function HomePage() {
     return () => setChatbarDocked(false);
   }, [setChatbarDocked]);
 
+  const pathList = Array.isArray(paths) ? paths : [];
+  const materialList = Array.isArray(materialFiles) ? materialFiles : [];
+  const isEmptyHome = !pathsLoading && !materialsLoading && pathList.length === 0 && materialList.length === 0;
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!isEmptyHome) return;
+    if (activeTab !== "home") setActiveTab("home");
+    if (homeTopicFocus) setHomeTopicFocus(null);
+  }, [activeTab, homeTopicFocus, isAuthenticated, isEmptyHome]);
+
+  useLayoutEffect(() => {
+    if (!isAuthenticated) return;
+    if (!isEmptyHome) return;
+    if (chatbarDocked) setChatbarDocked(false);
+    if (tabsDocked) setTabsDocked(false);
+    if (homeChatbarHeight) setHomeChatbarHeight(0);
+    if (homeTabsHeight) setHomeTabsHeight(0);
+  }, [
+    chatbarDocked,
+    homeChatbarHeight,
+    homeTabsHeight,
+    isAuthenticated,
+    isEmptyHome,
+    setChatbarDocked,
+    tabsDocked,
+  ]);
+
   if (!isAuthenticated) return null;
 
   if (userLoading) {
@@ -466,30 +494,6 @@ export default function HomePage() {
       : currentHour < 18
         ? t("home.greeting.afternoon", { name: firstName })
         : t("home.greeting.evening", { name: firstName });
-  const pathList = Array.isArray(paths) ? paths : [];
-  const materialList = Array.isArray(materialFiles) ? materialFiles : [];
-  const isEmptyHome = !pathsLoading && !materialsLoading && pathList.length === 0 && materialList.length === 0;
-
-  useEffect(() => {
-    if (!isEmptyHome) return;
-    if (activeTab !== "home") setActiveTab("home");
-    if (homeTopicFocus) setHomeTopicFocus(null);
-  }, [activeTab, homeTopicFocus, isEmptyHome]);
-
-  useLayoutEffect(() => {
-    if (!isEmptyHome) return;
-    if (chatbarDocked) setChatbarDocked(false);
-    if (tabsDocked) setTabsDocked(false);
-    if (homeChatbarHeight) setHomeChatbarHeight(0);
-    if (homeTabsHeight) setHomeTabsHeight(0);
-  }, [
-    chatbarDocked,
-    homeChatbarHeight,
-    homeTabsHeight,
-    isEmptyHome,
-    setChatbarDocked,
-    tabsDocked,
-  ]);
 
   const tabs: { id: HomeTabKey; label: string; icon?: React.ReactNode }[] = [
     homeTopicFocus && activeTab === "home"

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/shared/ui/button";
-import { BookOpen, ChevronRight, CornerDownRight, Headphones } from "lucide-react";
+import { BookOpen, ChevronRight, CornerDownRight, Headphones, Layers } from "lucide-react";
 
 import { usePaths } from "@/app/providers/PathProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
@@ -24,6 +24,16 @@ import type { Path, PathNode } from "@/shared/types/models";
 type OutlineRow = { node: PathNode; depth: number; hasChildren: boolean };
 
 const EMPTY_NODES: PathNode[] = [];
+
+function parseEnvBool(value: unknown, def: boolean) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return def;
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return def;
+}
+
+const NODE_AVATAR_RENDER_ENABLED = parseEnvBool(import.meta.env.VITE_NODE_AVATAR_RENDER_ENABLED, true);
 
 function PathOutlineSkeleton() {
   const depths = [0, 0, 1, 1, 2, 0, 1, 2];
@@ -452,13 +462,15 @@ export default function PathPage() {
                   {outline.rows.map(({ node, depth, hasChildren }) => {
                       const hasContent = Boolean(node?.contentJson);
                       const avatarUrl =
-                        typeof node?.avatarUrl === "string" && node.avatarUrl.trim()
+                        NODE_AVATAR_RENDER_ENABLED &&
+                        typeof node?.avatarUrl === "string" &&
+                        node.avatarUrl.trim()
                           ? node.avatarUrl.trim()
                           : null;
-                      const showAvatarSkeleton = Boolean(!hasChildren && !avatarUrl);
+                      const showAvatarSkeleton = Boolean(
+                        NODE_AVATAR_RENDER_ENABLED && !hasChildren && !avatarUrl
+                      );
                       const indent = Math.min(depth, 4) * 16;
-                      const fallbackIndex =
-                        typeof node?.index === "number" && node.index > 0 ? node.index : 0;
 
                       return (
                         <button
@@ -493,11 +505,15 @@ export default function PathPage() {
                               ) : null}
                               <AvatarFallback
                                 className={cn(
-                                  "text-xs font-medium text-muted-foreground",
-                                  showAvatarSkeleton && "animate-pulse bg-muted/40"
+                                  "border border-border/60 bg-primary/10 text-primary",
+                                  showAvatarSkeleton && "animate-pulse bg-muted/40 text-muted-foreground"
                                 )}
                               >
-                                {fallbackIndex || ""}
+                                {hasChildren ? (
+                                  <Layers className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                ) : (
+                                  <BookOpen className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                )}
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">

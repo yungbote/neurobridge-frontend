@@ -329,6 +329,7 @@ export function PathProvider({ children }: PathProviderProps) {
         if (exists) return list;
 
         const placeholderId = pathIdFromEvent ? String(pathIdFromEvent) : `job:${jobId}`;
+        const existingById = list.find((p) => String(p?.id || "") === placeholderId) ?? null;
         const placeholder = attachJobFields(
           createPathSkeleton({
             id: placeholderId,
@@ -342,6 +343,9 @@ export function PathProvider({ children }: PathProviderProps) {
           { job, jobId, jobType, status: job?.status ?? "queued", stage: job?.stage ?? "queued" }
         );
 
+        if (existingById) {
+          return upsertById(list, attachJobFields(existingById, { job, jobId, jobType, status: job?.status ?? "queued", stage: job?.stage ?? "queued" }));
+        }
         return [placeholder, ...list];
       });
       return;

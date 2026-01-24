@@ -139,13 +139,18 @@ export function UserAvatar({
   }
   if (!user) return null;
 
-  const safeAvatarUrl = user.avatarUrl || "/placeholder.svg";
+  const avatarUrl = String(user.avatarUrl ?? "").trim();
+  const hasAvatarUrl = Boolean(avatarUrl);
 
   const AvatarNode = (
     <div className="relative h-8 w-8">
       <Avatar className="h-8 w-8">
-        <AvatarImage key={safeAvatarUrl} src={safeAvatarUrl} alt={displayName} />
-        <AvatarFallback>{initials}</AvatarFallback>
+        {hasAvatarUrl ? (
+          <AvatarImage key={avatarUrl} src={avatarUrl} alt={displayName} />
+        ) : null}
+        <AvatarFallback style={localColor ? { backgroundColor: localColor } : undefined}>
+          {initials}
+        </AvatarFallback>
       </Avatar>
 
       {showColorPicker && (
@@ -236,15 +241,19 @@ export function UserAvatar({
             setMenuOpen(false);
             openProfile();
           }}
-        >
-          <Avatar className="h-9 w-9">
-            <AvatarImage key={safeAvatarUrl} src={safeAvatarUrl} alt={displayName} />
-            <AvatarFallback>{initials}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
-            <div className="text-xs text-muted-foreground">{t("user.viewProfile")}</div>
-          </div>
+	        >
+	          <Avatar className="h-9 w-9">
+	            {hasAvatarUrl ? (
+	              <AvatarImage key={avatarUrl} src={avatarUrl} alt={displayName} />
+	            ) : null}
+	            <AvatarFallback style={localColor ? { backgroundColor: localColor } : undefined}>
+	              {initials}
+	            </AvatarFallback>
+	          </Avatar>
+	          <div className="min-w-0 leading-tight">
+	            <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
+	            <div className="text-xs text-muted-foreground">{t("user.viewProfile")}</div>
+	          </div>
         </DropdownMenuItem>
 
         <DropdownMenuSeparator className="my-2" />
