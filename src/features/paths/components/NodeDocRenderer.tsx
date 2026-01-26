@@ -169,18 +169,58 @@ function SectionBlock({
   );
 }
 
+type SectionTone = "primary" | "accent";
+
+const sectionToneStyles: Record<SectionTone, { glow: string; overlay: string }> = {
+  primary: {
+    glow: "bg-primary/6",
+    overlay: "from-primary/6 via-background/85 to-transparent",
+  },
+  accent: {
+    glow: "bg-accent/6",
+    overlay: "from-accent/6 via-background/85 to-transparent",
+  },
+};
+
+function SectionShell({
+  tone = "primary",
+  className,
+  style,
+  children,
+}: {
+  tone?: SectionTone;
+  className?: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const toneStyle = sectionToneStyles[tone];
+  return (
+    <div style={style} className={cn("relative -mx-1 sm:-mx-3", className)}>
+      <div
+        className={cn(
+          "pointer-events-none absolute -inset-4 sm:-inset-6 rounded-[32px] blur-2xl opacity-50 z-0",
+          toneStyle.glow
+        )}
+      />
+      <div className="relative z-10 rounded-[26px] border border-border/60 bg-background/90 p-6 sm:p-8 shadow-[0_12px_28px_-22px_rgba(15,23,42,0.25)]">
+        <div className="pointer-events-none absolute inset-0 rounded-[26px] overflow-hidden z-0">
+          <div className={cn("absolute inset-0 bg-gradient-to-br opacity-60", toneStyle.overlay)} />
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/10 to-transparent" />
+        </div>
+        <div className="relative z-10">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 const SectionList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ style, className, ...props }, ref) => (
-    <div ref={ref} style={style} className={cn("space-y-8", className)} {...props} />
-  )
+  ({ style, className, ...props }, ref) => <div ref={ref} style={style} className={cn(className)} {...props} />
 );
 
 SectionList.displayName = "SectionList";
 
 const BlockList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ style, className, ...props }, ref) => (
-    <div ref={ref} style={style} className={cn("space-y-10", className)} {...props} />
-  )
+  ({ style, className, ...props }, ref) => <div ref={ref} style={style} className={cn(className)} {...props} />
 );
 
 BlockList.displayName = "BlockList";
@@ -648,6 +688,8 @@ export function NodeDocRenderer({
 }: NodeDocRendererProps) {
   const d = useMemo(() => normalizeDoc(doc), [doc]);
   const blocks = asArray<DocBlock>(d?.blocks);
+  const [singleSectionHeight, setSingleSectionHeight] = useState(0);
+  const [multiSectionHeight, setMultiSectionHeight] = useState(0);
   const sections = useMemo<SectionItem[]>(() => {
     const out: SectionItem[] = [];
     let current: SectionItem = {
@@ -670,7 +712,7 @@ export function NodeDocRenderer({
   }, [blocks]);
 
   const renderBlock = useCallback(
-    (b: DocBlock, i: number) => {
+    (b: DocBlock, i: number, isLast = false) => {
       const type = safeString(b?.type).toLowerCase();
       const blockId = safeString(b?.id) || String(i);
       const isPending = Boolean(pendingBlocks?.[blockId]);
@@ -678,8 +720,15 @@ export function NodeDocRenderer({
       const undoAllowed = type !== "figure" && type !== "video";
       const canUndo = Boolean(undoableBlocks?.[blockId]) && undoAllowed;
       const showActions = Boolean(onLike || onDislike || onRegenerate || onChat || onUndo);
+      const blockSpacing = !isLast ? "pb-10" : "";
 
-      if (type === "divider") return <Separator key={blockId} className="my-6" />;
+      if (type === "divider") {
+        return (
+          <div key={blockId} className={cn(blockSpacing)}>
+            <Separator className="my-6" />
+          </div>
+        );
+      }
 
       const actionBar = showActions ? (
         <div
@@ -738,7 +787,7 @@ export function NodeDocRenderer({
       ) : null;
 
       const wrap = (content: React.ReactNode) => (
-        <div key={blockId} className="group relative">
+        <div key={blockId} className={cn("group relative", blockSpacing)}>
           {actionBar}
           {isPending ? (
             <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
@@ -1092,50 +1141,83 @@ export function NodeDocRenderer({
   );
 
   const renderSection = useCallback(
-    (_index: number, s: SectionItem) => (
-      <div className="rounded-3xl border border-border/60 bg-background/40 p-6 shadow-sm backdrop-blur-sm">
-        <div className="space-y-10">{s.blocks.map(({ b, i }) => renderBlock(b, i))}</div>
-      </div>
-    ),
-    [renderBlock]
+    (index: number, s: SectionItem) => {
+      const isLastSection = index === sections.length - 1;
+      return (
+        <div className={cn(!isLastSection && "pb-10 sm:pb-12")}>
+          <SectionShell tone={index % 2 === 0 ? "primary" : "accent"}>
+            <div>
+              {s.blocks.map(({ b, i }, idx) => renderBlock(b, i, idx === s.blocks.length - 1))}
+            </div>
+          </SectionShell>
+        </div>
+      );
+    },
+    [renderBlock, sections.length]
   );
   const isSingleSection = sections.length === 1;
+  React.useEffect(() => {
+    if (!isSingleSection) return;
+    setSingleSectionHeight(0);
+  }, [isSingleSection, blocks.length]);
+  React.useEffect(() => {
+    if (isSingleSection) return;
+    setMultiSectionHeight(0);
+  }, [isSingleSection, sections.length]);
 
   if (!d || blocks.length === 0) {
     return <div className="text-sm text-muted-foreground">No unit doc yet.</div>;
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-10">
+    <div className="relative mx-auto w-full max-w-5xl space-y-10 sm:space-y-12">
       {safeString(d?.summary).trim() ? (
-        <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</div>
-          <div dir="auto" className="mt-3 text-[16px] leading-7 text-foreground/90">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
-              {safeString(d.summary)}
-            </ReactMarkdown>
+        <div className="relative rounded-[26px] border border-border/60 bg-background/90 p-6 sm:p-8 shadow-[0_12px_28px_-22px_rgba(15,23,42,0.25)]">
+          <div className="pointer-events-none absolute inset-0 rounded-[26px] overflow-hidden z-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/6 via-background/85 to-transparent opacity-60" />
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/10 to-transparent" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
+              Summary
+            </div>
+            <div dir="auto" className="mt-4 text-[16px] leading-7 text-foreground/90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {safeString(d.summary)}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       ) : null}
 
       {isSingleSection ? (
-        <div className="rounded-3xl border border-border/60 bg-background/40 p-6 shadow-sm backdrop-blur-sm">
+        <SectionShell
+          tone="primary"
+          style={singleSectionHeight > 0 ? { minHeight: singleSectionHeight } : undefined}
+        >
           <Virtuoso
             data={sections[0]?.blocks ?? []}
             useWindowScroll
             components={{ List: BlockList }}
             computeItemKey={(index, item) => safeString(item?.b?.id) || `block:${item?.i ?? index}`}
-            itemContent={(_index, item) => renderBlock(item.b, item.i)}
+            itemContent={(index, item) =>
+              renderBlock(item.b, item.i, index === (sections[0]?.blocks.length ?? 0) - 1)
+            }
+            totalListHeightChanged={setSingleSectionHeight}
+          />
+        </SectionShell>
+      ) : (
+        <div style={multiSectionHeight > 0 ? { minHeight: multiSectionHeight } : undefined}>
+          <Virtuoso
+            data={sections}
+            useWindowScroll
+            components={{ List: SectionList }}
+            computeItemKey={(index, item) => item.id || `section:${index}`}
+            itemContent={renderSection}
+            totalListHeightChanged={setMultiSectionHeight}
           />
         </div>
-      ) : (
-        <Virtuoso
-          data={sections}
-          useWindowScroll
-          components={{ List: SectionList }}
-          computeItemKey={(index, item) => item.id || `section:${index}`}
-          itemContent={renderSection}
-        />
       )}
     </div>
   );

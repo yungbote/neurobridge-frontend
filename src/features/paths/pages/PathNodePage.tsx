@@ -1189,8 +1189,13 @@ export default function PathNodePage() {
           ) : null}
 
           {/* Main content container - responsive */}
-          <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 shadow-sm backdrop-blur">
-            <div className="px-4 py-5 xs:px-5 xs:py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
+          <div className="relative rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 shadow-sm">
+            <div className="pointer-events-none absolute inset-0 rounded-xl sm:rounded-2xl overflow-hidden z-0">
+              <div className="absolute -top-28 right-0 h-56 w-56 rounded-full bg-primary/6 blur-2xl" />
+              <div className="absolute -bottom-32 left-0 h-64 w-64 rounded-full bg-accent/6 blur-2xl" />
+              <div className="absolute inset-0 bg-gradient-to-br from-muted/25 via-transparent to-transparent opacity-60" />
+            </div>
+            <div className="relative z-10 px-4 py-5 xs:px-5 xs:py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
               {doc ? (
                 <NodeDocRenderer
                   doc={doc}
