@@ -57,7 +57,7 @@ export function AppNavBar() {
   const { docked: homeChatbarDocked } = useHomeChatbarDock();
   const { t } = useI18n();
   const [authDialog, setAuthDialog] = useState<"login" | "signup" | null>(null);
-  const { state, isMobile } = useSidebar();
+  const { state, useSheet } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [navElevated, setNavElevated] = useState(false);
 
@@ -157,8 +157,11 @@ export function AppNavBar() {
       >
         {/* LEFT: Sidebar Trigger + Logo */}
         <div className="flex items-center gap-2">
-          {isAuthenticated && isCollapsed && isMobile &&  (
-            <SidebarTrigger aria-label={t("sidebar.expand")} style={{ cursor: "e-resize" }} />
+          {isAuthenticated && isCollapsed && useSheet && (
+            <SidebarTrigger
+              aria-label={t("sidebar.expand")}
+              style={{ cursor: useSheet ? "pointer" : "e-resize" }}
+            />
           )}
           {!isAuthenticated && (
           <Link to="/" aria-label={t("nav.goHome")} className="flex items-center">

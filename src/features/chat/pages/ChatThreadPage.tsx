@@ -346,8 +346,15 @@ function GenerationCard({
   );
 }
 
-export default function ChatThreadPage() {
-  const { id: threadId } = useParams<{ id?: string }>();
+type ChatThreadPageProps = {
+  embedded?: boolean;
+  threadId?: string | null;
+  blockContext?: { nodeId?: string | null; blockId?: string | null; blockType?: string | null } | null;
+};
+
+export default function ChatThreadPage({ embedded = false, threadId: threadIdProp, blockContext }: ChatThreadPageProps) {
+  const { id: threadIdParam } = useParams<{ id?: string }>();
+  const threadId = String(threadIdProp || threadIdParam || "").trim();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -548,19 +555,25 @@ export default function ChatThreadPage() {
   }, [threadId]);
 
   const blockNodeId = useMemo(() => {
-    const v = String(searchParams.get("nodeId") || "").trim();
-    return v || null;
-  }, [searchParams]);
+    const v = String(blockContext?.nodeId || "").trim();
+    if (v) return v;
+    const q = String(searchParams.get("nodeId") || "").trim();
+    return q || null;
+  }, [blockContext?.nodeId, searchParams]);
 
   const blockId = useMemo(() => {
-    const v = String(searchParams.get("blockId") || "").trim();
-    return v || null;
-  }, [searchParams]);
+    const v = String(blockContext?.blockId || "").trim();
+    if (v) return v;
+    const q = String(searchParams.get("blockId") || "").trim();
+    return q || null;
+  }, [blockContext?.blockId, searchParams]);
 
   const blockTypeParam = useMemo(() => {
-    const v = String(searchParams.get("blockType") || "").trim();
-    return v || "";
-  }, [searchParams]);
+    const v = String(blockContext?.blockType || "").trim();
+    if (v) return v;
+    const q = String(searchParams.get("blockType") || "").trim();
+    return q || "";
+  }, [blockContext?.blockType, searchParams]);
 
   useEffect(() => {
     if (!blockNodeId || !blockId) return;
@@ -594,7 +607,7 @@ export default function ChatThreadPage() {
     };
   }, [blockNodeId, blockId]);
 
-  const blockContext = useMemo<{ block: DocBlock; summary: string } | null>(() => {
+  const blockSummaryContext = useMemo<{ block: DocBlock; summary: string } | null>(() => {
     if (!blockId) return null;
     const d = normalizeDoc(blockDoc);
     const blocks = Array.isArray(d?.blocks) ? d.blocks : [];
@@ -1077,8 +1090,11 @@ export default function ChatThreadPage() {
     );
   }, []);
 
-	  const blockLabel = blockTypeParam || blockContext?.block?.type || t("chat.block");
+  const blockLabel = blockTypeParam || blockSummaryContext?.block?.type || t("chat.block");
   const hasRevisionText = String(revisionInstruction || "").trim().length > 0;
+  const embeddedColumnClass = embedded ? "mx-auto w-full max-w-[44rem]" : "";
+  const embeddedChatbarClass = embedded ? "max-w-[44rem] mx-auto px-4 sm:px-6 lg:px-6" : undefined;
+  const chatbarClass = embeddedChatbarClass ?? "max-w-4xl mx-auto";
 
   return (
     <div className="h-full min-h-0 bg-background flex flex-col">
@@ -1093,101 +1109,110 @@ export default function ChatThreadPage() {
         }
       `}</style>
 
-          <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto">
-        <Container size="max-w-4xl" className="page-pad-compact">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        data-chat-scroll="true"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+      >
+        <Container
+          size={embedded ? "full" : "max-w-4xl"}
+          className={embedded ? "py-5 px-4 sm:px-6 lg:px-6" : "page-pad-compact"}
+        >
           {loading && !thread ? (
             <ChatThreadPageSkeleton embedded />
           ) : null}
 
-          {blockNodeId && blockId ? (
-            <div className="mb-6 rounded-xl border border-border bg-muted/20 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-	                <div>
-	                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-	                    {t("chat.blockRevision")}
-	                  </div>
-                  <div className="mt-1 text-sm font-semibold text-foreground">
-                    {blockLabel}
-                  </div>
-	                  {blockNode?.title ? (
-	                    <div className="mt-1 text-xs text-muted-foreground">
-	                      {t("chat.unitLabel", { title: blockNode.title })}
-	                    </div>
-	                  ) : null}
-                  {blockContext?.summary ? (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      “{blockContext.summary}”
+          <div className={embeddedColumnClass}>
+            {blockNodeId && blockId ? (
+              <div className="mb-6 rounded-xl border border-border bg-muted/20 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+  	                <div>
+  	                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+  	                    {t("chat.blockRevision")}
+  	                  </div>
+                    <div className="mt-1 text-sm font-semibold text-foreground">
+                      {blockLabel}
                     </div>
-	                  ) : blockDocLoaded ? (
-	                    <div className="mt-2 text-xs text-muted-foreground">
-	                      {t("chat.blockDetails.unavailable")}
-	                    </div>
-	                  ) : (
-	                    <div className="mt-2 text-xs text-muted-foreground">
-	                      {t("chat.blockDetails.loading")}
-	                    </div>
-	                  )}
-	                </div>
-	                <div className="flex items-center gap-2">
-	                  <Button variant="outline" size="sm" onClick={goToNode}>
-	                    {t("chat.openUnit")}
-	                  </Button>
-	                </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
-	                <Textarea
-	                  value={revisionInstruction}
-	                  onChange={(e) => setRevisionInstruction(e.target.value)}
-	                  placeholder={t("chat.revision.placeholder")}
-	                  className="min-h-[120px] resize-none bg-background"
-	                />
-                <div className="flex flex-wrap items-center gap-2">
-	                  <Button
-	                    size="sm"
-	                    onClick={() => setRevisionDialogOpen(true)}
-	                    disabled={revisionSubmitting || !hasRevisionText}
-	                  >
-	                    {t("chat.revision.reviewApply")}
-	                  </Button>
-	                  <Button
-	                    size="sm"
-	                    variant="ghost"
-	                    onClick={handleUseLastAssistant}
-	                    disabled={!lastAssistantMessage?.content}
-	                  >
-	                    {t("chat.revision.useLastReply")}
-	                  </Button>
-	                  {revisionQueued ? (
-	                    <span className="text-xs text-muted-foreground">
-	                      {t("chat.revision.queued")}
-	                    </span>
-	                  ) : null}
+  	                  {blockNode?.title ? (
+  	                    <div className="mt-1 text-xs text-muted-foreground">
+  	                      {t("chat.unitLabel", { title: blockNode.title })}
+  	                    </div>
+  	                  ) : null}
+                    {blockSummaryContext?.summary ? (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        “{blockSummaryContext.summary}”
+                      </div>
+  	                  ) : blockDocLoaded ? (
+  	                    <div className="mt-2 text-xs text-muted-foreground">
+  	                      {t("chat.blockDetails.unavailable")}
+  	                    </div>
+  	                  ) : (
+  	                    <div className="mt-2 text-xs text-muted-foreground">
+  	                      {t("chat.blockDetails.loading")}
+  	                    </div>
+  	                  )}
+  	                </div>
+  	                <div className="flex items-center gap-2">
+  	                  <Button variant="outline" size="sm" onClick={goToNode}>
+  	                    {t("chat.openUnit")}
+  	                  </Button>
+  	                </div>
                 </div>
-                {revisionError ? (
-                  <div className="text-xs text-destructive">{revisionError}</div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
 
-          <div className="space-y-2">
-            <div ref={topSentinelRef} aria-hidden="true" className="h-px w-full" />
-            <div className="sticky top-0 z-20 h-0 pointer-events-none">
-              <div className="absolute left-0 right-0 flex justify-center pt-2">
-                {loadingOlder ? (
-                  <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
-                    <Skeleton className="h-2.5 w-2.5 rounded-full bg-muted/30" />
-                    <Skeleton className="h-3 w-32 rounded-full bg-muted/30" />
+                <div className="mt-4 space-y-2">
+  	                <Textarea
+  	                  value={revisionInstruction}
+  	                  onChange={(e) => setRevisionInstruction(e.target.value)}
+  	                  placeholder={t("chat.revision.placeholder")}
+  	                  className="min-h-[120px] resize-none bg-background"
+  	                />
+                  <div className="flex flex-wrap items-center gap-2">
+  	                  <Button
+  	                    size="sm"
+  	                    onClick={() => setRevisionDialogOpen(true)}
+  	                    disabled={revisionSubmitting || !hasRevisionText}
+  	                  >
+  	                    {t("chat.revision.reviewApply")}
+  	                  </Button>
+  	                  <Button
+  	                    size="sm"
+  	                    variant="ghost"
+  	                    onClick={handleUseLastAssistant}
+  	                    disabled={!lastAssistantMessage?.content}
+  	                  >
+  	                    {t("chat.revision.useLastReply")}
+  	                  </Button>
+  	                  {revisionQueued ? (
+  	                    <span className="text-xs text-muted-foreground">
+  	                      {t("chat.revision.queued")}
+  	                    </span>
+  	                  ) : null}
                   </div>
-	                ) : !hasOlder && messages.length > 0 ? (
-	                  <div className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
-	                    {t("chat.startOfChat")}
-	                  </div>
-	                ) : null}
+                  {revisionError ? (
+                    <div className="text-xs text-destructive">{revisionError}</div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            {(messages || []).map((msg) => {
+            ) : null}
+
+            <div className="space-y-5 sm:space-y-6">
+              <div ref={topSentinelRef} aria-hidden="true" className="h-px w-full" />
+              <div className="sticky top-0 z-20 h-0 pointer-events-none">
+                <div className="absolute left-0 right-0 flex justify-center pt-2">
+                  {loadingOlder ? (
+                    <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+                      <Skeleton className="h-2.5 w-2.5 rounded-full bg-muted/30" />
+                      <Skeleton className="h-3 w-32 rounded-full bg-muted/30" />
+                    </div>
+  	                ) : !hasOlder && messages.length > 0 ? (
+  	                  <div className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+  	                    {t("chat.startOfChat")}
+  	                  </div>
+  	                ) : null}
+                </div>
+              </div>
+              {(messages || []).map((msg) => {
               const role = String(msg?.role || "").toLowerCase();
               const variant = role === "user" ? "user" : "assistant";
               const kind = messageKindFromMetadata(msg?.metadata);
@@ -1268,37 +1293,38 @@ export default function ChatThreadPage() {
                 );
               }
 
-              return (
-                <m.div
-                  key={msg.id}
-                  initial={shouldAnimate ? "initial" : false}
-                  animate="animate"
-                  variants={nbFadeUp}
-                  transition={nbTransitions.micro}
-                  style={{ contentVisibility: "auto", containIntrinsicSize: "120px" }}
-                >
-                  <ChatMessage variant={variant}>
-                    {renderMessageContent(msg)}
-                  </ChatMessage>
-                </m.div>
-              );
-            })}
+                return (
+                  <m.div
+                    key={msg.id}
+                    initial={shouldAnimate ? "initial" : false}
+                    animate="animate"
+                    variants={nbFadeUp}
+                    transition={nbTransitions.micro}
+                    style={{ contentVisibility: "auto", containIntrinsicSize: "120px" }}
+                  >
+                    <ChatMessage variant={variant}>
+                      {renderMessageContent(msg)}
+                    </ChatMessage>
+                  </m.div>
+                );
+              })}
 
-            {!hasGenerationMessage && buildLog && (learningBuildActive || learningBuildCanceled) ? (
-              <ChatMessage
-                variant="system"
-                showActions={false}
-                thinkingContent={buildLog}
-                thinkingDuration={thinkingDuration}
-                thinkingDefaultExpanded
-              />
-            ) : null}
+              {!hasGenerationMessage && buildLog && (learningBuildActive || learningBuildCanceled) ? (
+                <ChatMessage
+                  variant="system"
+                  showActions={false}
+                  thinkingContent={buildLog}
+                  thinkingDuration={thinkingDuration}
+                  thinkingDefaultExpanded
+                />
+              ) : null}
+            </div>
           </div>
         </Container>
       </div>
 
       <div className="shrink-0 sticky bottom-0 z-10 bg-background">
-        <div className="relative pb-5">
+        <div className="relative pb-6">
 		          {showScrollToBottom && (
 		            <button
 		              type="button"
@@ -1312,15 +1338,16 @@ export default function ChatThreadPage() {
           {thread ? (
             <>
               {sendError ? (
-                <Container size="max-w-4xl" className="pb-2 text-xs text-destructive">
+                <div className={cn("pb-2 text-xs text-destructive", embeddedColumnClass)}>
                   {sendError}
-                </Container>
+                </div>
               ) : null}
               <AnimatedChatbar
                 disablePlaceholderAnimation
                 disableUploads
                 submitMode={learningBuildActive ? "cancel" : "send"}
                 onSubmit={(text) => (learningBuildActive ? handleCancelBuild() : handleSend(text))}
+                className={chatbarClass}
               />
             </>
           ) : (

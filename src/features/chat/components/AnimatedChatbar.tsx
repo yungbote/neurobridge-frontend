@@ -653,7 +653,7 @@ export const AnimatedChatbar = ({
       ref={rootRef}
       onSubmit={handleSubmit}
       className={cn(
-        isNavbar ? "w-full" : "w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8",
+        isNavbar ? "w-full" : "w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8",
         className
       )}
     >
@@ -681,11 +681,11 @@ export const AnimatedChatbar = ({
         className={cn(
           isNavbar
             ? `
-          relative bg-card border border-border/60 dark:border-border rounded-full px-2 py-1.5
+          relative bg-card border border-border/60 dark:border-border rounded-full px-3 py-2
           shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none hover:shadow-md focus-within:shadow-md`
             : `
-          relative bg-card border border-border/60 dark:border-border rounded-3xl px-3
-          sm:px-4 py-3 sm:py-3.5 shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none
+          relative bg-card border border-border/60 dark:border-border rounded-3xl px-4
+          sm:px-6 py-4 sm:py-5 shadow-sm transition-shadow nb-duration-micro nb-ease-out motion-reduce:transition-none
           hover:shadow-md focus-within:shadow-md`,
           isDragging && !disableUploads && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
         )}
@@ -783,7 +783,7 @@ export const AnimatedChatbar = ({
         )}
         {isNavbar ? (
           /* Navbar variant: single row layout */
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {!disableUploads && (
               <IconButton
                 type="button"
@@ -853,7 +853,7 @@ export const AnimatedChatbar = ({
                 placeholder={isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask")}
                 aria-label={t("chat.input.aria")}
                 className={cn(
-                  "w-full !bg-transparent text-sm text-foreground placeholder:text-muted-foreground h-8",
+                  "w-full !bg-transparent text-sm text-foreground placeholder:text-muted-foreground h-9",
                   "border-0 outline-none",
                   "shadow-none ring-0 ring-offset-0 ring-offset-transparent",
                   "focus:shadow-none focus:ring-0 focus:ring-offset-0 focus:bg-transparent",
@@ -865,13 +865,13 @@ export const AnimatedChatbar = ({
                 )}
               />
             </div>
-	            <IconButton
+            <IconButton
 	              type="submit"
 	              variant="ghost"
 	              size="icon"
 	              disabled={sendDisabled}
 	              className={cn(
-	                "h-10 w-10 sm:h-8 sm:w-8 rounded-xl",
+                "h-10 w-10 sm:h-9 sm:w-9 rounded-xl",
 	                "border border-border/60 shadow-sm",
 	                "bg-muted-foreground/10 text-muted-foreground hover:bg-muted-foreground/15 hover:text-muted-foreground active:bg-muted-foreground/20 active:text-muted-foreground active:scale-95",
 	                "disabled:opacity-100",
@@ -890,7 +890,7 @@ export const AnimatedChatbar = ({
           </div>
         ) : (
           /* Default variant: two-row layout */
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             {/* Top row: Input */}
             <div className="relative min-w-0">
               <div
@@ -937,7 +937,7 @@ export const AnimatedChatbar = ({
                 placeholder={isCancelMode ? t("chat.input.placeholder.cancel") : t("chat.input.placeholder.ask")}
                 aria-label={t("chat.input.aria")}
                 className={cn(
-                  "w-full h-10 !bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground",
+                  "w-full h-12 !bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground",
                   "border-0 outline-none",
                   "shadow-none ring-0 ring-offset-0 ring-offset-transparent",
                   "focus:shadow-none focus:ring-0 focus:ring-offset-0 focus:bg-transparent",
@@ -951,7 +951,7 @@ export const AnimatedChatbar = ({
             </div>
             {/* Bottom row: + button (left), mic & send (right) */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 {!disableUploads && (
                   <IconButton
                     type="button"
@@ -966,7 +966,7 @@ export const AnimatedChatbar = ({
                   </IconButton>
                 )}
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <IconButton
                   type="button"
                   variant="ghost"

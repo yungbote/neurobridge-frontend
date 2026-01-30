@@ -11,6 +11,8 @@ import { UserDialogsProvider } from "@/app/providers/UserDialogProvider";
 import { ActivityPanelProvider } from "@/app/providers/ActivityPanelProvider";
 import { ActivityPanel } from "@/features/activity/components/ActivityPanel";
 import { IntakeNotifications } from "@/app/components/IntakeNotifications";
+import { ChatDockPanel } from "@/features/chat/components/ChatDockPanel";
+import { useChatDock } from "@/app/providers/ChatDockProvider";
 
 interface LayoutProps {
   children: ReactNode;
@@ -19,6 +21,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated } = useAuth();
   const { activePathId } = usePaths();
+  const { open: chatDockOpen } = useChatDock();
   const location = useLocation();
   const isPathContext = Boolean(
     matchPath({ path: "/paths/:id", end: false }, location.pathname) ||
@@ -27,6 +30,7 @@ export default function Layout({ children }: LayoutProps) {
   );
   const hideBreadcrumbs =
     location.pathname === "/" || location.pathname.startsWith("/chat") || isPathContext || Boolean(activePathId);
+  const hideChatDock = location.pathname.startsWith("/chat");
 
   useLayoutEffect(() => {
     if (!isAuthenticated) return;
@@ -40,7 +44,7 @@ export default function Layout({ children }: LayoutProps) {
   }, [isAuthenticated, isPathContext, location.key]);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider forceSheet={chatDockOpen}>
       <UserDialogsProvider>
         {/* TODO: Activity Panel should only be visible on the associated chat page */}
         <ActivityPanelProvider>
@@ -65,6 +69,7 @@ export default function Layout({ children }: LayoutProps) {
               <main className="flex-1 min-w-0 min-h-0">{children}</main>
             </div>
 
+            {isAuthenticated && !hideChatDock && <ChatDockPanel />}
             {isAuthenticated && <ActivityPanel />}
           </div>
         </ActivityPanelProvider>

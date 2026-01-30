@@ -275,7 +275,7 @@ function ProgressRing({
 }
 
 export function AppSideBar() {
-  const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
+  const { state, useSheet, openMobile, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
 
   const location = useLocation();
@@ -319,7 +319,7 @@ export function AppSideBar() {
     writeStoredBool(SIDEBAR_YOUR_CHATS_OPEN_KEY, yourChatsOpen);
   }, [yourChatsOpen]);
 
-  const showFooterName = isMobile ? openMobile : !isCollapsed;
+  const showFooterName = useSheet ? openMobile : !isCollapsed;
 
   const sidebarGhost =
     "rounded-xl text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground";

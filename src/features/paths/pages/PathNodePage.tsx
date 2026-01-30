@@ -30,6 +30,7 @@ import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
+import { useChatDock } from "@/app/providers/ChatDockProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
 import type { DrillPayloadV1 } from "@/shared/types/drillPayloadV1";
@@ -529,6 +530,7 @@ export default function PathNodePage() {
   const { user } = useUser();
   const { activatePath } = usePaths();
   const { activateLesson } = useLessons();
+  const { openThread } = useChatDock();
 
   const [loading, setLoading] = useState(false);
   const [node, setNode] = useState<PathNode | null>(null);
@@ -1019,18 +1021,17 @@ export default function PathNodePage() {
         .join("\n\n");
       await sendChatMessage(thread.id, prompt);
       setChatDialogOpen(false);
-      const params = new URLSearchParams();
-      if (nodeId) params.set("nodeId", nodeId);
-      if (chatBlock?.id) params.set("blockId", String(chatBlock.id));
-      if (chatBlock?.type) params.set("blockType", String(chatBlock.type));
-      const qs = params.toString();
-      navigate(`/chat/threads/${thread.id}${qs ? `?${qs}` : ""}`);
-	    } catch (err) {
-	      setChatError(getErrorMessage(err, t("pathNode.chat.error.startFailed")));
-	    } finally {
+      openThread(thread.id, {
+        nodeId,
+        blockId: chatBlock?.id ? String(chatBlock.id) : null,
+        blockType: chatBlock?.type ? String(chatBlock.type) : null,
+      });
+    } catch (err) {
+      setChatError(getErrorMessage(err, t("pathNode.chat.error.startFailed")));
+    } finally {
 	      setChatSubmitting(false);
 	    }
-	  }, [chatBlock, chatQuestion, nodeId, node?.pathId, path?.id, buildBlockContext, navigate, t]);
+  }, [chatBlock, chatQuestion, nodeId, node?.pathId, path?.id, buildBlockContext, openThread, t]);
 
   const handleUndo = useCallback(
     async (block: DocBlock) => {

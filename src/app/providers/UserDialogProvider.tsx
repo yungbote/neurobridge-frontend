@@ -47,7 +47,7 @@ interface UserDialogsProviderProps {
 }
 
 export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
-  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+  const { useSheet, openMobile, setOpenMobile } = useSidebar();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -117,7 +117,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
        * - If the sheet is open OR we are already in the "pending open" phase,
        *   keep the sheet closed and wait for the close animation to finish.
        */
-      const mustWaitForSheet = isMobile && (openMobile || pending);
+      const mustWaitForSheet = useSheet && (openMobile || pending);
 
       if (mustWaitForSheet) {
         shouldReopenSidebarRef.current = true;
@@ -144,7 +144,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
       dispatchCloseAvatarMenus,
       clearReopenTimer,
       clearOpenTimer,
-      isMobile,
+      useSheet,
       openMobile,
       pending,
       setOpenMobile,
@@ -160,13 +160,13 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
    * IMPORTANT: close via {source:"dialog"} so we don't mutate persisted sidebar mode.
    */
   useIsomorphicLayoutEffect(() => {
-    if (!isMobile) return;
+    if (!useSheet) return;
     if (!openMobile) return;
     if (!(anyOpen || pending)) return;
 
     shouldReopenSidebarRef.current = true;
     setOpenMobile(false, { source: "dialog" });
-  }, [isMobile, openMobile, anyOpen, pending, setOpenMobile]);
+  }, [useSheet, openMobile, anyOpen, pending, setOpenMobile]);
 
   /**
    * Restore sidebar after the *last* dialog closes (and no pending open).
@@ -181,7 +181,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
     shouldReopenSidebarRef.current = false;
     clearReopenTimer();
 
-    const delay = isMobile ? REOPEN_SIDEBAR_AFTER_DIALOG_CLOSE_MS : 0;
+    const delay = useSheet ? REOPEN_SIDEBAR_AFTER_DIALOG_CLOSE_MS : 0;
 
     if (delay <= 0) {
       setOpenMobile(true, { source: "dialog" });
@@ -192,7 +192,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
       reopenTimerRef.current = null;
       setOpenMobile(true, { source: "dialog" });
     }, delay);
-  }, [anyOpen, pending, isMobile, setOpenMobile, clearReopenTimer]);
+  }, [anyOpen, pending, useSheet, setOpenMobile, clearReopenTimer]);
 
   /**
    * Safety valve:
@@ -206,7 +206,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
     if (anyOpen || pending) return;
 
     // If mobile sheet is open, don't touch (Radix is active).
-    if (isMobile && openMobile) return;
+    if (useSheet && openMobile) return;
 
     const t = setTimeout(() => {
       if (document.body?.style?.pointerEvents === "none") {
@@ -215,7 +215,7 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
     }, 0);
 
     return () => clearTimeout(t);
-  }, [anyOpen, pending, isMobile, openMobile]);
+  }, [anyOpen, pending, useSheet, openMobile]);
 
   const value = useMemo(
     () => ({
@@ -239,8 +239,6 @@ export function UserDialogsProvider({ children }: UserDialogsProviderProps) {
     </UserDialogsContext.Provider>
   );
 }
-
-
 
 
 

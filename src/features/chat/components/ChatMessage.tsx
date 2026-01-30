@@ -1100,28 +1100,33 @@ const ChatMessage: ChatMessageComponent = ({
   const isUser = variant === "user"
 
   if (isUser) {
-	    return (
-	      <div className={cn("flex w-full justify-end py-3", className)}>
-	        <div
-	          className={cn(
-	            "border border-border/60 bg-muted/70 text-foreground shadow-sm backdrop-blur-sm",
-	            "rounded-3xl px-5 py-2.5",
-	            "max-w-[85%] sm:max-w-[75%] md:max-w-[70%]",
-	            "min-h-[44px] flex items-center",
-	          )}
-	        >
-	          <div dir="auto" className="text-[15px] leading-relaxed">{children}</div>
-	        </div>
-	      </div>
-	    )
-	  }
+    return (
+      <div className={cn("flex w-full justify-end py-5 sm:py-6", className)}>
+        <div
+          className={cn(
+            "border border-border/60 bg-muted/70 text-foreground shadow-sm backdrop-blur-sm",
+            "rounded-3xl px-[var(--chat-bubble-px,20px)] sm:px-[var(--chat-bubble-px-sm,24px)] py-[var(--chat-bubble-py,12px)] sm:py-[var(--chat-bubble-py-sm,13px)]",
+            "w-full sm:max-w-[92%] md:max-w-[86%] lg:max-w-[78%]",
+            "min-h-[48px] min-w-0",
+          )}
+        >
+          <div
+            dir="auto"
+            className="w-full min-w-0 text-[var(--chat-user-size,15px)] sm:text-[var(--chat-user-size-sm,16px)] leading-[1.7] whitespace-pre-wrap break-words text-left hyphens-auto [overflow-wrap:anywhere]"
+          >
+            {children}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className={cn("w-full py-4", className)}>
+    <div className={cn("w-full py-5 sm:py-6", className)}>
       {isThinking && !children ? (
         <ThinkingIndicator />
       ) : (
-        <div className="max-w-5xl">
+        <div className="max-w-full">
           {thinkingContent && (
             <ThinkingContent
               duration={thinkingDuration}
@@ -1136,17 +1141,17 @@ const ChatMessage: ChatMessageComponent = ({
 	          <div
 	            dir="auto"
 	            className={cn(
-	              "leading-relaxed",
-	              "[&_p]:font-brand [&_li]:font-brand [&_h1]:font-brand [&_h2]:font-brand [&_h3]:font-brand [&_h4]:font-brand [&_blockquote]:font-brand",
-	              "[&_p]:text-[16px] sm:[&_p]:text-[17px]",
-	              "[&_li]:text-[16px] sm:[&_li]:text-[17px]",
-	              "[&>p]:my-3 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0",
-	              "[&>ul]:my-3 [&>ol]:my-3",
-	              "[&>ul]:ps-5 [&>ol]:ps-5",
-	              "[&>ul>li]:my-1.5 [&>ol>li]:my-1.5",
-	              "[&_ul]:list-disc [&_ol]:list-decimal",
-	              "[&_li]:ps-1",
-	              "[&_ul_ul]:my-1 [&_ol_ol]:my-1 [&_ul_ol]:my-1 [&_ol_ul]:my-1",
+              "leading-[1.75]",
+              "[&_p]:font-brand [&_li]:font-brand [&_h1]:font-brand [&_h2]:font-brand [&_h3]:font-brand [&_h4]:font-brand [&_blockquote]:font-brand",
+              "[&_p]:text-[var(--chat-body-size,16px)] sm:[&_p]:text-[var(--chat-body-size-sm,17px)]",
+              "[&_li]:text-[var(--chat-body-size,16px)] sm:[&_li]:text-[var(--chat-body-size-sm,17px)]",
+              "[&>p]:my-4 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0",
+              "[&>ul]:my-4 [&>ol]:my-4",
+              "[&>ul]:ps-5 [&>ol]:ps-5",
+              "[&>ul>li]:my-2.5 [&>ol>li]:my-2.5",
+              "[&_ul]:list-disc [&_ol]:list-decimal",
+              "[&_li]:ps-1",
+              "[&_ul_ul]:my-1 [&_ol_ol]:my-1 [&_ul_ol]:my-1 [&_ol_ul]:my-1",
 	              "[&>h1]:text-2xl [&>h1]:font-semibold [&>h1]:mt-8 [&>h1]:mb-4 [&>h1:first-child]:mt-0",
 	              "[&>h2]:text-xl [&>h2]:font-semibold [&>h2]:mt-6 [&>h2]:mb-3 [&>h2:first-child]:mt-0",
 	              "[&>h3]:text-lg [&>h3]:font-semibold [&>h3]:mt-5 [&>h3]:mb-2 [&>h3:first-child]:mt-0",

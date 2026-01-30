@@ -45,6 +45,7 @@ interface SidebarContextValue {
   open: boolean;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isMobile: boolean;
+  useSheet: boolean;
   openMobile: boolean;
   setOpenMobile: (
     next: boolean | ((prev: boolean) => boolean),
@@ -94,18 +95,21 @@ interface SidebarProviderProps extends React.HTMLAttributes<HTMLDivElement> {
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  forceSheet?: boolean;
 }
 
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
   onOpenChange: setOpenProp,
+  forceSheet = false,
   className,
   style,
   children,
   ...props
 }: SidebarProviderProps) {
   const isMobile = useIsMobile();
+  const useSheet = isMobile || forceSheet;
 
   // Read persisted mode once
   const initialMode = React.useMemo(() => readStoredMode(), []);
@@ -158,11 +162,11 @@ function SidebarProvider({
   }, [mobileSuspended]);
 
   /**
-   * openMobile = actual visible sheet state
+   * openMobile = actual visible sheet state (mobile or forced overlay)
    * - derives from persisted `open`
    * - but can be temporarily suppressed while a user dialog is open/pending
    */
-  const openMobile = isMobile ? !!open && !mobileSuspended : false;
+  const openMobile = useSheet ? !!open && !mobileSuspended : false;
 
   // Ref for atomic toggles on mobile (since openMobile is derived)
   const openMobileRef = React.useRef(openMobile);
@@ -183,26 +187,26 @@ function SidebarProvider({
     setSuppressMobileAnim(true);
   }, []);
 
-  // Detect breakpoint transitions to suppress animation when entering mobile while open=true
-  const prevIsMobileRef = React.useRef(isMobile);
+  // Detect sheet-mode transitions to suppress animation when entering sheet while open=true
+  const prevUseSheetRef = React.useRef(useSheet);
   useIsomorphicLayoutEffect(() => {
-    const wasMobile = prevIsMobileRef.current;
-    if (wasMobile === isMobile) return;
+    const wasSheet = prevUseSheetRef.current;
+    if (wasSheet === useSheet) return;
 
     // Entering mobile: if sidebar mode is expanded and not suspended, sheet should appear already open (no anim)
-    if (!wasMobile && isMobile && openRef.current && !mobileSuspendedRef.current) {
+    if (!wasSheet && useSheet && openRef.current && !mobileSuspendedRef.current) {
       suppressNextMobileAnim();
     }
 
-    prevIsMobileRef.current = isMobile;
-  }, [isMobile, suppressNextMobileAnim]);
+    prevUseSheetRef.current = useSheet;
+  }, [useSheet, suppressNextMobileAnim]);
 
   // When the mobile sheet is CLOSED (for real), re-enable animations for the next user-open
   React.useEffect(() => {
-    if (!isMobile) return;
+    if (!useSheet) return;
     if (openMobile) return;
     if (suppressMobileAnim) setSuppressMobileAnim(false);
-  }, [isMobile, openMobile, suppressMobileAnim]);
+  }, [useSheet, openMobile, suppressMobileAnim]);
 
   /**
    * setOpenMobile supports:
@@ -246,13 +250,13 @@ function SidebarProvider({
   );
 
   const toggleSidebar = React.useCallback(() => {
-    if (isMobile) {
+    if (useSheet) {
       // Toggle based on actual visibility (handles suspended state correctly)
       setOpenMobile((v) => !v, { source: "user" });
       return;
     }
     setOpen((v) => !v);
-  }, [isMobile, setOpenMobile, setOpen]);
+  }, [useSheet, setOpenMobile, setOpen]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -269,7 +273,7 @@ function SidebarProvider({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSidebar]);
 
-  const state: SidebarState = (isMobile ? openMobile : open) ? "expanded" : "collapsed";
+  const state: SidebarState = (useSheet ? openMobile : open) ? "expanded" : "collapsed";
 
   const contextValue = React.useMemo(
     () => ({
@@ -277,6 +281,7 @@ function SidebarProvider({
       open, // persisted mode
       setOpen,
       isMobile,
+      useSheet,
       openMobile, // actual visible mobile sheet state
       setOpenMobile,
       toggleSidebar,
@@ -288,6 +293,7 @@ function SidebarProvider({
       open,
       setOpen,
       isMobile,
+      useSheet,
       openMobile,
       setOpenMobile,
       toggleSidebar,
@@ -336,7 +342,7 @@ function Sidebar({
   onClickCapture,
   ...props
 }: SidebarProps) {
-  const { isMobile, state, openMobile, setOpenMobile, toggleSidebar, suppressMobileAnim } =
+  const { isMobile, useSheet, state, openMobile, setOpenMobile, toggleSidebar, suppressMobileAnim } =
     useSidebar();
 
   if (collapsible === "none") {
@@ -358,12 +364,12 @@ function Sidebar({
   /**
    * ✅ CRITICAL FIX:
    * Keep the Sheet ROOT mounted always (even on desktop).
-   * We simply force it closed when not mobile.
+   * We simply force it closed when not using the sheet.
    *
    * This prevents Radix dismissable-layer pointer-events from getting stuck
    * during breakpoint changes while other dialogs are open.
    */
-  const sheetOpen = isMobile ? openMobile : false;
+  const sheetOpen = useSheet ? openMobile : false;
   const isExpanded = state === "expanded";
   const isOffcanvas = collapsible === "offcanvas";
   const iconShellWidth =
@@ -397,13 +403,13 @@ function Sidebar({
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
 
-          {/* Render children ONLY on mobile so we don't double-mount */}
-          {isMobile ? <div className="flex h-full w-full flex-col">{children}</div> : null}
+          {/* Render children ONLY when using sheet so we don't double-mount */}
+          {useSheet ? <div className="flex h-full w-full flex-col">{children}</div> : null}
         </SheetContent>
       </Sheet>
 
-      {/* Desktop sidebar (only render when not mobile to avoid double-mount) */}
-      {!isMobile && (
+      {/* Desktop sidebar (only render when not using sheet to avoid double-mount) */}
+      {!useSheet && (
         <div
           className={cn("group peer text-sidebar-foreground hidden md:block", className)}
           data-state={state}

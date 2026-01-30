@@ -7,6 +7,7 @@ import { ThemeProvider, ThemeSync } from "@/app/providers/ThemeProvider";
 import { I18nProvider } from "@/app/providers/I18nProvider";
 import { AuthProvider } from "@/app/providers/AuthProvider";
 import { HomeChatbarDockProvider } from "@/app/providers/HomeChatbarDockProvider";
+import { ChatDockProvider } from "@/app/providers/ChatDockProvider";
 import { SSEGate } from "@/app/providers/SSEProvider";
 import { UserProvider } from "@/app/providers/UserProvider";
 import { PathProvider } from "@/app/providers/PathProvider";
@@ -52,9 +53,11 @@ createRoot(rootElement).render(
                       <MaterialProvider>
                         <LessonProvider>
                           <HomeChatbarDockProvider>
-                            <ToastProvider>
-                              <App />
-                            </ToastProvider>
+                            <ChatDockProvider>
+                              <ToastProvider>
+                                <App />
+                              </ToastProvider>
+                            </ChatDockProvider>
                           </HomeChatbarDockProvider>
                         </LessonProvider>
                       </MaterialProvider>
