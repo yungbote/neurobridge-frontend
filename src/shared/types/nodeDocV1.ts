@@ -74,6 +74,14 @@ export type NodeDocBlockTableV1 = {
   rows: string[][];
 };
 
+export type NodeDocBlockEquationV1 = {
+  type: "equation";
+  latex: string;
+  display: boolean;
+  caption: string;
+  citations: CitationRefV1[];
+};
+
 export type NodeDocBlockQuickCheckV1 = {
   type: "quick_check";
   prompt_md: string;
@@ -94,6 +102,7 @@ export type NodeDocBlockV1 =
   | NodeDocBlockVideoV1
   | NodeDocBlockDiagramV1
   | NodeDocBlockTableV1
+  | NodeDocBlockEquationV1
   | NodeDocBlockQuickCheckV1
   | NodeDocBlockDividerV1;
 
@@ -105,4 +114,3 @@ export type NodeDocV1 = {
   estimated_minutes: number;
   blocks: NodeDocBlockV1[];
 };
-

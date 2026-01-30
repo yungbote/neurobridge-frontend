@@ -77,6 +77,26 @@ function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function safeParseJSON(value: unknown): JsonRecord | null {
+  if (!value) return null;
+  if (isRecord(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function nodeContentState(node: PathNode | null | undefined): string {
+  if (!node) return "";
+  const meta = safeParseJSON(node.metadata) ?? (node.metadata as JsonRecord | null) ?? null;
+  if (!meta) return "";
+  const raw = (meta["content_state"] ?? meta["contentState"] ?? "") as string;
+  return String(raw || "").toLowerCase();
+}
+
 function readStoredBool(key: string): boolean | null {
   if (typeof window === "undefined") return null;
   try {
@@ -796,6 +816,9 @@ export function AppSideBar() {
                             const fallbackColor = pickPathColor(String(n?.id || n?.title || ""));
                             const isActive =
                               matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
+                            const contentState = nodeContentState(n);
+                            const isPending = contentState === "pending";
+                            const href = isPending ? null : `/path-nodes/${n.id}`;
                             const indent = Math.min(depth, 4) * 14;
                             const showAvatarSkeleton = Boolean(activeBuild.showProgress && !hasChildren && !avatarUrl);
                             return (
@@ -804,49 +827,90 @@ export function AppSideBar() {
                                   <SidebarMenuSubButton
                                     asChild
                                     isActive={isActive}
-                                    className="flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground"
+                                    aria-disabled={isPending || !href}
+                                    className={cn(
+                                      "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground",
+                                      isPending && "opacity-50 cursor-default"
+                                    )}
                                   >
-                                    <Link
-                                      to={`/path-nodes/${n.id}`}
-                                      aria-label={`Open ${n.title || "lesson"}`}
-                                      onClick={() => {
-                                        void activateLesson(String(n.id)).catch((err) => {
-                                          console.warn("[AppSideBar] Failed to activate lesson:", err);
-                                        });
-                                      }}
-                                    >
-                                      {indent > 0 ? (
-                                        <span
-                                          aria-hidden="true"
-                                          className="flex shrink-0 items-center justify-end text-sidebar-foreground/50"
-                                          style={{ width: indent }}
-                                        >
-                                          <CornerDownRight className="h-3.5 w-3.5" />
-                                        </span>
-                                      ) : null}
-                                      {showAvatarSkeleton ? (
-                                        <Skeleton className="h-5 w-5 shrink-0 rounded-full border border-border/60" />
-                                      ) : (
-                                        <span
-                                          className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
-                                          style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
-                                          aria-hidden="true"
-                                        >
-                                          {avatarUrl ? (
-                                            <img
-                                              src={avatarUrl}
-                                              alt=""
-                                              loading="lazy"
-                                              decoding="async"
-                                              className="h-full w-full object-cover"
-                                            />
-                                          ) : hasChildren ? (
-                                            <FolderOpen className="h-3.5 w-3.5 text-white/80" />
-                                          ) : null}
-                                        </span>
-                                      )}
-                                      <span className="truncate">{n.title || "Lesson"}</span>
-                                    </Link>
+                                    {href ? (
+                                      <Link
+                                        to={href}
+                                        aria-label={`Open ${n.title || "lesson"}`}
+                                        onClick={() => {
+                                          if (isPending) return;
+                                          void activateLesson(String(n.id)).catch((err) => {
+                                            console.warn("[AppSideBar] Failed to activate lesson:", err);
+                                          });
+                                        }}
+                                      >
+                                        {indent > 0 ? (
+                                          <span
+                                            aria-hidden="true"
+                                            className="flex shrink-0 items-center justify-end text-sidebar-foreground/50"
+                                            style={{ width: indent }}
+                                          >
+                                            <CornerDownRight className="h-3.5 w-3.5" />
+                                          </span>
+                                        ) : null}
+                                        {showAvatarSkeleton ? (
+                                          <Skeleton className="h-5 w-5 shrink-0 rounded-full border border-border/60" />
+                                        ) : (
+                                          <span
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
+                                            style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
+                                            aria-hidden="true"
+                                          >
+                                            {avatarUrl ? (
+                                              <img
+                                                src={avatarUrl}
+                                                alt=""
+                                                loading="lazy"
+                                                decoding="async"
+                                                className="h-full w-full object-cover"
+                                              />
+                                            ) : hasChildren ? (
+                                              <FolderOpen className="h-3.5 w-3.5 text-white/80" />
+                                            ) : null}
+                                          </span>
+                                        )}
+                                        <span className="truncate">{n.title || "Lesson"}</span>
+                                      </Link>
+                                    ) : (
+                                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                                        {indent > 0 ? (
+                                          <span
+                                            aria-hidden="true"
+                                            className="flex shrink-0 items-center justify-end text-sidebar-foreground/50"
+                                            style={{ width: indent }}
+                                          >
+                                            <CornerDownRight className="h-3.5 w-3.5" />
+                                          </span>
+                                        ) : null}
+                                        {showAvatarSkeleton ? (
+                                          <Skeleton className="h-5 w-5 shrink-0 rounded-full border border-border/60" />
+                                        ) : (
+                                          <span
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40"
+                                            style={avatarUrl ? undefined : { backgroundColor: fallbackColor }}
+                                            aria-hidden="true"
+                                          >
+                                            {avatarUrl ? (
+                                              <img
+                                                src={avatarUrl}
+                                                alt=""
+                                                loading="lazy"
+                                                decoding="async"
+                                                className="h-full w-full object-cover"
+                                              />
+                                            ) : hasChildren ? (
+                                              <FolderOpen className="h-3.5 w-3.5 text-white/80" />
+                                            ) : null}
+                                          </span>
+                                        )}
+                                        <span className="truncate">{n.title || "Lesson"}</span>
+                                      </div>
+                                    )}
                                   </SidebarMenuSubButton>
                                 </div>
                               </SidebarMenuSubItem>

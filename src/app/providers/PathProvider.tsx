@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useWindowPathname } from "@/shared/hooks/useWindowPathname";
 
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
@@ -192,6 +193,7 @@ export function PathProvider({ children }: PathProviderProps) {
   const { isAuthenticated } = useAuth();
   const { user } = useUser();
   const { lastMessage, connected } = useSSEContext();
+  const pathname = useWindowPathname();
   const queryClient = useQueryClient();
 
   const [activePathId, setActivePathIdState] = useState<string | null>(null);
@@ -606,6 +608,14 @@ export function PathProvider({ children }: PathProviderProps) {
       });
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const inPath = pathname.startsWith("/paths/") || pathname.startsWith("/path-nodes/");
+    if (!inPath && activePathId) {
+      clearActivePath();
+    }
+  }, [activePathId, clearActivePath, isAuthenticated, pathname]);
 
   const activatePath = useCallback(
     async (id: string | null): Promise<Path | null> => {

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useWindowPathname } from "@/shared/hooks/useWindowPathname";
 
 import { useAuth } from "@/app/providers/AuthProvider";
 import { getPathNodeContent } from "@/shared/api/PathNodeService";
@@ -37,6 +38,7 @@ interface LessonProviderProps {
 
 export function LessonProvider({ children }: LessonProviderProps) {
   const { isAuthenticated } = useAuth();
+  const pathname = useWindowPathname();
   const [activeLessonId, setActiveLessonIdState] = useState<string | null>(null);
   const [activeLessonOverride, setActiveLessonOverride] = useState<PathNode | null>(null);
   const activateSeq = useRef(0);
@@ -119,6 +121,14 @@ export function LessonProvider({ children }: LessonProviderProps) {
       });
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const inLesson = pathname.startsWith("/path-nodes/");
+    if (!inLesson && activeLessonId) {
+      clearActiveLesson();
+    }
+  }, [activeLessonId, clearActiveLesson, isAuthenticated, pathname]);
 
   const activateLesson = useCallback(
     async (id: string | null): Promise<PathNode | null> => {

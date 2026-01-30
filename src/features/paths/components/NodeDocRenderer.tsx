@@ -19,6 +19,8 @@ import { cn } from "@/shared/lib/utils";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
 import { MermaidDiagram } from "@/shared/components/MermaidDiagram";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 import {
   attemptQuickCheck,
   type QuickCheckAttemptAction,
@@ -655,6 +657,14 @@ function BlockSkeleton({ type }: { type?: string }) {
       </div>
     );
   }
+  if (type === "equation") {
+    return (
+      <div className="space-y-2">
+        <Skeleton className={cn("h-10 w-2/3", pulse)} />
+        <Skeleton className={cn("h-3 w-32", pulse)} />
+      </div>
+    );
+  }
   if (type === "quick_check") {
     return (
       <div className="space-y-3 rounded-xl border border-border bg-background p-4">
@@ -1082,6 +1092,34 @@ export function NodeDocRenderer({
               <code>{safeString(b?.source)}</code>
             </pre>
             {caption ? <div className="mt-2 text-xs text-muted-foreground">{caption}</div> : null}
+          </div>
+        );
+      }
+
+      if (type === "equation") {
+        const latex = safeString(b?.latex).trim();
+        if (!latex) return null;
+        const caption = safeString(b?.caption).trim();
+        const display = Boolean(b?.display);
+        let html = "";
+        try {
+          html = katex.renderToString(latex, { displayMode: display, throwOnError: false });
+        } catch {
+          html = "";
+        }
+        return wrap(
+          <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/10 p-4">
+            {html ? (
+              <div
+                className={cn("overflow-x-auto text-foreground/90", display ? "text-lg" : "text-base")}
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            ) : (
+              <pre className="overflow-x-auto text-sm text-foreground/90">
+                <code>{latex}</code>
+              </pre>
+            )}
+            {caption ? <div className="text-xs text-muted-foreground">{caption}</div> : null}
           </div>
         );
       }
