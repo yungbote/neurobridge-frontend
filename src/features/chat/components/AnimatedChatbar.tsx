@@ -9,6 +9,7 @@ import { FileUploadCard } from "@/shared/components/FileUploadCard";
 import { usePaths } from "@/app/providers/PathProvider";
 import type { BackendMaterialUploadResponse } from "@/shared/types/backend";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { flushSessionPatch } from "@/shared/services/SessionStateTracker";
 
 const examplePrompts = [
   "Teach me how to study effectively.",
@@ -564,6 +565,12 @@ export const AnimatedChatbar = ({
       !disableUploads &&
       Boolean(uploadFn) &&
       (filesToUpload.length > 0 || trimmed.length > 0);
+
+    try {
+      await flushSessionPatch();
+    } catch (err) {
+      console.warn("[AnimatedChatbar] failed to flush session state before submit:", err);
+    }
 
     setIsGenerating(true);
 

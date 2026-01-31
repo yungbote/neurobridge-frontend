@@ -56,7 +56,9 @@ type BlockFeedback = "" | "like" | "dislike";
 const VISIBLE_RATIO_MIN = 0.1;
 const CURRENT_RATIO_MIN = 0.25;
 const MAX_VISIBLE_BLOCKS = 20;
-const SESSION_SYNC_INTERVAL_MS = 900;
+const SESSION_SYNC_MIN_INTERVAL_MS = 350;
+const SESSION_SYNC_IDLE_MS = 180;
+const SESSION_SYNC_MAX_LATENCY_MS = 1400;
 
 export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
@@ -574,13 +576,50 @@ export default function PathNodePage() {
   const maxScrollPercentRef = useRef<number>(0);
   const currentScrollPercentRef = useRef<number>(0);
   const visibleBlocksRef = useRef<Map<string, number>>(new Map());
+  const blockMetricsRef = useRef<
+    Map<string, { ratio: number; topDelta: number; height: number; rootHeight: number; seenAt: number }>
+  >(new Map());
+  const currentBlockIdRef = useRef<string>("");
+  const lastSwitchAtRef = useRef<number>(0);
+  const scoreEMARef = useRef<Map<string, number>>(new Map());
+  const lastCurrentAtRef = useRef<Map<string, number>>(new Map());
+  const scrollDirRef = useRef<"up" | "down" | "none">("none");
+  const lastScrollTopRef = useRef<number>(0);
+  const debugCandidatesRef = useRef<
+    Array<{
+      id: string;
+      score: number;
+      ratio: number;
+      topDelta: number;
+      centerY: number;
+    }>
+  >([]);
+  const [debugOverlay, setDebugOverlay] = useState(false);
+  const debugOverlayRef = useRef<HTMLDivElement | null>(null);
   const sessionSyncTimerRef = useRef<number | null>(null);
+  const sessionIdleTimerRef = useRef<number | null>(null);
+  const sessionForceTimerRef = useRef<number | null>(null);
+  const sessionDirtyRef = useRef<boolean>(false);
   const lastSessionSyncAtRef = useRef<number>(0);
+  const lastSessionChangeAtRef = useRef<number>(0);
   const lastSessionPayloadRef = useRef<string>("");
   const nodeConceptIdsRef = useRef<string[]>([]);
   const nodeIdRef = useRef<string>("");
   const pathIdRef = useRef<string>("");
   const docContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const resolveScrollContainer = useCallback(() => {
+    let el = docContainerRef.current;
+    while (el && el !== document.body) {
+      const style = window.getComputedStyle(el);
+      const overflowY = style.overflowY;
+      const scrollable =
+        (overflowY === "auto" || overflowY === "scroll") && el.scrollHeight - el.clientHeight > 4;
+      if (scrollable) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }, []);
 
   const feedbackStorageKey = useMemo(() => {
     if (!nodeId) return "";
@@ -691,35 +730,207 @@ export default function PathNodePage() {
   }, [nodeConceptIds]);
 
   const buildVisibleSnapshot = useCallback(() => {
+    const scrollRoot = resolveScrollContainer();
+    const rootRect = scrollRoot?.getBoundingClientRect();
+    const rootTop = rootRect?.top ?? 0;
+    const rootHeight = (rootRect?.height ?? window.innerHeight) || 1;
+    const rootBottom = rootTop + rootHeight;
+    const readingLine = rootHeight * 0.35;
+
+    const getElementForId = (id: string) => {
+      if (!id) return null;
+      const escaped =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(id)
+          : id.replace(/"/g, '\\"');
+      return (scrollRoot ?? document).querySelector<HTMLElement>(`[data-doc-block-id="${escaped}"]`);
+    };
+
     const entries: Array<{ id: string; ratio: number }> = [];
-    visibleBlocksRef.current.forEach((ratio, id) => {
-      if (ratio < VISIBLE_RATIO_MIN) return;
-      const rounded = Math.round(ratio * 1000) / 1000;
-      entries.push({ id, ratio: rounded });
-    });
+    const elements = Array.from(
+      (scrollRoot ?? document).querySelectorAll<HTMLElement>("[data-doc-block-id]")
+    );
+    if (elements.length > 0) {
+      visibleBlocksRef.current.clear();
+      for (const el of elements) {
+        const id = String(el.dataset.docBlockId || "").trim();
+        if (!id) continue;
+        const rect = el.getBoundingClientRect();
+        const height = rect.height || 1;
+        const intersectTop = Math.max(rect.top, rootTop);
+        const intersectBottom = Math.min(rect.bottom, rootBottom);
+        const visibleHeight = Math.max(0, intersectBottom - intersectTop);
+        const ratio = Math.max(0, Math.min(1, visibleHeight / height));
+        if (ratio >= VISIBLE_RATIO_MIN) {
+          const rounded = Math.round(ratio * 1000) / 1000;
+          entries.push({ id, ratio: rounded });
+          visibleBlocksRef.current.set(id, ratio);
+          blockMetricsRef.current.set(id, {
+            ratio,
+            topDelta: rect.top - rootTop,
+            height,
+            rootHeight,
+            seenAt: Date.now(),
+          });
+        }
+      }
+    } else {
+      visibleBlocksRef.current.forEach((ratio, id) => {
+        if (ratio < VISIBLE_RATIO_MIN) return;
+        const rounded = Math.round(ratio * 1000) / 1000;
+        entries.push({ id, ratio: rounded });
+      });
+    }
+
     entries.sort((a, b) => b.ratio - a.ratio);
     const visible = entries.slice(0, MAX_VISIBLE_BLOCKS);
-    const top = visible[0];
-    const second = visible[1];
-    if (!top || top.ratio < CURRENT_RATIO_MIN) {
+    if (visible.length === 0) {
+      currentBlockIdRef.current = "";
       return { visible, current: null };
     }
-    const dominance = second
-      ? Math.max(0, Math.min(1, (top.ratio - second.ratio) / Math.max(top.ratio, 0.15)))
-      : 1;
-    const confidence = Math.min(1, Math.max(0, 0.6 * top.ratio + 0.4 * dominance));
+
+    const now = Date.now();
+    const candidates: Array<{
+      id: string;
+      ratio: number;
+      topDelta: number;
+      height: number;
+      centerY: number;
+      bottomY: number;
+      score: number;
+    }> = [];
+
+    for (const entry of visible) {
+      const metric = blockMetricsRef.current.get(entry.id);
+      let topDelta = metric?.topDelta ?? 0;
+      let height = metric?.height ?? 0;
+      let rootH = metric?.rootHeight ?? rootHeight;
+      if (!metric) {
+        const el = getElementForId(entry.id);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          topDelta = rect.top - rootTop;
+          height = rect.height;
+          rootH = rootHeight;
+        }
+      }
+      if (!height || height < 1) height = rootHeight * 0.1;
+      if (!rootH || rootH < 1) rootH = rootHeight;
+      const centerY = topDelta + height * 0.5;
+      const bottomY = topDelta + height;
+
+      const topProx = 1 - Math.min(Math.abs(topDelta) / Math.max(rootH, 1), 1);
+      const readingProx = 1 - Math.min(Math.abs(centerY - readingLine) / Math.max(rootH, 1), 1);
+
+      const lastCurrent = lastCurrentAtRef.current.get(entry.id) ?? 0;
+      const dwellBonus =
+        entry.id === currentBlockIdRef.current ? 0.15 : now - lastCurrent < 2500 ? 0.08 : 0;
+
+      const rawScore = 0.45 * entry.ratio + 0.3 * readingProx + 0.2 * topProx + dwellBonus;
+      const prev = scoreEMARef.current.get(entry.id);
+      const ema = prev == null ? rawScore : 0.65 * prev + 0.35 * rawScore;
+      scoreEMARef.current.set(entry.id, ema);
+
+      candidates.push({
+        id: entry.id,
+        ratio: entry.ratio,
+        topDelta,
+        height,
+        centerY,
+        bottomY,
+        score: ema,
+      });
+    }
+
+    if (candidates.length === 0) {
+      currentBlockIdRef.current = "";
+      return { visible, current: null };
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    debugCandidatesRef.current = candidates.slice(0, 5).map((c) => ({
+      id: c.id,
+      score: Math.round(c.score * 1000) / 1000,
+      ratio: Math.round(c.ratio * 1000) / 1000,
+      topDelta: Math.round(c.topDelta),
+      centerY: Math.round(c.centerY),
+    }));
+    const best = candidates[0];
+    const currentId = currentBlockIdRef.current;
+    const current = currentId ? candidates.find((c) => c.id === currentId) : null;
+
+    if (!best || best.ratio < CURRENT_RATIO_MIN) {
+      currentBlockIdRef.current = "";
+      return { visible, current: null };
+    }
+
+    let selected = best;
+    const nowSwitchWindow = now - lastSwitchAtRef.current;
+    const direction = scrollDirRef.current;
+
+    if (current && current.id !== best.id && current.ratio >= CURRENT_RATIO_MIN) {
+      const delta = best.score - current.score;
+      const enoughGap = delta > 0.06;
+      const pastMinInterval = nowSwitchWindow > 250;
+      let directionGate = true;
+      if (direction === "down") {
+        directionGate = best.topDelta <= readingLine * 1.05;
+      } else if (direction === "up") {
+        directionGate = best.bottomY >= readingLine * 0.95;
+      }
+      if (!(pastMinInterval && enoughGap && directionGate)) {
+        selected = current;
+      }
+    }
+
+    if (selected.id !== currentBlockIdRef.current) {
+      currentBlockIdRef.current = selected.id;
+      lastSwitchAtRef.current = now;
+      lastCurrentAtRef.current.set(selected.id, now);
+    }
+
+    const proximity = Math.max(
+      0,
+      1 - Math.min(Math.abs(selected.centerY - readingLine) / Math.max(rootHeight, 1), 1)
+    );
+    const confidence = Math.min(1, Math.max(0, 0.55 * selected.ratio + 0.45 * proximity));
+
     return {
       visible,
       current: {
-        id: top.id,
+        id: selected.id,
         confidence: Math.round(confidence * 1000) / 1000,
       },
     };
+  }, [resolveScrollContainer]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "`" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        setDebugOverlay((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const flushSessionSync = useCallback(
     (opts?: { clear?: boolean; immediate?: boolean }) => {
       if (!user?.id) return;
+      if (sessionSyncTimerRef.current != null) {
+        clearTimeout(sessionSyncTimerRef.current);
+        sessionSyncTimerRef.current = null;
+      }
+      if (sessionIdleTimerRef.current != null) {
+        clearTimeout(sessionIdleTimerRef.current);
+        sessionIdleTimerRef.current = null;
+      }
+      if (sessionForceTimerRef.current != null) {
+        clearTimeout(sessionForceTimerRef.current);
+        sessionForceTimerRef.current = null;
+      }
+
       const clear = Boolean(opts?.clear);
       const snapshot = clear ? { visible: [], current: null } : buildVisibleSnapshot();
       const scroll = clear ? null : currentScrollPercentRef.current;
@@ -737,9 +948,13 @@ export default function PathNodePage() {
         scroll_percent: clear ? null : scroll,
         metadata,
       });
-      if (!clear && signature === lastSessionPayloadRef.current) return;
+      if (!clear && signature === lastSessionPayloadRef.current) {
+        sessionDirtyRef.current = false;
+        return;
+      }
       lastSessionPayloadRef.current = signature;
       lastSessionSyncAtRef.current = Date.now();
+      sessionDirtyRef.current = false;
       queueSessionPatch(
         {
           active_doc_block_id: clear ? null : snapshot.current?.id ?? null,
@@ -752,16 +967,42 @@ export default function PathNodePage() {
     [buildVisibleSnapshot, user?.id]
   );
 
-  const scheduleSessionSync = useCallback(() => {
-    if (sessionSyncTimerRef.current != null) return;
-    const now = Date.now();
-    const elapsed = now - lastSessionSyncAtRef.current;
-    const delay = Math.max(0, SESSION_SYNC_INTERVAL_MS - elapsed);
-    sessionSyncTimerRef.current = window.setTimeout(() => {
-      sessionSyncTimerRef.current = null;
-      flushSessionSync();
-    }, delay);
-  }, [flushSessionSync]);
+  const scheduleSessionSync = useCallback(
+    (opts?: { immediate?: boolean }) => {
+      if (opts?.immediate) {
+        flushSessionSync({ immediate: true });
+        return;
+      }
+      sessionDirtyRef.current = true;
+      lastSessionChangeAtRef.current = Date.now();
+
+      if (sessionSyncTimerRef.current == null) {
+        const now = Date.now();
+        const elapsed = now - lastSessionSyncAtRef.current;
+        const delay = Math.max(0, SESSION_SYNC_MIN_INTERVAL_MS - elapsed);
+        sessionSyncTimerRef.current = window.setTimeout(() => {
+          sessionSyncTimerRef.current = null;
+          if (sessionDirtyRef.current) flushSessionSync();
+        }, delay);
+      }
+
+      if (sessionIdleTimerRef.current != null) {
+        clearTimeout(sessionIdleTimerRef.current);
+      }
+      sessionIdleTimerRef.current = window.setTimeout(() => {
+        sessionIdleTimerRef.current = null;
+        if (sessionDirtyRef.current) flushSessionSync({ immediate: true });
+      }, SESSION_SYNC_IDLE_MS);
+
+      if (sessionForceTimerRef.current == null) {
+        sessionForceTimerRef.current = window.setTimeout(() => {
+          sessionForceTimerRef.current = null;
+          if (sessionDirtyRef.current) flushSessionSync({ immediate: true });
+        }, SESSION_SYNC_MAX_LATENCY_MS);
+      }
+    },
+    [flushSessionSync]
+  );
 
   // Record exposure as aggregated scroll depth + dwell time (production-safe: one event per node view).
   useEffect(() => {
@@ -770,23 +1011,41 @@ export default function PathNodePage() {
     maxScrollPercentRef.current = 0;
     currentScrollPercentRef.current = 0;
 
+    const scrollContainer = resolveScrollContainer();
     const onScroll = () => {
       const docEl = document.documentElement;
-      const scrollTop = typeof docEl.scrollTop === "number" ? docEl.scrollTop : window.scrollY || 0;
-      const scrollHeight = typeof docEl.scrollHeight === "number" ? docEl.scrollHeight : 0;
-      const clientHeight = typeof docEl.clientHeight === "number" ? docEl.clientHeight : window.innerHeight || 1;
+      const scrollTop =
+        scrollContainer?.scrollTop ??
+        (typeof docEl.scrollTop === "number" ? docEl.scrollTop : window.scrollY || 0);
+      const scrollHeight =
+        scrollContainer?.scrollHeight ?? (typeof docEl.scrollHeight === "number" ? docEl.scrollHeight : 0);
+      const clientHeight =
+        scrollContainer?.clientHeight ?? (typeof docEl.clientHeight === "number" ? docEl.clientHeight : window.innerHeight || 1);
       const denom = Math.max(1, scrollHeight - clientHeight);
       const pct = Math.max(0, Math.min(100, Math.round((scrollTop / denom) * 100)));
+      const delta = scrollTop - (lastScrollTopRef.current || 0);
+      if (Math.abs(delta) > 2) {
+        scrollDirRef.current = delta > 0 ? "down" : "up";
+      }
+      lastScrollTopRef.current = scrollTop;
       if (pct > maxScrollPercentRef.current) maxScrollPercentRef.current = pct;
       currentScrollPercentRef.current = pct;
       scheduleSessionSync();
     };
 
-    window.addEventListener("scroll", onScroll, { passive: true });
+    if (scrollContainer) {
+      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
+    } else {
+      window.addEventListener("scroll", onScroll, { passive: true });
+    }
     onScroll();
 
     return () => {
-      window.removeEventListener("scroll", onScroll);
+      if (scrollContainer) {
+        scrollContainer.removeEventListener("scroll", onScroll);
+      } else {
+        window.removeEventListener("scroll", onScroll);
+      }
       const dwellMs = Math.max(0, Date.now() - (openedAtRef.current || Date.now()));
       const maxPercent = Math.max(0, Math.min(100, Math.round(maxScrollPercentRef.current || 0)));
       queueEvent({
@@ -802,7 +1061,7 @@ export default function PathNodePage() {
         },
       });
     };
-  }, [nodeId]);
+  }, [nodeId, resolveScrollContainer, scheduleSessionSync]);
 
   useEffect(() => {
     if (!nodeId || !doc) return;
@@ -815,6 +1074,7 @@ export default function PathNodePage() {
       const container = docContainerRef.current ?? document;
       const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-doc-block-id]"));
       if (elements.length === 0) return;
+      const scrollContainer = resolveScrollContainer();
       const thresholds = [0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1];
       observer = new IntersectionObserver(
         (entries) => {
@@ -824,6 +1084,17 @@ export default function PathNodePage() {
             const id = String(target.dataset.docBlockId || "").trim();
             if (!id) continue;
             const ratio = Math.max(0, Math.min(1, entry.intersectionRatio || 0));
+            const rect = target.getBoundingClientRect();
+            const rootRect = scrollContainer?.getBoundingClientRect();
+            const rootTop = rootRect?.top ?? 0;
+            const rootHeight = (rootRect?.height ?? window.innerHeight) || 1;
+            blockMetricsRef.current.set(id, {
+              ratio,
+              topDelta: rect.top - rootTop,
+              height: rect.height,
+              rootHeight,
+              seenAt: Date.now(),
+            });
             if (ratio < VISIBLE_RATIO_MIN) {
               if (visibleBlocksRef.current.has(id)) {
                 visibleBlocksRef.current.delete(id);
@@ -837,7 +1108,7 @@ export default function PathNodePage() {
           }
           if (changed) scheduleSessionSync();
         },
-        { root: null, threshold: thresholds }
+        { root: scrollContainer ?? null, threshold: thresholds }
       );
       elements.forEach((el) => observer?.observe(el));
       scheduleSessionSync();
@@ -852,10 +1123,22 @@ export default function PathNodePage() {
         clearTimeout(sessionSyncTimerRef.current);
         sessionSyncTimerRef.current = null;
       }
+      if (sessionIdleTimerRef.current != null) {
+        clearTimeout(sessionIdleTimerRef.current);
+        sessionIdleTimerRef.current = null;
+      }
+      if (sessionForceTimerRef.current != null) {
+        clearTimeout(sessionForceTimerRef.current);
+        sessionForceTimerRef.current = null;
+      }
       visibleBlocksRef.current.clear();
+      blockMetricsRef.current.clear();
+      scoreEMARef.current.clear();
+      lastCurrentAtRef.current.clear();
+      currentBlockIdRef.current = "";
       flushSessionSync({ clear: true, immediate: true });
     };
-  }, [doc, nodeId, scheduleSessionSync, flushSessionSync]);
+  }, [doc, nodeId, scheduleSessionSync, flushSessionSync, resolveScrollContainer]);
 
   const conceptLabels = useMemo(() => {
     return conceptKeys.map((k) => conceptNameByKey.get(k) ?? humanizeConceptKey(k));
@@ -1374,10 +1657,44 @@ export default function PathNodePage() {
         </div>
       </Container>
 
-	      <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
-	        <DialogContent>
-	          <DialogHeader>
-	            <DialogTitle>{t("pathNode.regen.dialog.title")}</DialogTitle>
+      {debugOverlay ? (
+        <div
+          ref={debugOverlayRef}
+          className="fixed bottom-6 end-6 z-50 w-[320px] rounded-2xl border border-border/60 bg-background/95 p-4 shadow-xl backdrop-blur"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Current Block Debug
+          </div>
+          <div className="mt-2 space-y-2 text-xs text-foreground/80">
+            {debugCandidatesRef.current.length === 0 ? (
+              <div className="text-muted-foreground">No visible blocks detected.</div>
+            ) : (
+              debugCandidatesRef.current.map((c, idx) => (
+                <div
+                  key={`${c.id}-${idx}`}
+                  className="space-y-1 rounded-lg border border-border/50 px-2 py-1"
+                >
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span className="truncate">{c.id}</span>
+                    <span>score {c.score}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>ratio {c.ratio}</span>
+                    <span>top {c.topDelta}px</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">center {c.centerY}px</div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mt-3 text-[10px] text-muted-foreground">Toggle: Ctrl/Cmd + Shift + `</div>
+        </div>
+      ) : null}
+
+      <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("pathNode.regen.dialog.title")}</DialogTitle>
 	            <DialogDescription>
 	              {t("pathNode.regen.dialog.description")}
 	            </DialogDescription>

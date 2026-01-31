@@ -170,32 +170,36 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
         const md = safeString(b?.content_md);
         const items = asArray(b?.items).map((x) => safeString(x)).filter(Boolean);
         const assetRefs = asArray(b?.asset_refs).map((x) => safeString(x)).filter(Boolean);
+        const blockId = safeString((b as { id?: unknown })?.id) || String(i);
+
+        const wrap = (content: React.ReactNode) => (
+          <div
+            key={blockId}
+            data-doc-block-id={blockId}
+            data-doc-block-index={i}
+            data-doc-block-type={kind || "unknown"}
+          >
+            {content}
+          </div>
+        );
+
+        let content: React.ReactNode | null = null;
 
         if (kind === "divider") {
-          return <Separator key={i} className="my-6" />;
-        }
-
-        if (kind === "heading") {
-          return (
-            <h2 key={i} className="text-balance text-xl font-semibold tracking-tight text-foreground">
-              {md}
-            </h2>
-          );
-        }
-
-        if (kind === "paragraph") {
-          return (
-            <div key={i} dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
+          content = <Separator className="my-6" />;
+        } else if (kind === "heading") {
+          content = <h2 className="text-balance text-xl font-semibold tracking-tight text-foreground">{md}</h2>;
+        } else if (kind === "paragraph") {
+          content = (
+            <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()}>
                 {md}
               </ReactMarkdown>
             </div>
           );
-        }
-
-        if (kind === "callout") {
-          return (
-            <div key={i} className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+        } else if (kind === "callout") {
+          content = (
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
               <div dir="auto" className="text-[15px] leading-relaxed text-foreground/90">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()}>
                   {md}
@@ -203,11 +207,9 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
               </div>
             </div>
           );
-        }
-
-        if (kind === "bullets") {
-          return (
-            <ul key={i} className="list-disc ps-5 space-y-2">
+        } else if (kind === "bullets") {
+          content = (
+            <ul className="list-disc ps-5 space-y-2">
               {items.map((it, idx) => (
                 <li key={idx} className="text-[15px] leading-relaxed text-foreground/90">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents({ compact: true })}>
@@ -217,11 +219,9 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
               ))}
             </ul>
           );
-        }
-
-        if (kind === "steps") {
-          return (
-            <ol key={i} className="list-decimal ps-5 space-y-2">
+        } else if (kind === "steps") {
+          content = (
+            <ol className="list-decimal ps-5 space-y-2">
               {items.map((it, idx) => (
                 <li key={idx} className="text-[15px] leading-relaxed text-foreground/90">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents({ compact: true })}>
@@ -231,29 +231,18 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
               ))}
             </ol>
           );
-        }
-
-        if (kind === "image") {
+        } else if (kind === "image") {
           const url = assetRefs[0] || "";
           if (!url) return null;
-          return (
-            <div key={i}>
-              <ImageLightbox
-                src={url}
-                alt={md || "Content image"}
-                caption={md}
-                frameClassName="bg-muted/20"
-              />
-            </div>
+          content = (
+            <ImageLightbox src={url} alt={md || "Content image"} caption={md} frameClassName="bg-muted/20" />
           );
-        }
-
-        if (kind === "video_embed" || kind === "video") {
+        } else if (kind === "video_embed" || kind === "video") {
           const url = assetRefs[0] || safeString(b?.url).trim();
           if (!url) return null;
           const yt = toYouTubeEmbedURL(url);
-          return (
-            <div key={i} className="space-y-2">
+          content = (
+            <div className="space-y-2">
               {yt ? (
                 <div className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20">
                   <div className="aspect-video w-full">
@@ -281,33 +270,18 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
               {md ? <div className="text-xs text-muted-foreground">{md}</div> : null}
             </div>
           );
-        }
-
-        if (kind === "diagram") {
+        } else if (kind === "diagram") {
           const ref = assetRefs[0] || "";
           if (ref && isProbablyImageURL(ref)) {
-            return (
-              <div key={i}>
-                <ImageLightbox
-                  src={ref}
-                  alt={md || "Diagram"}
-                  caption={md}
-                  frameClassName="bg-muted/20"
-                />
-              </div>
+            content = (
+              <ImageLightbox src={ref} alt={md || "Diagram"} caption={md} frameClassName="bg-muted/20" />
             );
+          } else {
+            content = <MermaidDiagram source={md} frameClassName="bg-muted/20" />;
           }
-          return (
-            <div key={i}>
-              <MermaidDiagram source={md} frameClassName="bg-muted/20" />
-            </div>
-          );
-        }
-
-        // Unknown block kind: best-effort render markdown.
-        if (md) {
-          return (
-            <div key={i} className="text-[15px] leading-relaxed text-foreground/90">
+        } else if (md) {
+          content = (
+            <div className="text-[15px] leading-relaxed text-foreground/90">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()}>
                 {md}
               </ReactMarkdown>
@@ -315,7 +289,8 @@ export function NodeContentRenderer({ contentJson }: NodeContentRendererProps) {
           );
         }
 
-        return null;
+        if (!content) return null;
+        return wrap(content);
       })}
     </div>
   );
