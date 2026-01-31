@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { X, ExternalLink } from "lucide-react";
 import { AnimatePresence, m } from "framer-motion";
@@ -21,36 +21,76 @@ export function ChatDockPanel() {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const minWidth = 340;
   const maxWidth = 760;
+  const widthRef = useRef(width);
 
-  const chatScale = useMemo(() => {
-    if (isMobile) return 0.94;
-    const t = Math.min(1, Math.max(0, (width - minWidth) / (maxWidth - minWidth)));
-    return 0.84 + t * 0.14;
-  }, [isMobile, width]);
-
-  const userMaxWidth = useMemo(() => {
-    if (isMobile) return "92%";
-    const t = Math.min(1, Math.max(0, (width - minWidth) / (maxWidth - minWidth)));
-    const pct = 94 - t * 20;
-    return `${Math.round(pct)}%`;
-  }, [isMobile, width]);
-
-  const chatVars = useMemo(
-    () =>
-      ({
-        "--chat-scale": chatScale,
-        "--chat-user-size": `${15 * chatScale}px`,
-        "--chat-user-size-sm": `${16 * chatScale}px`,
-        "--chat-body-size": `${16 * chatScale}px`,
-        "--chat-body-size-sm": `${17 * chatScale}px`,
-        "--chat-bubble-px": `${18 * chatScale}px`,
-        "--chat-bubble-px-sm": `${22 * chatScale}px`,
-        "--chat-bubble-py": `${11 * chatScale}px`,
-        "--chat-bubble-py-sm": `${12 * chatScale}px`,
-        "--chat-user-max": userMaxWidth,
-      }) as React.CSSProperties,
-    [chatScale, userMaxWidth]
+  const computeScale = useCallback(
+    (w: number) => {
+      if (isMobile) return 0.94;
+      const t = Math.min(1, Math.max(0, (w - minWidth) / (maxWidth - minWidth)));
+      return 0.84 + t * 0.14;
+    },
+    [isMobile, minWidth, maxWidth]
   );
+
+  const computeUserMax = useCallback(
+    (w: number) => {
+      if (isMobile) return "92%";
+      const t = Math.min(1, Math.max(0, (w - minWidth) / (maxWidth - minWidth)));
+      const pct = 94 - t * 20;
+      return `${Math.round(pct)}%`;
+    },
+    [isMobile, minWidth, maxWidth]
+  );
+
+  const makeVars = useCallback(
+    (w: number) => {
+      const scale = computeScale(w);
+      const userMaxWidth = computeUserMax(w);
+      return {
+        "--chat-scale": scale,
+        "--chat-user-size": `${15 * scale}px`,
+        "--chat-user-size-sm": `${16 * scale}px`,
+        "--chat-body-size": `${16 * scale}px`,
+        "--chat-body-size-sm": `${17 * scale}px`,
+        "--chat-bubble-px": `${18 * scale}px`,
+        "--chat-bubble-px-sm": `${22 * scale}px`,
+        "--chat-bubble-py": `${11 * scale}px`,
+        "--chat-bubble-py-sm": `${12 * scale}px`,
+        "--chat-user-max": userMaxWidth,
+      } as React.CSSProperties;
+    },
+    [computeScale, computeUserMax]
+  );
+
+  const chatVars = useMemo(() => makeVars(width), [makeVars, width]);
+
+  const applyDockVars = useCallback(
+    (w: number) => {
+      const el = panelRef.current;
+      if (!el) return;
+      const vars = makeVars(w);
+      if (isMobile) {
+        el.style.removeProperty("width");
+      } else {
+        el.style.width = `${w}px`;
+      }
+      Object.entries(vars).forEach(([key, value]) => {
+        if (typeof value === "number") {
+          el.style.setProperty(key, String(value));
+          return;
+        }
+        el.style.setProperty(key, value);
+      });
+    },
+    [isMobile, makeVars]
+  );
+
+  useEffect(() => {
+    widthRef.current = width;
+    if (panelRef.current && !isResizing.current) {
+      applyDockVars(width);
+    }
+  }, [applyDockVars, width]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -59,13 +99,14 @@ export function ChatDockPanel() {
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       const startX = e.clientX;
-      const startWidth = width;
+      const startWidth = widthRef.current;
 
       const handleMouseMove = (ev: MouseEvent) => {
         if (!isResizing.current) return;
         const delta = startX - ev.clientX;
         const next = Math.min(maxWidth, Math.max(minWidth, startWidth + delta));
-        setWidth(next);
+        widthRef.current = next;
+        applyDockVars(next);
       };
 
       const handleMouseUp = () => {
@@ -74,12 +115,13 @@ export function ChatDockPanel() {
         document.body.style.userSelect = "";
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleMouseUp);
+        setWidth(widthRef.current);
       };
 
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     },
-    [width, setWidth]
+    [applyDockVars, setWidth]
   );
 
   const handleWheelCapture = useCallback(
