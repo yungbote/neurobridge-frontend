@@ -734,7 +734,13 @@ export function NodeDocRenderer({
 
       if (type === "divider") {
         return (
-          <div key={blockId} className={cn(blockSpacing)}>
+          <div
+            key={blockId}
+            data-doc-block-id={blockId}
+            data-doc-block-index={i}
+            data-doc-block-type={type}
+            className={cn(blockSpacing)}
+          >
             <Separator className="my-6" />
           </div>
         );
@@ -797,7 +803,13 @@ export function NodeDocRenderer({
       ) : null;
 
       const wrap = (content: React.ReactNode) => (
-        <div key={blockId} className={cn("group relative", blockSpacing)}>
+        <div
+          key={blockId}
+          data-doc-block-id={blockId}
+          data-doc-block-index={i}
+          data-doc-block-type={type}
+          className={cn("group relative", blockSpacing)}
+        >
           {actionBar}
           {isPending ? (
             <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">

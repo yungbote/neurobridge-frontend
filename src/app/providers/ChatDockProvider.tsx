@@ -1,4 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useUser } from "@/app/providers/UserProvider";
+import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
+import type { SessionStatePatch } from "@/shared/api/SessionService";
+import { useWindowPathname } from "@/shared/hooks/useWindowPathname";
 
 export interface ChatDockContextPayload {
   nodeId?: string | null;
@@ -29,6 +33,8 @@ const DOCK_MAX_WIDTH = 760;
 const DOCK_DEFAULT_WIDTH = 420;
 
 export function ChatDockProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useUser();
+  const pathname = useWindowPathname();
   const [open, setOpen] = useState(() => {
     try {
       const v = window.localStorage.getItem(OPEN_KEY);
@@ -131,6 +137,18 @@ export function ChatDockProvider({ children }: { children: React.ReactNode }) {
     }),
     [open, width, activeThreadId, activeContext, openThread, close]
   );
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const inChatRoute = String(pathname || "").startsWith("/chat");
+    const patch: SessionStatePatch = {};
+    if (open && activeThreadId) {
+      patch.active_chat_thread_id = activeThreadId;
+    } else if (!open && !inChatRoute) {
+      patch.active_chat_thread_id = null;
+    }
+    queueSessionPatch(patch, { chat_dock_open: open });
+  }, [activeThreadId, open, pathname, user?.id]);
 
   return <ChatDockContext.Provider value={value}>{children}</ChatDockContext.Provider>;
 }

@@ -14,6 +14,7 @@ import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 
 import { createChatThread, sendChatMessage } from "@/shared/api/ChatService";
 import { queueEvent } from "@/shared/services/EventQueue";
+import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
 import { getConceptGraph } from "@/shared/api/PathService";
 import {
   enqueuePathNodeDocPatch,
@@ -51,6 +52,11 @@ type DocBlock = {
 };
 
 type BlockFeedback = "" | "like" | "dislike";
+
+const VISIBLE_RATIO_MIN = 0.1;
+const CURRENT_RATIO_MIN = 0.25;
+const MAX_VISIBLE_BLOCKS = 20;
+const SESSION_SYNC_INTERVAL_MS = 900;
 
 export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
@@ -566,8 +572,15 @@ export default function PathNodePage() {
 
   const openedAtRef = useRef<number>(Date.now());
   const maxScrollPercentRef = useRef<number>(0);
+  const currentScrollPercentRef = useRef<number>(0);
+  const visibleBlocksRef = useRef<Map<string, number>>(new Map());
+  const sessionSyncTimerRef = useRef<number | null>(null);
+  const lastSessionSyncAtRef = useRef<number>(0);
+  const lastSessionPayloadRef = useRef<string>("");
   const nodeConceptIdsRef = useRef<string[]>([]);
+  const nodeIdRef = useRef<string>("");
   const pathIdRef = useRef<string>("");
+  const docContainerRef = useRef<HTMLDivElement | null>(null);
 
   const feedbackStorageKey = useMemo(() => {
     if (!nodeId) return "";
@@ -633,6 +646,10 @@ export default function PathNodePage() {
     pathIdRef.current = pathId;
   }, [pathId]);
 
+  useEffect(() => {
+    nodeIdRef.current = nodeId ? String(nodeId) : "";
+  }, [nodeId]);
+
   const conceptGraphQuery = useQuery({
     queryKey: queryKeys.conceptGraph(pathId || "unknown"),
     enabled: Boolean(pathId),
@@ -673,11 +690,85 @@ export default function PathNodePage() {
     nodeConceptIdsRef.current = nodeConceptIds;
   }, [nodeConceptIds]);
 
+  const buildVisibleSnapshot = useCallback(() => {
+    const entries: Array<{ id: string; ratio: number }> = [];
+    visibleBlocksRef.current.forEach((ratio, id) => {
+      if (ratio < VISIBLE_RATIO_MIN) return;
+      const rounded = Math.round(ratio * 1000) / 1000;
+      entries.push({ id, ratio: rounded });
+    });
+    entries.sort((a, b) => b.ratio - a.ratio);
+    const visible = entries.slice(0, MAX_VISIBLE_BLOCKS);
+    const top = visible[0];
+    const second = visible[1];
+    if (!top || top.ratio < CURRENT_RATIO_MIN) {
+      return { visible, current: null };
+    }
+    const dominance = second
+      ? Math.max(0, Math.min(1, (top.ratio - second.ratio) / Math.max(top.ratio, 0.15)))
+      : 1;
+    const confidence = Math.min(1, Math.max(0, 0.6 * top.ratio + 0.4 * dominance));
+    return {
+      visible,
+      current: {
+        id: top.id,
+        confidence: Math.round(confidence * 1000) / 1000,
+      },
+    };
+  }, []);
+
+  const flushSessionSync = useCallback(
+    (opts?: { clear?: boolean; immediate?: boolean }) => {
+      if (!user?.id) return;
+      const clear = Boolean(opts?.clear);
+      const snapshot = clear ? { visible: [], current: null } : buildVisibleSnapshot();
+      const scroll = clear ? null : currentScrollPercentRef.current;
+      const metadata = {
+        visible_blocks: snapshot.visible,
+        current_block: snapshot.current,
+        visible_block_count: snapshot.visible.length,
+        viewport: {
+          w: typeof window !== "undefined" ? window.innerWidth : 0,
+          h: typeof window !== "undefined" ? window.innerHeight : 0,
+        },
+      };
+      const signature = JSON.stringify({
+        active_doc_block_id: clear ? null : snapshot.current?.id ?? null,
+        scroll_percent: clear ? null : scroll,
+        metadata,
+      });
+      if (!clear && signature === lastSessionPayloadRef.current) return;
+      lastSessionPayloadRef.current = signature;
+      lastSessionSyncAtRef.current = Date.now();
+      queueSessionPatch(
+        {
+          active_doc_block_id: clear ? null : snapshot.current?.id ?? null,
+          scroll_percent: clear ? null : scroll,
+        },
+        metadata,
+        { immediate: Boolean(opts?.immediate) }
+      );
+    },
+    [buildVisibleSnapshot, user?.id]
+  );
+
+  const scheduleSessionSync = useCallback(() => {
+    if (sessionSyncTimerRef.current != null) return;
+    const now = Date.now();
+    const elapsed = now - lastSessionSyncAtRef.current;
+    const delay = Math.max(0, SESSION_SYNC_INTERVAL_MS - elapsed);
+    sessionSyncTimerRef.current = window.setTimeout(() => {
+      sessionSyncTimerRef.current = null;
+      flushSessionSync();
+    }, delay);
+  }, [flushSessionSync]);
+
   // Record exposure as aggregated scroll depth + dwell time (production-safe: one event per node view).
   useEffect(() => {
     if (!nodeId) return;
     openedAtRef.current = Date.now();
     maxScrollPercentRef.current = 0;
+    currentScrollPercentRef.current = 0;
 
     const onScroll = () => {
       const docEl = document.documentElement;
@@ -687,6 +778,8 @@ export default function PathNodePage() {
       const denom = Math.max(1, scrollHeight - clientHeight);
       const pct = Math.max(0, Math.min(100, Math.round((scrollTop / denom) * 100)));
       if (pct > maxScrollPercentRef.current) maxScrollPercentRef.current = pct;
+      currentScrollPercentRef.current = pct;
+      scheduleSessionSync();
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -710,6 +803,59 @@ export default function PathNodePage() {
       });
     };
   }, [nodeId]);
+
+  useEffect(() => {
+    if (!nodeId || !doc) return;
+    let observer: IntersectionObserver | null = null;
+    let raf = 0;
+    visibleBlocksRef.current.clear();
+    lastSessionPayloadRef.current = "";
+
+    const init = () => {
+      const container = docContainerRef.current ?? document;
+      const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-doc-block-id]"));
+      if (elements.length === 0) return;
+      const thresholds = [0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1];
+      observer = new IntersectionObserver(
+        (entries) => {
+          let changed = false;
+          for (const entry of entries) {
+            const target = entry.target as HTMLElement;
+            const id = String(target.dataset.docBlockId || "").trim();
+            if (!id) continue;
+            const ratio = Math.max(0, Math.min(1, entry.intersectionRatio || 0));
+            if (ratio < VISIBLE_RATIO_MIN) {
+              if (visibleBlocksRef.current.has(id)) {
+                visibleBlocksRef.current.delete(id);
+                changed = true;
+              }
+              continue;
+            }
+            const prev = visibleBlocksRef.current.get(id) ?? 0;
+            visibleBlocksRef.current.set(id, ratio);
+            if (Math.abs(prev - ratio) >= 0.02) changed = true;
+          }
+          if (changed) scheduleSessionSync();
+        },
+        { root: null, threshold: thresholds }
+      );
+      elements.forEach((el) => observer?.observe(el));
+      scheduleSessionSync();
+    };
+
+    raf = window.requestAnimationFrame(init);
+
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      if (observer) observer.disconnect();
+      if (sessionSyncTimerRef.current != null) {
+        clearTimeout(sessionSyncTimerRef.current);
+        sessionSyncTimerRef.current = null;
+      }
+      visibleBlocksRef.current.clear();
+      flushSessionSync({ clear: true, immediate: true });
+    };
+  }, [doc, nodeId, scheduleSessionSync, flushSessionSync]);
 
   const conceptLabels = useMemo(() => {
     return conceptKeys.map((k) => conceptNameByKey.get(k) ?? humanizeConceptKey(k));
@@ -1196,7 +1342,10 @@ export default function PathNodePage() {
               <div className="absolute -bottom-32 left-0 h-64 w-64 rounded-full bg-accent/6 blur-2xl" />
               <div className="absolute inset-0 bg-gradient-to-br from-muted/25 via-transparent to-transparent opacity-60" />
             </div>
-            <div className="relative z-10 px-4 py-5 xs:px-5 xs:py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
+            <div
+              ref={docContainerRef}
+              className="relative z-10 px-4 py-5 xs:px-5 xs:py-6 sm:px-6 sm:py-8 md:px-8 md:py-10"
+            >
               {doc ? (
                 <NodeDocRenderer
                   doc={doc}

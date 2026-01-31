@@ -23,6 +23,7 @@ import { useSSEContext } from "@/app/providers/SSEProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
 import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { cn } from "@/shared/lib/utils";
@@ -553,6 +554,16 @@ export default function ChatThreadPage({ embedded = false, threadId: threadIdPro
       cancelled = true;
     };
   }, [threadId]);
+
+  useEffect(() => {
+    if (embedded) return;
+    if (!threadId) return;
+    if (!user?.id) return;
+    queueSessionPatch({ active_chat_thread_id: threadId }, null, { immediate: true });
+    return () => {
+      queueSessionPatch({ active_chat_thread_id: null }, null, { immediate: true });
+    };
+  }, [embedded, threadId, user?.id]);
 
   const blockNodeId = useMemo(() => {
     const v = String(blockContext?.nodeId || "").trim();

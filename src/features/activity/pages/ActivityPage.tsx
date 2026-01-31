@@ -9,6 +9,7 @@ import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 
 import { getActivity } from "@/shared/api/ActivityService";
 import { queueEvent } from "@/shared/services/EventQueue";
+import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
 import { listActivitiesForNode } from "@/shared/api/PathNodeService";
 import { Container } from "@/shared/layout/Container";
 import { usePaths } from "@/app/providers/PathProvider";
@@ -211,6 +212,15 @@ export default function ActivityPage() {
   useEffect(() => {
     if (path?.id) setActivePath(path);
   }, [path, setActivePath]);
+
+  useEffect(() => {
+    const id = activity?.id ? String(activity.id) : "";
+    if (!id) return;
+    queueSessionPatch({ active_activity_id: id }, null, { immediate: true });
+    return () => {
+      queueSessionPatch({ active_activity_id: null }, null, { immediate: true });
+    };
+  }, [activity?.id]);
 
   const { prevActivity, nextActivity } = useMemo(() => {
     if (!activity) return { prevActivity: null, nextActivity: null };

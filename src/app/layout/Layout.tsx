@@ -1,4 +1,4 @@
-import { useLayoutEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { matchPath, useLocation } from "react-router-dom";
 import { SidebarProvider, SwipeEdgeZone } from "@/shared/ui/sidebar";
 import { AppSideBar } from "@/app/navigation/AppSideBar";
@@ -14,6 +14,7 @@ import { IntakeNotifications } from "@/app/components/IntakeNotifications";
 import { ChatDockPanel } from "@/features/chat/components/ChatDockPanel";
 import { useChatDock } from "@/app/providers/ChatDockProvider";
 import { useUp } from "@/app/providers/ViewportProvider";
+import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
 
 interface LayoutProps {
   children: ReactNode;
@@ -33,6 +34,19 @@ export default function Layout({ children }: LayoutProps) {
   const hideBreadcrumbs =
     location.pathname === "/" || location.pathname.startsWith("/chat") || isPathContext || Boolean(activePathId);
   const hideChatDock = location.pathname.startsWith("/chat");
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const pathname = String(location.pathname || "/");
+    let view = "app";
+    if (pathname === "/") view = "home";
+    else if (pathname.startsWith("/path-nodes/")) view = "lesson";
+    else if (pathname.startsWith("/activities/")) view = "activity";
+    else if (pathname.startsWith("/paths/")) view = "path";
+    else if (pathname.startsWith("/chat")) view = "chat";
+    else if (pathname.startsWith("/library") || pathname.startsWith("/materials")) view = "library";
+    queueSessionPatch({ active_route: pathname, active_view: view }, null, { immediate: true });
+  }, [isAuthenticated, location.pathname]);
 
   useLayoutEffect(() => {
     if (!isAuthenticated) return;
