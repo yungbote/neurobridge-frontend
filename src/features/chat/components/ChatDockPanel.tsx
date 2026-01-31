@@ -23,9 +23,16 @@ export function ChatDockPanel() {
   const maxWidth = 760;
 
   const chatScale = useMemo(() => {
-    if (isMobile) return 0.95;
+    if (isMobile) return 0.94;
     const t = Math.min(1, Math.max(0, (width - minWidth) / (maxWidth - minWidth)));
-    return 0.92 + t * 0.08;
+    return 0.84 + t * 0.14;
+  }, [isMobile, width]);
+
+  const userMaxWidth = useMemo(() => {
+    if (isMobile) return "92%";
+    const t = Math.min(1, Math.max(0, (width - minWidth) / (maxWidth - minWidth)));
+    const pct = 94 - t * 20;
+    return `${Math.round(pct)}%`;
   }, [isMobile, width]);
 
   const chatVars = useMemo(
@@ -36,12 +43,13 @@ export function ChatDockPanel() {
         "--chat-user-size-sm": `${16 * chatScale}px`,
         "--chat-body-size": `${16 * chatScale}px`,
         "--chat-body-size-sm": `${17 * chatScale}px`,
-        "--chat-bubble-px": `${20 * chatScale}px`,
-        "--chat-bubble-px-sm": `${24 * chatScale}px`,
-        "--chat-bubble-py": `${12 * chatScale}px`,
-        "--chat-bubble-py-sm": `${13 * chatScale}px`,
+        "--chat-bubble-px": `${18 * chatScale}px`,
+        "--chat-bubble-px-sm": `${22 * chatScale}px`,
+        "--chat-bubble-py": `${11 * chatScale}px`,
+        "--chat-bubble-py-sm": `${12 * chatScale}px`,
+        "--chat-user-max": userMaxWidth,
       }) as React.CSSProperties,
-    [chatScale]
+    [chatScale, userMaxWidth]
   );
 
   const handleMouseDown = useCallback(

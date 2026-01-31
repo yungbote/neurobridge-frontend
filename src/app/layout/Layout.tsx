@@ -13,6 +13,7 @@ import { ActivityPanel } from "@/features/activity/components/ActivityPanel";
 import { IntakeNotifications } from "@/app/components/IntakeNotifications";
 import { ChatDockPanel } from "@/features/chat/components/ChatDockPanel";
 import { useChatDock } from "@/app/providers/ChatDockProvider";
+import { useUp } from "@/app/providers/ViewportProvider";
 
 interface LayoutProps {
   children: ReactNode;
@@ -22,6 +23,7 @@ export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated } = useAuth();
   const { activePathId } = usePaths();
   const { open: chatDockOpen } = useChatDock();
+  const up3xl = useUp("3xl");
   const location = useLocation();
   const isPathContext = Boolean(
     matchPath({ path: "/paths/:id", end: false }, location.pathname) ||
@@ -43,8 +45,10 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, [isAuthenticated, isPathContext, location.key]);
 
+  const forceSidebarSheet = chatDockOpen && !up3xl;
+
   return (
-    <SidebarProvider forceSheet={chatDockOpen}>
+    <SidebarProvider forceSheet={forceSidebarSheet}>
       <UserDialogsProvider>
         {/* TODO: Activity Panel should only be visible on the associated chat page */}
         <ActivityPanelProvider>

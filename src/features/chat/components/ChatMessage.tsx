@@ -1106,7 +1106,7 @@ const ChatMessage: ChatMessageComponent = ({
           className={cn(
             "border border-border/60 bg-muted/70 text-foreground shadow-sm backdrop-blur-sm",
             "rounded-3xl px-[var(--chat-bubble-px,20px)] sm:px-[var(--chat-bubble-px-sm,24px)] py-[var(--chat-bubble-py,12px)] sm:py-[var(--chat-bubble-py-sm,13px)]",
-            "w-full sm:max-w-[92%] md:max-w-[86%] lg:max-w-[78%]",
+            "w-full max-w-[var(--chat-user-max,92%)]",
             "min-h-[48px] min-w-0",
           )}
         >

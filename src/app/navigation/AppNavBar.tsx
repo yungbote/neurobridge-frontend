@@ -10,6 +10,7 @@ import {
   Ellipsis,
   FolderOpen,
   Headphones,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -31,6 +32,7 @@ import { useAuth } from "@/app/providers/AuthProvider";
 import { useUser } from "@/app/providers/UserProvider";
 import { usePaths } from "@/app/providers/PathProvider";
 import { useHomeChatbarDock } from "@/app/providers/HomeChatbarDockProvider";
+import { useChatDock } from "@/app/providers/ChatDockProvider";
 import { Container } from "@/shared/layout/Container";
 import { useSidebar } from "@/shared/ui/sidebar";
 import { cn } from "@/shared/lib/utils";
@@ -55,6 +57,7 @@ export function AppNavBar() {
   const { user, loading: userLoading } = useUser();
   const { activePathId, clearActivePath } = usePaths();
   const { docked: homeChatbarDocked } = useHomeChatbarDock();
+  const { open: chatDockOpen, setOpen: setChatDockOpen } = useChatDock();
   const { t } = useI18n();
   const [authDialog, setAuthDialog] = useState<"login" | "signup" | null>(null);
   const { state, useSheet } = useSidebar();
@@ -119,6 +122,7 @@ export function AppNavBar() {
 
   const showPathTabs = isAuthenticated && isPathContext && (activePathId || pathIdFromRoute);
   const isHome = location.pathname === "/";
+  const showChatDockToggle = isAuthenticated && !location.pathname.startsWith("/chat");
   const showHomeChatbarDock = isAuthenticated && isHome && homeChatbarDocked && !showPathTabs;
 
   const handlePathTabClick = (tabId: PathNavTabId) => {
@@ -298,7 +302,25 @@ export function AppNavBar() {
         )}
 
         {isAuthenticated && !userLoading && user && (
-          <div className="ms-auto">
+          <div className="ms-auto flex items-center gap-2">
+            {showChatDockToggle ? (
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon"
+                label={chatDockOpen ? t("chat.panel.close") : t("chat.panel.open")}
+                aria-pressed={chatDockOpen}
+                onClick={() => setChatDockOpen(!chatDockOpen)}
+                className={cn(
+                  "rounded-md transition-colors",
+                  chatDockOpen
+                    ? "bg-muted/70 text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                <MessageSquare className="size-5" />
+              </IconButton>
+            ) : null}
             <IconButton
               type="button"
               variant="ghost"
