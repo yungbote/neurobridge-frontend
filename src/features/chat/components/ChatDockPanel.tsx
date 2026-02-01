@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { X, ExternalLink } from "lucide-react";
-import { AnimatePresence, m } from "framer-motion";
+import { AnimatePresence, animate, m, useMotionValue, useTransform } from "framer-motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/sheet";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/app/providers/ViewportProvider";
 import { useChatDock } from "@/app/providers/ChatDockProvider";
-import { nbPanelRight, nbTransitions } from "@/shared/motion/presets";
+import { nbTransitions } from "@/shared/motion/presets";
 import { useI18n } from "@/app/providers/I18nProvider";
 import ChatThreadPage from "@/features/chat/pages/ChatThreadPage";
 
@@ -22,6 +22,9 @@ export function ChatDockPanel() {
   const minWidth = 340;
   const maxWidth = 760;
   const widthRef = useRef(width);
+  const widthMotion = useMotionValue(width);
+  const widthAnimRef = useRef<ReturnType<typeof animate> | null>(null);
+  const wasOpenRef = useRef(open);
 
   const computeScale = useCallback(
     (w: number) => {
@@ -64,49 +67,63 @@ export function ChatDockPanel() {
 
   const chatVars = useMemo(() => makeVars(width), [makeVars, width]);
 
-  const applyDockVars = useCallback(
-    (w: number) => {
-      const el = panelRef.current;
-      if (!el) return;
-      const vars = makeVars(w);
-      if (isMobile) {
-        el.style.removeProperty("width");
-      } else {
-        el.style.width = `${w}px`;
-      }
-      Object.entries(vars).forEach(([key, value]) => {
-        if (typeof value === "number") {
-          el.style.setProperty(key, String(value));
-          return;
-        }
-        el.style.setProperty(key, value);
-      });
-    },
-    [isMobile, makeVars]
-  );
+  const scaleMotion = useTransform(widthMotion, (w) => computeScale(w));
+  const userMaxMotion = useTransform(widthMotion, (w) => computeUserMax(w));
+  const userSizeMotion = useTransform(scaleMotion, (s) => `${15 * s}px`);
+  const userSizeSmMotion = useTransform(scaleMotion, (s) => `${16 * s}px`);
+  const bodySizeMotion = useTransform(scaleMotion, (s) => `${16 * s}px`);
+  const bodySizeSmMotion = useTransform(scaleMotion, (s) => `${17 * s}px`);
+  const bubblePxMotion = useTransform(scaleMotion, (s) => `${18 * s}px`);
+  const bubblePxSmMotion = useTransform(scaleMotion, (s) => `${22 * s}px`);
+  const bubblePyMotion = useTransform(scaleMotion, (s) => `${11 * s}px`);
+  const bubblePySmMotion = useTransform(scaleMotion, (s) => `${12 * s}px`);
 
   useEffect(() => {
     widthRef.current = width;
-    if (panelRef.current && !isResizing.current) {
-      applyDockVars(width);
+    if (!isResizing.current) {
+      widthMotion.set(width);
     }
-  }, [applyDockVars, width]);
+  }, [width, widthMotion]);
+
+  useEffect(() => {
+    if (!open) {
+      wasOpenRef.current = false;
+      widthAnimRef.current?.stop();
+      widthAnimRef.current = animate(widthMotion, 0, {
+        ...nbTransitions.panel,
+      });
+      return () => widthAnimRef.current?.stop();
+    }
+
+    if (!wasOpenRef.current) {
+      widthMotion.set(0);
+      wasOpenRef.current = true;
+    }
+
+    widthAnimRef.current?.stop();
+    widthAnimRef.current = animate(widthMotion, width, {
+      ...nbTransitions.panel,
+    });
+
+    return () => widthAnimRef.current?.stop();
+  }, [open, width, widthMotion]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       isResizing.current = true;
+      widthAnimRef.current?.stop();
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       const startX = e.clientX;
-      const startWidth = widthRef.current;
+      const startWidth = widthMotion.get();
 
       const handleMouseMove = (ev: MouseEvent) => {
         if (!isResizing.current) return;
         const delta = startX - ev.clientX;
         const next = Math.min(maxWidth, Math.max(minWidth, startWidth + delta));
         widthRef.current = next;
-        applyDockVars(next);
+        widthMotion.set(next);
       };
 
       const handleMouseUp = () => {
@@ -121,7 +138,7 @@ export function ChatDockPanel() {
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     },
-    [applyDockVars, setWidth]
+    [setWidth, widthMotion]
   );
 
   const handleWheelCapture = useCallback(
@@ -237,13 +254,29 @@ export function ChatDockPanel() {
       {open ? (
         <m.div
           key="chat-dock"
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          variants={nbPanelRight}
-          transition={nbTransitions.panel}
-          style={{ width, ...chatVars }}
-          className="sticky top-0 h-svh shrink-0 border-l border-border bg-background/95 backdrop-blur flex flex-col relative"
+          initial={{ x: 24, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 24, opacity: 0 }}
+          transition={{
+            ...nbTransitions.panel,
+            opacity: { duration: 0.14 },
+          }}
+          style={
+            {
+              width: widthMotion,
+              "--chat-scale": scaleMotion,
+              "--chat-user-size": userSizeMotion,
+              "--chat-user-size-sm": userSizeSmMotion,
+              "--chat-body-size": bodySizeMotion,
+              "--chat-body-size-sm": bodySizeSmMotion,
+              "--chat-bubble-px": bubblePxMotion,
+              "--chat-bubble-px-sm": bubblePxSmMotion,
+              "--chat-bubble-py": bubblePyMotion,
+              "--chat-bubble-py-sm": bubblePySmMotion,
+              "--chat-user-max": userMaxMotion,
+            } as React.CSSProperties
+          }
+          className="sticky top-0 h-svh shrink-0 border-l border-border bg-background/95 backdrop-blur flex flex-col relative will-change-[width,transform,opacity]"
           ref={panelRef}
           onWheelCapture={handleWheelCapture}
         >
