@@ -746,7 +746,7 @@ export default function PathNodePage() {
       return (scrollRoot ?? document).querySelector<HTMLElement>(`[data-doc-block-id="${escaped}"]`);
     };
 
-    const entries: Array<{ id: string; ratio: number }> = [];
+    const entries: Array<{ id: string; ratio: number; top_delta: number }> = [];
     const elements = Array.from(
       (scrollRoot ?? document).querySelectorAll<HTMLElement>("[data-doc-block-id]")
     );
@@ -763,7 +763,7 @@ export default function PathNodePage() {
         const ratio = Math.max(0, Math.min(1, visibleHeight / height));
         if (ratio >= VISIBLE_RATIO_MIN) {
           const rounded = Math.round(ratio * 1000) / 1000;
-          entries.push({ id, ratio: rounded });
+          entries.push({ id, ratio: rounded, top_delta: rect.top - rootTop });
           visibleBlocksRef.current.set(id, ratio);
           blockMetricsRef.current.set(id, {
             ratio,
@@ -778,7 +778,7 @@ export default function PathNodePage() {
       visibleBlocksRef.current.forEach((ratio, id) => {
         if (ratio < VISIBLE_RATIO_MIN) return;
         const rounded = Math.round(ratio * 1000) / 1000;
-        entries.push({ id, ratio: rounded });
+        entries.push({ id, ratio: rounded, top_delta: 0 });
       });
     }
 
