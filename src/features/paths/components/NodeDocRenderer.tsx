@@ -16,6 +16,7 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { Textarea } from "@/shared/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
+import { normalizeProposalText, type NodeDocEditProposal } from "@/shared/lib/nodeDocEdit";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
 import { ImageLightbox } from "@/shared/components/ImageLightbox";
 import { MermaidDiagram } from "@/shared/components/MermaidDiagram";
@@ -52,6 +53,8 @@ interface DocBlock {
   qas?: unknown[];
   prompt_md?: string;
   answer_md?: string;
+  front_md?: string;
+  back_md?: string;
   [key: string]: unknown;
 }
 
@@ -69,6 +72,8 @@ interface NodeDocRendererProps {
   doc?: JsonInput;
   pathNodeId?: string;
   pendingBlocks?: Record<string, boolean | string>;
+  pendingEdit?: NodeDocEditProposal | null;
+  editBusy?: boolean;
   blockFeedback?: Record<string, string>;
   undoableBlocks?: Record<string, boolean>;
   onLike?: (block: DocBlock, index: number) => void;
@@ -76,6 +81,9 @@ interface NodeDocRendererProps {
   onRegenerate?: (block: DocBlock, index: number) => void;
   onChat?: (block: DocBlock, index: number) => void;
   onUndo?: (block: DocBlock, index: number) => void;
+  onEditConfirm?: (proposal: NodeDocEditProposal) => void;
+  onEditDeny?: (proposal: NodeDocEditProposal) => void;
+  onEditRefine?: (proposal: NodeDocEditProposal, text: string) => void;
 }
 
 function normalizeDoc(doc: JsonInput | undefined): DocShape | null {
@@ -211,6 +219,103 @@ function SectionShell({
         </div>
         <div className="relative z-10">{children}</div>
       </div>
+    </div>
+  );
+}
+
+function NodeDocEditInline({
+  proposal,
+  busy = false,
+  onConfirm,
+  onDeny,
+  onRefine,
+}: {
+  proposal: NodeDocEditProposal;
+  busy?: boolean;
+  onConfirm?: (proposal: NodeDocEditProposal) => void;
+  onDeny?: (proposal: NodeDocEditProposal) => void;
+  onRefine?: (proposal: NodeDocEditProposal, text: string) => void;
+}) {
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineText, setRefineText] = useState("");
+  const beforeText = normalizeProposalText(proposal?.before_block_text);
+  const afterText = normalizeProposalText(proposal?.after_block_text);
+  const blockType = normalizeProposalText(proposal?.block_type);
+  const action = normalizeProposalText(proposal?.action);
+
+  return (
+    <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium text-foreground">Proposed edit</div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {blockType ? <span className="rounded-full border border-border/60 px-2 py-0.5">{blockType}</span> : null}
+          {action ? <span className="rounded-full border border-border/60 px-2 py-0.5">{action}</span> : null}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Before</div>
+          <div className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-foreground/90">
+            {beforeText ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{beforeText}</ReactMarkdown>
+            ) : (
+              <div className="text-muted-foreground">No prior text captured.</div>
+            )}
+          </div>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-background/80 p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">After</div>
+          <div className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-foreground/90">
+            {afterText ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{afterText}</ReactMarkdown>
+            ) : (
+              <div className="text-muted-foreground">No proposed text.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => onConfirm?.(proposal)} disabled={busy}>
+          Apply
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setRefineOpen((v) => !v)} disabled={busy}>
+          Refine
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => onDeny?.(proposal)} disabled={busy}>
+          Discard
+        </Button>
+      </div>
+
+      {refineOpen ? (
+        <div className="mt-3 space-y-2">
+          <Textarea
+            value={refineText}
+            onChange={(e) => setRefineText(e.target.value)}
+            placeholder="Describe what to change in the draft..."
+            className="min-h-[88px]"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                const trimmed = refineText.trim();
+                if (!trimmed) return;
+                onRefine?.(proposal, trimmed);
+                setRefineText("");
+                setRefineOpen(false);
+              }}
+            >
+              Send refinement
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRefineOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -578,6 +683,39 @@ function QuickCheck({
   );
 }
 
+function Flashcard({ frontMd, backMd }: { frontMd?: string; backMd?: string }) {
+  const [showBack, setShowBack] = useState(false);
+  const front = safeString(frontMd).trim();
+  const back = safeString(backMd).trim();
+  const body = showBack ? back : front;
+  return (
+    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Flashcard</div>
+        <div className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground">
+          {showBack ? "Back" : "Front"}
+        </div>
+      </div>
+      <div className="mt-3 text-[16px] leading-7 text-foreground/90">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+          {body}
+        </ReactMarkdown>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => setShowBack((prev) => !prev)}
+          className="rounded-full"
+        >
+          {showBack ? "Show front" : "Show answer"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ActionButton({
   label,
   shortcut,
@@ -675,6 +813,17 @@ function BlockSkeleton({ type }: { type?: string }) {
       </div>
     );
   }
+  if (type === "flashcard") {
+    return (
+      <div className="space-y-3 rounded-xl border border-border bg-background p-4">
+        <Skeleton className={cn("h-3 w-20", pulse)} />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className={cn("h-3 w-full", pulse)} />
+        ))}
+        <Skeleton className={cn("h-8 w-24", pulse)} />
+      </div>
+    );
+  }
   return (
     <div className="space-y-2">
       {Array.from({ length: 3 }).map((_, i) => (
@@ -688,6 +837,8 @@ export function NodeDocRenderer({
   doc,
   pathNodeId,
   pendingBlocks = {},
+  pendingEdit = null,
+  editBusy = false,
   blockFeedback = {},
   undoableBlocks = {},
   onLike,
@@ -695,6 +846,9 @@ export function NodeDocRenderer({
   onRegenerate,
   onChat,
   onUndo,
+  onEditConfirm,
+  onEditDeny,
+  onEditRefine,
 }: NodeDocRendererProps) {
   const d = useMemo(() => normalizeDoc(doc), [doc]);
   const blocks = asArray<DocBlock>(d?.blocks);
@@ -726,6 +880,14 @@ export function NodeDocRenderer({
       const type = safeString(b?.type).toLowerCase();
       const blockId = safeString(b?.id) || String(i);
       const isPending = Boolean(pendingBlocks?.[blockId]);
+      const editBlockId = pendingEdit ? normalizeProposalText(pendingEdit.block_id) : "";
+      const editIndex =
+        pendingEdit && typeof pendingEdit.block_index === "number" ? pendingEdit.block_index : null;
+      const editProposal =
+        pendingEdit &&
+        ((editBlockId && editBlockId === blockId) || (editIndex !== null && editIndex === i))
+          ? pendingEdit
+          : null;
       const feedback = blockFeedback?.[blockId] || "";
       const undoAllowed = type !== "figure" && type !== "video";
       const canUndo = Boolean(undoableBlocks?.[blockId]) && undoAllowed;
@@ -811,6 +973,15 @@ export function NodeDocRenderer({
           className={cn("group relative", blockSpacing)}
         >
           {actionBar}
+          {editProposal ? (
+            <NodeDocEditInline
+              proposal={editProposal}
+              busy={editBusy}
+              onConfirm={onEditConfirm}
+              onDeny={onEditDeny}
+              onRefine={onEditRefine}
+            />
+          ) : null}
           {isPending ? (
             <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
               <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
@@ -1185,9 +1356,28 @@ export function NodeDocRenderer({
         );
       }
 
+      if (type === "flashcard") {
+        return wrap(<Flashcard frontMd={b?.front_md} backMd={b?.back_md} />);
+      }
+
       return null;
     },
-    [blockFeedback, onChat, onDislike, onLike, onRegenerate, onUndo, pathNodeId, pendingBlocks, undoableBlocks]
+    [
+      blockFeedback,
+      editBusy,
+      onChat,
+      onDislike,
+      onEditConfirm,
+      onEditDeny,
+      onEditRefine,
+      onLike,
+      onRegenerate,
+      onUndo,
+      pathNodeId,
+      pendingBlocks,
+      pendingEdit,
+      undoableBlocks,
+    ]
   );
 
   const renderSection = useCallback(

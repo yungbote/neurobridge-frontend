@@ -12,7 +12,7 @@ import { Textarea } from "@/shared/ui/textarea";
 import { cn } from "@/shared/lib/utils";
 import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 
-import { createChatThread, sendChatMessage } from "@/shared/api/ChatService";
+import { createChatThread, getChatThread, listChatMessages, sendChatMessage } from "@/shared/api/ChatService";
 import { queueEvent } from "@/shared/services/EventQueue";
 import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
 import { getConceptGraph } from "@/shared/api/PathService";
@@ -34,6 +34,14 @@ import { usePaths } from "@/app/providers/PathProvider";
 import { useChatDock } from "@/app/providers/ChatDockProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
+import {
+  asRecord,
+  messageKindFromMetadata,
+  normalizeProposalText,
+  parseNodeDocEditProposal,
+  stringFromMetadata,
+  type NodeDocEditProposal,
+} from "@/shared/lib/nodeDocEdit";
 import type { DrillPayloadV1 } from "@/shared/types/drillPayloadV1";
 import type { BackendJob } from "@/shared/types/backend";
 import type {
@@ -534,11 +542,11 @@ export default function PathNodePage() {
   const { id: nodeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
-  const { lastMessage, connected } = useSSEContext();
+  const { messages, connected } = useSSEContext();
   const { user } = useUser();
   const { activatePath } = usePaths();
   const { activateLesson } = useLessons();
-  const { openThread } = useChatDock();
+  const { openThread, activeThreadId } = useChatDock();
 
   const [loading, setLoading] = useState(false);
   const [node, setNode] = useState<PathNode | null>(null);
@@ -558,6 +566,11 @@ export default function PathNodePage() {
   const pendingJobsRef = useRef<Record<string, string>>({});
   const [blockFeedback, setBlockFeedback] = useState<Record<string, BlockFeedback>>({});
   const [undoableBlocks, setUndoableBlocks] = useState<Record<string, boolean>>({});
+  const [pendingEdit, setPendingEdit] = useState<NodeDocEditProposal | null>(null);
+  const [pendingEditBusy, setPendingEditBusy] = useState(false);
+  const pendingEditThreadIdRef = useRef<string | null>(null);
+  const pendingEditSeqRef = useRef<number>(0);
+  const pendingEditPollRef = useRef<number | null>(null);
 
   const [regenDialogOpen, setRegenDialogOpen] = useState(false);
   const [regenBlock, setRegenBlock] = useState<DocBlock | null>(null);
@@ -620,6 +633,30 @@ export default function PathNodePage() {
     }
     return null;
   }, []);
+
+  const scrollToBlockId = useCallback(
+    (blockId: string) => {
+      const id = String(blockId || "").trim();
+      if (!id) return;
+      const scrollRoot = resolveScrollContainer();
+      const escaped =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(id)
+          : id.replace(/\"/g, '\\\"');
+      const el = (scrollRoot ?? document).querySelector<HTMLElement>(`[data-doc-block-id="${escaped}"]`);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (scrollRoot && scrollRoot !== window) {
+        const rootRect = scrollRoot.getBoundingClientRect();
+        const top = rect.top - rootRect.top + (scrollRoot.scrollTop || 0) - 80;
+        scrollRoot.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      } else {
+        const top = rect.top + (window.scrollY || 0) - 120;
+        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      }
+    },
+    [resolveScrollContainer]
+  );
 
   const feedbackStorageKey = useMemo(() => {
     if (!nodeId) return "";
@@ -1207,12 +1244,147 @@ export default function PathNodePage() {
     [doc]
   );
 
+  const resolveBlockIdFromIndex = useCallback(
+    (index?: number | null) => {
+      if (typeof index !== "number" || !Number.isFinite(index) || index < 0) return "";
+      const parsedDoc = safeParseJSON(doc);
+      const blocks = Array.isArray((parsedDoc as { blocks?: unknown })?.blocks)
+        ? ((parsedDoc as { blocks: DocBlock[] }).blocks ?? [])
+        : [];
+      const candidate = blocks[index]?.id ?? "";
+      return String(candidate || "").trim();
+    },
+    [doc]
+  );
+
+  const clearPendingEdit = useCallback(() => {
+    setPendingEdit(null);
+    setPendingEditBusy(false);
+    pendingEditThreadIdRef.current = null;
+    pendingEditSeqRef.current = 0;
+    if (pendingEditPollRef.current) {
+      window.clearTimeout(pendingEditPollRef.current);
+      pendingEditPollRef.current = null;
+    }
+  }, []);
+
+  const applyPendingEdit = useCallback(
+    (proposal: NodeDocEditProposal | null, threadId?: string | null, seq?: number) => {
+      if (!proposal) return;
+      const proposalNodeId = normalizeProposalText(proposal.path_node_id);
+      if (!proposalNodeId || String(nodeId || "") !== proposalNodeId) return;
+      const incomingSeq = typeof seq === "number" && Number.isFinite(seq) ? seq : 0;
+      if (incomingSeq > 0 && incomingSeq <= pendingEditSeqRef.current) return;
+      pendingEditSeqRef.current = incomingSeq || pendingEditSeqRef.current;
+      const thread = String(threadId || "").trim();
+      if (thread) pendingEditThreadIdRef.current = thread;
+      setPendingEditBusy(false);
+      const blockId = normalizeProposalText(proposal.block_id);
+      const resolvedId = blockId || resolveBlockIdFromIndex(proposal.block_index ?? null);
+      const nextProposal =
+        resolvedId && resolvedId !== blockId ? { ...proposal, block_id: resolvedId } : proposal;
+      setPendingEdit(nextProposal);
+      if (resolvedId) {
+        window.setTimeout(() => {
+          scrollToBlockId(resolvedId);
+        }, 0);
+      }
+    },
+    [nodeId, resolveBlockIdFromIndex, scrollToBlockId]
+  );
+
+  const schedulePendingEditPoll = useCallback(
+    (threadId: string, attempt = 0) => {
+      if (!threadId) return;
+      if (pendingEditPollRef.current) {
+        window.clearTimeout(pendingEditPollRef.current);
+        pendingEditPollRef.current = null;
+      }
+      if (attempt > 6) {
+        setPendingEditBusy(false);
+        return;
+      }
+      const delay = attempt === 0 ? 600 : Math.min(3000, 600 + attempt * 500);
+      pendingEditPollRef.current = window.setTimeout(() => {
+        getChatThread(threadId, 30)
+          .then(({ thread }) => {
+            const meta = asRecord(thread?.metadata);
+            const pendingKind = meta ? String(meta.pending_waitpoint_kind || "") : "";
+            const pendingProposal = meta ? meta.pending_waitpoint_proposal : null;
+            if (pendingKind.toLowerCase() === "node_doc_edit" && pendingProposal) {
+              const proposal = parseNodeDocEditProposal({ proposal: pendingProposal });
+              if (proposal) {
+                applyPendingEdit(proposal, threadId, 0);
+                return;
+              }
+            }
+            if (pendingKind.toLowerCase() === "node_doc_edit") {
+              schedulePendingEditPoll(threadId, attempt + 1);
+            } else {
+              setPendingEditBusy(false);
+            }
+          })
+          .catch(() => {
+            schedulePendingEditPoll(threadId, attempt + 1);
+          });
+      }, delay);
+    },
+    [applyPendingEdit, asRecord, parseNodeDocEditProposal]
+  );
+
+  const handleChatMessageEvent = useCallback(
+    (event: string, data: unknown) => {
+      if (!data || typeof data !== "object") return;
+      const payload = data as { message?: unknown; thread_id?: unknown };
+      const msg = payload.message as { metadata?: unknown; seq?: unknown; thread_id?: unknown } | undefined;
+      if (!msg) return;
+      const kind = messageKindFromMetadata(msg.metadata);
+      const threadId = String(payload.thread_id ?? msg.thread_id ?? "").trim();
+
+      if (kind === "node_doc_edit") {
+        const proposal = parseNodeDocEditProposal(msg.metadata);
+        const seqNum = typeof msg.seq === "number" ? msg.seq : Number(msg.seq) || 0;
+        applyPendingEdit(proposal, threadId, seqNum);
+        return;
+      }
+      if (kind === "node_doc_edit_pending") {
+        if (threadId) {
+          pendingEditThreadIdRef.current = threadId;
+        }
+        setPendingEditBusy(true);
+        if (threadId) {
+          schedulePendingEditPoll(threadId, 0);
+        }
+        return;
+      }
+      if (kind === "waitpoint_confirm") {
+        const waitKind = stringFromMetadata(msg.metadata, ["waitpoint_kind"]);
+        if (waitKind === "node_doc_edit" && pendingEditThreadIdRef.current === threadId) {
+          clearPendingEdit();
+        }
+      }
+    },
+    [applyPendingEdit, clearPendingEdit, schedulePendingEditPoll]
+  );
+
   const handleJobUpdate = useCallback(
     (event: string, data: unknown) => {
       if (!data || typeof data !== "object") return;
       const payload = data as JobEventPayload;
       const job = payload.job as BackendJob | undefined;
       const jobType = String(payload.job_type ?? job?.job_type ?? "").toLowerCase();
+      if (jobType === "node_doc_edit_apply") {
+        if (event === "jobdone") {
+          loadDoc().then((d) => {
+            if (d !== undefined) setDoc(d);
+          });
+          clearPendingEdit();
+        }
+        if (event === "jobfailed" || event === "jobcanceled") {
+          clearPendingEdit();
+        }
+        return;
+      }
       if (jobType !== "node_doc_patch") return;
       const jobPayload = resolvePayload(job?.payload);
       const payloadNodeId = String(jobPayload?.path_node_id ?? "");
@@ -1256,16 +1428,31 @@ export default function PathNodePage() {
         console.warn("[PathNodePage] doc patch failed:", payload.error || job?.error || "unknown");
       }
     },
-    [loadDoc, nodeId, resolveBlockId]
+    [clearPendingEdit, loadDoc, nodeId, resolveBlockId]
   );
 
+  const lastSseIndexRef = useRef<number>(0);
   useEffect(() => {
-    if (!lastMessage) return;
     if (!user?.id) return;
-    if (lastMessage.channel !== user.id) return;
-    const event = String(lastMessage.event || "").toLowerCase();
-    handleJobUpdate(event, lastMessage.data);
-  }, [lastMessage, user?.id, handleJobUpdate]);
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    const start =
+      lastSseIndexRef.current > messages.length
+        ? 0
+        : Math.max(0, lastSseIndexRef.current);
+    for (let i = start; i < messages.length; i += 1) {
+      const msg = messages[i];
+      if (!msg || msg.channel !== user.id) continue;
+      const event = String(msg.event || "").toLowerCase();
+      if (event.startsWith("job")) {
+        handleJobUpdate(event, msg.data);
+        continue;
+      }
+      if (event.startsWith("chatmessage")) {
+        handleChatMessageEvent(event, msg.data);
+      }
+    }
+    lastSseIndexRef.current = messages.length;
+  }, [handleChatMessageEvent, handleJobUpdate, messages, user?.id]);
 
   useEffect(() => {
     if (!connected) return;
@@ -1274,6 +1461,88 @@ export default function PathNodePage() {
       if (d !== undefined) setDoc(d);
     });
   }, [connected, nodeId, loadDoc]);
+
+  useEffect(() => {
+    clearPendingEdit();
+  }, [clearPendingEdit, nodeId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const threadId = String(activeThreadId || "").trim();
+    if (!threadId || !nodeId) return () => {};
+    getChatThread(threadId, 30)
+      .then(({ thread, messages }) => {
+        if (cancelled) return;
+        const meta = asRecord(thread?.metadata);
+        const pendingKind = meta ? String(meta.pending_waitpoint_kind || "") : "";
+        const pendingProposal = meta ? meta.pending_waitpoint_proposal : null;
+        if (pendingKind.toLowerCase() === "node_doc_edit" && pendingProposal) {
+          const proposal = parseNodeDocEditProposal({ proposal: pendingProposal });
+          if (proposal) {
+            applyPendingEdit(proposal, threadId, 0);
+            return;
+          }
+        }
+        if (pendingKind.toLowerCase() !== "node_doc_edit") return;
+        if (!Array.isArray(messages)) return;
+        const ordered = [...messages].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+        const latest = [...ordered]
+          .reverse()
+          .find((msg) => messageKindFromMetadata(msg?.metadata) === "node_doc_edit");
+        if (!latest) return;
+        const proposal = parseNodeDocEditProposal(latest.metadata);
+        if (!proposal) return;
+        applyPendingEdit(proposal, threadId, latest.seq || 0);
+      })
+      .catch(() => {
+        // ignore fetch errors
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThreadId, applyPendingEdit, asRecord, messageKindFromMetadata, nodeId, parseNodeDocEditProposal]);
+
+  useEffect(() => {
+    const threadId = String(activeThreadId || "").trim();
+    if (!threadId || !nodeId) return () => {};
+    if (pendingEdit) return () => {};
+    let attempts = 0;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled || pendingEdit) return;
+      attempts += 1;
+      getChatThread(threadId, 10)
+        .then(({ thread }) => {
+          if (cancelled || pendingEdit) return;
+          const meta = asRecord(thread?.metadata);
+          const pendingKind = meta ? String(meta.pending_waitpoint_kind || "") : "";
+          const pendingProposal = meta ? meta.pending_waitpoint_proposal : null;
+          if (pendingKind.toLowerCase() === "node_doc_edit" && pendingProposal) {
+            const proposal = parseNodeDocEditProposal({ proposal: pendingProposal });
+            if (proposal) {
+              applyPendingEdit(proposal, threadId, 0);
+              return;
+            }
+          }
+          if (attempts >= 8) {
+            cancelled = true;
+          }
+        })
+        .catch(() => {
+          if (attempts >= 8) {
+            cancelled = true;
+          }
+        });
+    };
+
+    tick();
+    const interval = window.setInterval(tick, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeThreadId, applyPendingEdit, asRecord, nodeId, parseNodeDocEditProposal, pendingEdit]);
 
   const recordFeedback = useCallback(
     (block: DocBlock, idx: number, next: BlockFeedback) => {
@@ -1341,6 +1610,43 @@ export default function PathNodePage() {
     setChatError("");
     setChatDialogOpen(true);
   }, []);
+
+  const submitEditDecision = useCallback(
+    async (action: "confirm" | "deny" | "refine", refineText = "") => {
+      if (!pendingEdit) return;
+      const threadId = String(pendingEditThreadIdRef.current || activeThreadId || "").trim();
+      if (!threadId) {
+        console.warn("[PathNodePage] missing thread for node doc edit decision");
+        return;
+      }
+      let content = "Confirm";
+      if (action === "deny") content = "Deny";
+      if (action === "refine") {
+        const trimmed = String(refineText || "").trim();
+        if (!trimmed) return;
+        content = `Refine: ${trimmed}`;
+      }
+      setPendingEditBusy(true);
+      try {
+        await sendChatMessage(threadId, content);
+        if (action !== "refine") {
+          clearPendingEdit();
+        }
+        if (action === "confirm") {
+          window.setTimeout(() => {
+            loadDoc().then((d) => {
+              if (d !== undefined) setDoc(d);
+            });
+          }, 3500);
+        }
+      } catch (err) {
+        console.warn("[PathNodePage] edit decision failed:", err);
+      } finally {
+        setPendingEditBusy(false);
+      }
+    },
+    [activeThreadId, clearPendingEdit, loadDoc, pendingEdit]
+  );
 
   const submitRegen = useCallback(async () => {
     if (!nodeId || !regenBlock) return;
@@ -1413,6 +1719,8 @@ export default function PathNodePage() {
       }
       case "quick_check":
         return `Quick check: ${clip(block?.prompt_md)}`;
+      case "flashcard":
+        return `Flashcard: ${clip(block?.front_md)}\n${clip(block?.back_md)}`;
       default:
         return clip(JSON.stringify(block));
     }
@@ -1634,6 +1942,8 @@ export default function PathNodePage() {
                   doc={doc}
                   pathNodeId={nodeId}
                   pendingBlocks={pendingBlocks}
+                  pendingEdit={pendingEdit}
+                  editBusy={pendingEditBusy}
                   blockFeedback={blockFeedback}
                   undoableBlocks={undoableBlocks}
                   onLike={handleLike}
@@ -1641,6 +1951,9 @@ export default function PathNodePage() {
                   onRegenerate={(block: DocBlock) => openRegenDialog(block)}
                   onChat={(block: DocBlock) => openChatDialog(block)}
                   onUndo={(block: DocBlock) => handleUndo(block)}
+                  onEditConfirm={(_proposal) => void submitEditDecision("confirm")}
+                  onEditDeny={(_proposal) => void submitEditDecision("deny")}
+                  onEditRefine={(_proposal, text) => void submitEditDecision("refine", text)}
                 />
               ) : (
                 <NodeContentRenderer contentJson={node?.contentJson} />

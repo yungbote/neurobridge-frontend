@@ -89,6 +89,14 @@ export type NodeDocBlockQuickCheckV1 = {
   citations: CitationRefV1[];
 };
 
+export type NodeDocBlockFlashcardV1 = {
+  type: "flashcard";
+  front_md: string;
+  back_md: string;
+  concept_keys?: string[];
+  citations: CitationRefV1[];
+};
+
 export type NodeDocBlockDividerV1 = {
   type: "divider";
 };
@@ -104,6 +112,7 @@ export type NodeDocBlockV1 =
   | NodeDocBlockTableV1
   | NodeDocBlockEquationV1
   | NodeDocBlockQuickCheckV1
+  | NodeDocBlockFlashcardV1
   | NodeDocBlockDividerV1;
 
 export type NodeDocV1 = {

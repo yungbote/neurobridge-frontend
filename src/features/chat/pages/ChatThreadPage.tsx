@@ -24,6 +24,7 @@ import { useUser } from "@/app/providers/UserProvider";
 import { useActivityPanel } from "@/app/providers/ActivityPanelProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
 import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
+import { messageKindFromMetadata, stringFromMetadata } from "@/shared/lib/nodeDocEdit";
 import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { clampPct, stageLabel } from "@/shared/lib/learningBuildStages";
 import { cn } from "@/shared/lib/utils";
@@ -85,6 +86,8 @@ interface DocBlock {
   url?: string;
   source?: string;
   prompt_md?: string;
+  front_md?: string;
+  back_md?: string;
 }
 
 interface DocShape {
@@ -93,42 +96,6 @@ interface DocShape {
 
 interface LocationState {
   jobId?: string | null;
-}
-
-type JsonRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseJsonRecord(value: unknown): JsonRecord | null {
-  if (!value) return null;
-  if (isRecord(value)) return value;
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return isRecord(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function messageKindFromMetadata(metadata: unknown): string {
-  const md = parseJsonRecord(metadata);
-  const kind = md ? String(md.kind ?? "") : "";
-  return kind.trim().toLowerCase();
-}
-
-function stringFromMetadata(metadata: unknown, keys: string[]): string {
-  const md = parseJsonRecord(metadata);
-  if (!md) return "";
-  for (const k of keys) {
-    const v = md[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return "";
 }
 
 function getErrorMessage(err: unknown, fallback: string) {
@@ -199,6 +166,7 @@ function summarizeBlock(block: DocBlock | null | undefined) {
   if (type === "diagram") return clampSnippet(block?.caption || block?.source);
   if (type === "table") return clampSnippet(block?.caption);
   if (type === "quick_check") return clampSnippet(block?.prompt_md);
+  if (type === "flashcard") return clampSnippet(block?.front_md || block?.back_md);
   return clampSnippet(JSON.stringify(block));
 }
 
