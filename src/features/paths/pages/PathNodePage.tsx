@@ -959,14 +959,15 @@ export default function PathNodePage() {
   );
 
   const getSnappedGaze = useCallback(
-    (x: number, y: number) => {
+    (x: number, y: number, options?: { force?: boolean }) => {
+      const force = Boolean(options?.force);
       if (!GAZE_SNAP_ENABLED) {
         return { x, y, snap: "none" as const, blockId: "", line: null as LineRect | null };
       }
       const blockId = findGazeBlock(x, y);
       if (!blockId) return { x, y, snap: "none" as const, blockId: "", line: null as LineRect | null };
       const line = findGazeLine(blockId, x, y);
-      if (line && (line.inside || line.dist <= GAZE_SNAP_LINE_MAX_DIST)) {
+      if (line && (force || line.inside || line.dist <= GAZE_SNAP_LINE_MAX_DIST)) {
         const lineCenterX = (line.left + line.right) * 0.5;
         const lineCenterY = (line.top + line.bottom) * 0.5;
         return { x: lineCenterX, y: lineCenterY, snap: "line" as const, blockId, line };
@@ -977,7 +978,7 @@ export default function PathNodePage() {
         const centerX = (bounds.left + bounds.right) * 0.5;
         const centerY = (bounds.top + bounds.bottom) * 0.5;
         const dist = Math.hypot(x - centerX, y - centerY);
-        if (inside || dist <= GAZE_SNAP_BLOCK_MAX_DIST) {
+        if (force || inside || dist <= GAZE_SNAP_BLOCK_MAX_DIST) {
           return { x: centerX, y: centerY, snap: "block" as const, blockId, line: null };
         }
       }
@@ -2294,40 +2295,9 @@ export default function PathNodePage() {
         const clamped = Math.max(0, Math.min(1, confidence));
         const opacity = 0.35 + clamped * 0.65;
         const corrected = applyGazeBias(point.x, point.y);
-        const scrollRoot = resolveScrollContainer();
-        const rootRect = scrollRoot?.getBoundingClientRect();
-        const rootTop = rootRect?.top ?? 0;
-        const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
-        const behaviorY = rootTop + rootHeight * READ_LINE_RATIO;
-        const lineState = updateLineState({
-          nowMs: Date.now(),
-          rootTop,
-          rootBottom: rootTop + rootHeight,
-          rootHeight,
-          behaviorY,
-          gazePoint: {
-            x: corrected.x,
-            y: corrected.y,
-            confidence: confidence,
-            velocity: gazeVelocityRef.current,
-            ts: gaze.ts ?? Date.now(),
-          },
-          dtMs: 16,
-        });
-        const lineStateOk = Boolean(lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE);
-        const strictFallbackLine = LINE_SNAP_STRICT
-          ? findNearestVisibleLine(corrected.y, rootTop, rootTop + rootHeight)
-          : null;
-        const activeLine = (lineStateOk ? lineState?.line ?? null : null) ?? strictFallbackLine ?? null;
-        if (activeLine) {
-          const snapX = (activeLine.left + activeLine.right) * 0.5;
-          const snapY = activeLine.centerY;
-          el.style.transform = `translate3d(${Math.round(snapX)}px, ${Math.round(snapY)}px, 0)`;
-        } else {
-          const snapped = getSnappedGaze(corrected.x, corrected.y);
-          const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
-          el.style.transform = `translate3d(${Math.round(snapPoint.x)}px, ${Math.round(snapPoint.y)}px, 0)`;
-        }
+        const snapped = getSnappedGaze(corrected.x, corrected.y, { force: true });
+        const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
+        el.style.transform = `translate3d(${Math.round(snapPoint.x)}px, ${Math.round(snapPoint.y)}px, 0)`;
         el.style.opacity = String(opacity);
       } else {
         el.style.opacity = "0";
@@ -2338,7 +2308,7 @@ export default function PathNodePage() {
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [applyGazeBias, findNearestVisibleLine, getSnappedGaze, gazeDebugEnabled, gazeRef, resolveScrollContainer, updateLineState]);
+  }, [applyGazeBias, getSnappedGaze, gazeDebugEnabled, gazeRef]);
 
   useEffect(() => {
     if (!nodeId || !doc) return;
