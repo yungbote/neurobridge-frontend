@@ -25,6 +25,9 @@ type WebGazerLike = {
   pause?: () => void;
   resume?: () => void;
   showPredictionPoints?: (show: boolean) => void;
+  setVideoViewerSize?: (width: number, height: number) => WebGazerLike;
+  setCameraConstraints?: (constraints: MediaStreamConstraints) => Promise<WebGazerLike> | WebGazerLike;
+  params?: Record<string, unknown>;
 };
 
 declare global {
@@ -69,6 +72,7 @@ export function useEyeTracking(enabled: boolean) {
   const gazeRef = useRef<GazePoint | null>(null);
   const lastGazeAtRef = useRef<number>(0);
   const manualStreamRef = useRef<MediaStream | null>(null);
+  const lastViewerSizeRef = useRef<{ w: number; h: number } | null>(null);
   const [status, setStatus] = useState<EyeTrackingStatus>(enabled ? "starting" : "idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -138,6 +142,35 @@ export function useEyeTracking(enabled: boolean) {
       }
     };
 
+    const syncViewerToVideo = async (): Promise<void> => {
+      const wgAny = window.webgazer as WebGazerLike | undefined;
+      if (!wgAny || typeof document === "undefined") return;
+      const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
+      if (!video) return;
+      if (!video.videoWidth || !video.videoHeight) {
+        await new Promise<void>((resolve) => {
+          const handler = () => {
+            video.removeEventListener("loadedmetadata", handler);
+            resolve();
+          };
+          video.addEventListener("loadedmetadata", handler);
+          window.setTimeout(() => {
+            video.removeEventListener("loadedmetadata", handler);
+            resolve();
+          }, 1000);
+        });
+      }
+      const w = Math.round(video.videoWidth || video.clientWidth || 0);
+      const h = Math.round(video.videoHeight || video.clientHeight || 0);
+      if (!w || !h) return;
+      const prev = lastViewerSizeRef.current;
+      if (prev && prev.w === w && prev.h === h) return;
+      lastViewerSizeRef.current = { w, h };
+      if (typeof wgAny.setVideoViewerSize === "function") {
+        wgAny.setVideoViewerSize(w, h);
+      }
+    };
+
     (async () => {
       try {
         if (typeof window !== "undefined" && NO_CACHE) {
@@ -170,6 +203,7 @@ export function useEyeTracking(enabled: boolean) {
         });
         await wg.begin();
         await ensureVideoStream();
+        await syncViewerToVideo();
         if (!cancelled) {
           setStatus("active");
           setError(null);
@@ -179,6 +213,7 @@ export function useEyeTracking(enabled: boolean) {
           if (cancelled) return;
           if (lastGazeAtRef.current > startAt) return;
           await ensureVideoStream();
+          await syncViewerToVideo();
         }, 1500);
       } catch (err) {
         if (!cancelled) {
