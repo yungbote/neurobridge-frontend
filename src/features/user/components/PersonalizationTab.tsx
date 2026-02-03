@@ -936,7 +936,7 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
   const { push } = useToast();
   const { calibrationState, needsCalibration, markCalibrated, clearCalibration } = useEyeCalibration();
   const shouldTrack = allowEyeTracking || showCalibration;
-  const { gazeRef } = useEyeTracking(shouldTrack);
+  const { rawGazeRef } = useEyeTracking(shouldTrack);
 
   const handleEyeTrackingToggle = useCallback(
     async (checked: boolean) => {
@@ -1080,7 +1080,7 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
           markCalibrated(result);
           setShowCalibration(false);
         }}
-        getGaze={() => gazeRef.current}
+        getGaze={() => rawGazeRef.current}
       />
     </section>
   );

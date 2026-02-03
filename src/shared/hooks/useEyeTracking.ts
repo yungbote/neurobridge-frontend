@@ -123,6 +123,7 @@ async function loadWebGazer(): Promise<WebGazerLike | null> {
 }
 
 export function useEyeTracking(enabled: boolean) {
+  const rawGazeRef = useRef<GazePoint | null>(null);
   const gazeRef = useRef<GazePoint | null>(null);
   const lastGazeAtRef = useRef<number>(0);
   const manualStreamRef = useRef<MediaStream | null>(null);
@@ -345,13 +346,13 @@ export function useEyeTracking(enabled: boolean) {
               y = Math.min(Math.max(0, ty), Math.max(0, maxY));
             }
           }
-          gazeRef.current = {
-            x,
-            y,
+          const payload = {
             confidence: typeof data.confidence === "number" ? data.confidence : 0.6,
             ts: typeof ts === "number" ? ts : Date.now(),
-            source: "webgazer",
+            source: "webgazer" as const,
           };
+          rawGazeRef.current = { x: data.x, y: data.y, ...payload };
+          gazeRef.current = { x, y, ...payload };
         });
         const streamReady = await ensureVideoStream();
         if (streamReady && manualStreamRef.current && typeof wgAny.setStaticVideo === "function") {
@@ -405,5 +406,5 @@ export function useEyeTracking(enabled: boolean) {
     };
   }, [enabled]);
 
-  return { gazeRef, status, error };
+  return { gazeRef, rawGazeRef, status, error };
 }

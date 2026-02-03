@@ -1427,7 +1427,8 @@ export default function PathNodePage() {
   });
 
   const { enabled: eyeTrackingEnabled } = useEyeTrackingPreference();
-  const { gazeRef, status: eyeTrackingStatus, error: eyeTrackingError } = useEyeTracking(eyeTrackingEnabled);
+  const { gazeRef, rawGazeRef, status: eyeTrackingStatus, error: eyeTrackingError } =
+    useEyeTracking(eyeTrackingEnabled);
   const { calibrationState, needsCalibration, markCalibrated } = useEyeCalibration();
   const [showCalibration, setShowCalibration] = useState(false);
   const [eyeQuality, setEyeQuality] = useState<"good" | "ok" | "poor" | "stale" | "off">("off");
@@ -3390,7 +3391,7 @@ export default function PathNodePage() {
           markCalibrated(result);
           setShowCalibration(false);
         }}
-        getGaze={() => gazeRef.current}
+        getGaze={() => rawGazeRef.current}
       />
 
       <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
