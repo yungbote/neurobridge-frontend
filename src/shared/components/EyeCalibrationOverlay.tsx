@@ -31,6 +31,37 @@ const MIN_QUALITY = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_MIN_QUA
 const TARGET_ERROR = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_TARGET_ERROR_PX) || 120;
 const MIN_CONFIDENCE = Number(import.meta.env.VITE_EYE_TRACKING_MIN_CONFIDENCE) || 0.35;
 const MAX_VELOCITY = Number(import.meta.env.VITE_EYE_TRACKING_MAX_VELOCITY_PX_S) || 1400;
+const READY_TIMEOUT_MS = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_READY_TIMEOUT_MS) || 3500;
+const READY_POLL_MS = 80;
+
+function getWebgazerVideoElement(): HTMLVideoElement | null {
+  if (typeof window === "undefined" || typeof document === "undefined") return null;
+  const wg = (window as unknown as { webgazer?: { params?: { videoElementId?: string } } }).webgazer;
+  const id = wg?.params?.videoElementId || "webgazerVideoFeed";
+  return document.getElementById(id) as HTMLVideoElement | null;
+}
+
+function isWebgazerReady(): boolean {
+  if (typeof window === "undefined") return false;
+  const wg = (window as unknown as { webgazer?: { isReady?: () => boolean } }).webgazer;
+  if (!wg || typeof wg.isReady !== "function") return false;
+  if (!wg.isReady()) return false;
+  const video = getWebgazerVideoElement();
+  if (!video) return false;
+  const widthReady = (video.videoWidth || video.clientWidth || 0) > 1;
+  const heightReady = (video.videoHeight || video.clientHeight || 0) > 1;
+  return widthReady && heightReady;
+}
+
+async function waitForWebgazerReady(timeoutMs: number): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const start = performance.now();
+  while (performance.now() - start < timeoutMs) {
+    if (isWebgazerReady()) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, READY_POLL_MS));
+  }
+  return isWebgazerReady();
+}
 
 function buildPoints(width: number, height: number): CalibrationPoint[] {
   const marginX = Math.max(24, Math.round(width * 0.08));
@@ -140,16 +171,22 @@ async function collectSamples({
   point,
   record,
   getGaze,
+  ensureReady,
   runIdRef,
 }: {
   point: CalibrationPoint;
   record: boolean;
   getGaze?: () => GazeSample | null;
+  ensureReady?: () => Promise<boolean>;
   runIdRef: { current: number };
 }): Promise<CalibrationPointResult | null> {
   const wg = (window as unknown as { webgazer?: { recordScreenPosition?: (x: number, y: number, type?: string) => void } })
     .webgazer;
   if (record && !wg?.recordScreenPosition) return null;
+  if (record && ensureReady) {
+    const ready = await ensureReady();
+    if (!ready) return null;
+  }
 
   const samples: GazeSample[] = [];
   let last: GazeSample | null = null;
@@ -179,7 +216,7 @@ async function collectSamples({
     if (stableRun < 2) continue;
     stableRun = 0;
     samples.push(gaze);
-    if (record && wg?.recordScreenPosition) {
+    if (record && wg?.recordScreenPosition && (!ensureReady || isWebgazerReady())) {
       wg.recordScreenPosition(point.x, point.y, "click");
     }
   }
@@ -226,12 +263,7 @@ export function EyeCalibrationOverlay({
     const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null; isReady?: () => boolean } })
       .webgazer;
     if (!wg?.getCurrentPrediction) return null;
-    if (typeof wg.isReady === "function" && !wg.isReady()) return null;
-    const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
-    if (!video) return null;
-    const widthReady = (video.videoWidth || video.clientWidth || 0) > 1;
-    const heightReady = (video.videoHeight || video.clientHeight || 0) > 1;
-    if (!widthReady || !heightReady) return null;
+    if (!isWebgazerReady()) return null;
     try {
       const prediction = wg.getCurrentPrediction();
       if (!prediction || !Number.isFinite(prediction.x) || !Number.isFinite(prediction.y)) return null;
@@ -274,7 +306,13 @@ export function EyeCalibrationOverlay({
     setError(null);
     setWarning(null);
     const record = phase !== "validate";
-    const result = await collectSamples({ point: current, record, getGaze: readGaze, runIdRef });
+    const result = await collectSamples({
+      point: current,
+      record,
+      getGaze: readGaze,
+      ensureReady: record ? () => waitForWebgazerReady(READY_TIMEOUT_MS) : undefined,
+      runIdRef,
+    });
     if (!result) {
       setBusy(false);
       setError("Eye tracking not available.");

@@ -30,6 +30,7 @@ import { useToast } from "@/shared/ui/toast";
 import { cn } from "@/shared/lib/utils";
 import { persistEyeTrackingPreference, requestEyeTrackingPermission } from "@/shared/hooks/useEyeTrackingPreference";
 import { useEyeCalibration } from "@/shared/hooks/useEyeCalibration";
+import { useEyeTracking } from "@/shared/hooks/useEyeTracking";
 import { EyeCalibrationOverlay } from "@/shared/components/EyeCalibrationOverlay";
 
 type LanguagePreference = "auto" | "en" | "es" | "fr" | "de" | "pt";
@@ -934,6 +935,8 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
   const [showCalibration, setShowCalibration] = useState(false);
   const { push } = useToast();
   const { calibrationState, needsCalibration, markCalibrated, clearCalibration } = useEyeCalibration();
+  const shouldTrack = allowEyeTracking || showCalibration;
+  const { gazeRef } = useEyeTracking(shouldTrack);
 
   const handleEyeTrackingToggle = useCallback(
     async (checked: boolean) => {
@@ -1077,6 +1080,7 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
           markCalibrated(result);
           setShowCalibration(false);
         }}
+        getGaze={() => gazeRef.current}
       />
     </section>
   );
