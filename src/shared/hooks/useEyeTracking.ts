@@ -105,10 +105,14 @@ async function loadWebGazer(): Promise<WebGazerLike | null> {
   if (!CDN_URL) return null;
   if (!webgazerLoadPromise) {
     webgazerLoadPromise = new Promise((resolve) => {
+      ensureWebgazerVideoElement();
       const script = document.createElement("script");
       script.src = CDN_URL;
       script.async = true;
-      script.onload = () => resolve(window.webgazer || null);
+      script.onload = () => {
+        ensureWebgazerVideoElement();
+        resolve(window.webgazer || null);
+      };
       script.onerror = () => resolve(null);
       document.head.appendChild(script);
     });
