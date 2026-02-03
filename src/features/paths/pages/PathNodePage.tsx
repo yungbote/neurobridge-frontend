@@ -110,6 +110,14 @@ const LINE_X_PADDING =
 const rawGazeBlockTtl = Number(import.meta.env.VITE_EYE_TRACKING_BLOCK_TTL_MS);
 const GAZE_BLOCK_TTL_MS =
   Number.isFinite(rawGazeBlockTtl) && rawGazeBlockTtl > 0 ? rawGazeBlockTtl : 4000;
+const rawSnapEnabled = String(import.meta.env.VITE_EYE_TRACKING_SNAP_ENABLED || "true").toLowerCase();
+const GAZE_SNAP_ENABLED = !["false", "0", "no"].includes(rawSnapEnabled);
+const rawSnapLineDist = Number(import.meta.env.VITE_EYE_TRACKING_SNAP_LINE_MAX_DIST_PX);
+const GAZE_SNAP_LINE_MAX_DIST =
+  Number.isFinite(rawSnapLineDist) && rawSnapLineDist >= 0 ? rawSnapLineDist : 18;
+const rawSnapBlockDist = Number(import.meta.env.VITE_EYE_TRACKING_SNAP_BLOCK_MAX_DIST_PX);
+const GAZE_SNAP_BLOCK_MAX_DIST =
+  Number.isFinite(rawSnapBlockDist) && rawSnapBlockDist >= 0 ? rawSnapBlockDist : 80;
 const GAZE_BIAS_MAX = 80;
 const GAZE_BIAS_ALPHA = 0.12;
 
@@ -913,6 +921,34 @@ export default function PathNodePage() {
       return { ...best.line, dist: best.dist, inside: best.inside };
     },
     [getBlockLines]
+  );
+
+  const getSnappedGaze = useCallback(
+    (x: number, y: number) => {
+      if (!GAZE_SNAP_ENABLED) {
+        return { x, y, snap: "none" as const, blockId: "", line: null as LineRect | null };
+      }
+      const blockId = findGazeBlock(x, y);
+      if (!blockId) return { x, y, snap: "none" as const, blockId: "", line: null as LineRect | null };
+      const line = findGazeLine(blockId, x, y);
+      if (line && (line.inside || line.dist <= GAZE_SNAP_LINE_MAX_DIST)) {
+        const lineCenterX = (line.left + line.right) * 0.5;
+        const lineCenterY = (line.top + line.bottom) * 0.5;
+        return { x: lineCenterX, y: lineCenterY, snap: "line" as const, blockId, line };
+      }
+      const bounds = blockBoundsRef.current.get(blockId);
+      if (bounds) {
+        const inside = x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
+        const centerX = (bounds.left + bounds.right) * 0.5;
+        const centerY = (bounds.top + bounds.bottom) * 0.5;
+        const dist = Math.hypot(x - centerX, y - centerY);
+        if (inside || dist <= GAZE_SNAP_BLOCK_MAX_DIST) {
+          return { x: centerX, y: centerY, snap: "block" as const, blockId, line: null };
+        }
+      }
+      return { x, y, snap: "none" as const, blockId, line: null as LineRect | null };
+    },
+    [findGazeBlock, findGazeLine]
   );
 
   const getSmoothedGaze = useCallback((nowMs: number) => {
@@ -1785,17 +1821,19 @@ export default function PathNodePage() {
         if (gazePoint && gazePoint.confidence >= GAZE_MIN_CONFIDENCE) {
           const fresh = nowMs - (gazePoint.ts ?? nowMs) <= 800;
           const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
-          const inViewport = corrected.y >= rootTop && corrected.y <= rootTop + rootHeight;
+          const snapped = getSnappedGaze(corrected.x, corrected.y);
+          const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
+          const inViewport = snapPoint.y >= rootTop && snapPoint.y <= rootTop + rootHeight;
           const stable = gazePoint.velocity <= GAZE_MAX_VELOCITY_PX_S;
           if (inViewport && stable && fresh) {
-            focusY = corrected.y;
+            focusY = snapPoint.y;
             gazeConfidenceFactor = clamp(
               (gazePoint.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
               0.2,
               1
             );
-            gazeBlockId = findGazeBlock(corrected.x, corrected.y);
-            const gazeLine = gazeBlockId ? findGazeLine(gazeBlockId, corrected.x, corrected.y) : null;
+            gazeBlockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
+            const gazeLine = snapped.line ?? (gazeBlockId ? findGazeLine(gazeBlockId, snapPoint.x, snapPoint.y) : null);
             if (gazeLine && gazeLine.inside) {
               source = "gaze";
               restrictToGaze = true;
@@ -1848,6 +1886,7 @@ export default function PathNodePage() {
     eyeTrackingStatus,
     findGazeBlock,
     findGazeLine,
+    getSnappedGaze,
     gazeRef,
     getSmoothedGaze,
     markBlockRead,
@@ -1868,9 +1907,11 @@ export default function PathNodePage() {
       const gazePoint = getSmoothedGaze(now);
       if (!gazePoint || gazePoint.confidence < GAZE_MIN_CONFIDENCE) return;
       const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
-      const blockId = findGazeBlock(corrected.x, corrected.y);
+      const snapped = getSnappedGaze(corrected.x, corrected.y);
+      const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
+      const blockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
       if (!blockId) return;
-      const line = findGazeLine(blockId, corrected.x, corrected.y);
+      const line = snapped.line ?? findGazeLine(blockId, snapPoint.x, snapPoint.y);
       const dt = gazeLastHitAtRef.current > 0 ? now - gazeLastHitAtRef.current : 0;
       gazeLastHitAtRef.current = now;
       gazeLastBlockRef.current = blockId;
@@ -1878,8 +1919,8 @@ export default function PathNodePage() {
         block_id: blockId,
         line_id: line?.id,
         line_index: line?.index,
-        x: corrected.x,
-        y: corrected.y,
+        x: snapPoint.x,
+        y: snapPoint.y,
         confidence: gazePoint.confidence,
         ts: new Date(now).toISOString(),
         dt_ms: dt > 0 ? dt : undefined,
@@ -1893,6 +1934,9 @@ export default function PathNodePage() {
           raw_y: gazePoint.y,
           bias_x: gazeBiasRef.current?.x ?? 0,
           bias_y: gazeBiasRef.current?.y ?? 0,
+          snap: snapped.snap,
+          snap_x: snapPoint.x,
+          snap_y: snapPoint.y,
         },
       });
     };
@@ -1900,7 +1944,16 @@ export default function PathNodePage() {
     return () => {
       if (timer != null) window.clearInterval(timer);
     };
-  }, [applyGazeBias, findGazeBlock, findGazeLine, getSmoothedGaze, gazeRef, gazeStreamEnabled, nodeId]);
+  }, [
+    applyGazeBias,
+    findGazeBlock,
+    findGazeLine,
+    getSnappedGaze,
+    getSmoothedGaze,
+    gazeRef,
+    gazeStreamEnabled,
+    nodeId,
+  ]);
 
   useEffect(() => {
     if (!gazeDebugEnabled) return;
@@ -1915,7 +1968,10 @@ export default function PathNodePage() {
         const confidence = typeof point.confidence === "number" ? point.confidence : 0;
         const clamped = Math.max(0, Math.min(1, confidence));
         const opacity = 0.35 + clamped * 0.65;
-        el.style.transform = `translate3d(${Math.round(point.x)}px, ${Math.round(point.y)}px, 0)`;
+        const corrected = applyGazeBias(point.x, point.y);
+        const snapped = getSnappedGaze(corrected.x, corrected.y);
+        const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
+        el.style.transform = `translate3d(${Math.round(snapPoint.x)}px, ${Math.round(snapPoint.y)}px, 0)`;
         el.style.opacity = String(opacity);
       } else {
         el.style.opacity = "0";
@@ -1926,7 +1982,7 @@ export default function PathNodePage() {
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [gazeDebugEnabled, gazeRef]);
+  }, [applyGazeBias, getSnappedGaze, gazeDebugEnabled, gazeRef]);
 
   useEffect(() => {
     if (!nodeId || !doc) return;
