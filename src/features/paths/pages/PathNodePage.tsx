@@ -76,6 +76,11 @@ type LineRect = {
   width: number;
 };
 
+type LineState = LineRect & {
+  blockId: string;
+  centerY: number;
+};
+
 type BlockFeedback = "" | "like" | "dislike";
 
 const VISIBLE_RATIO_MIN = 0.1;
@@ -118,6 +123,25 @@ const GAZE_SNAP_LINE_MAX_DIST =
 const rawSnapBlockDist = Number(import.meta.env.VITE_EYE_TRACKING_SNAP_BLOCK_MAX_DIST_PX);
 const GAZE_SNAP_BLOCK_MAX_DIST =
   Number.isFinite(rawSnapBlockDist) && rawSnapBlockDist >= 0 ? rawSnapBlockDist : 80;
+const rawLineStateEnabled = String(import.meta.env.VITE_EYE_TRACKING_LINE_STATE || "true").toLowerCase();
+const LINE_STATE_ENABLED = !["false", "0", "no"].includes(rawLineStateEnabled);
+const rawLineStateMaxJump = Number(import.meta.env.VITE_EYE_TRACKING_LINE_STATE_MAX_JUMP);
+const LINE_STATE_MAX_JUMP = Number.isFinite(rawLineStateMaxJump) && rawLineStateMaxJump > 0 ? rawLineStateMaxJump : 4;
+const rawLineStateMinConfidence = Number(import.meta.env.VITE_EYE_TRACKING_LINE_STATE_MIN_CONFIDENCE);
+const LINE_STATE_MIN_CONFIDENCE =
+  Number.isFinite(rawLineStateMinConfidence) && rawLineStateMinConfidence > 0
+    ? rawLineStateMinConfidence
+    : 0.32;
+const rawLineStateGazeSigma = Number(import.meta.env.VITE_EYE_TRACKING_LINE_STATE_GAZE_SIGMA_MULT);
+const LINE_STATE_GAZE_SIGMA_MULT =
+  Number.isFinite(rawLineStateGazeSigma) && rawLineStateGazeSigma > 0 ? rawLineStateGazeSigma : 1.15;
+const rawLineStateBehaviorSigma = Number(import.meta.env.VITE_EYE_TRACKING_LINE_STATE_BEHAVIOR_SIGMA_MULT);
+const LINE_STATE_BEHAVIOR_SIGMA_MULT =
+  Number.isFinite(rawLineStateBehaviorSigma) && rawLineStateBehaviorSigma > 0
+    ? rawLineStateBehaviorSigma
+    : 2.2;
+const rawLineStateCache = Number(import.meta.env.VITE_EYE_TRACKING_LINE_STATE_CACHE_MS);
+const LINE_STATE_CACHE_MS = Number.isFinite(rawLineStateCache) && rawLineStateCache >= 0 ? rawLineStateCache : 120;
 const GAZE_BIAS_MAX = 80;
 const GAZE_BIAS_ALPHA = 0.12;
 
@@ -712,6 +736,15 @@ export default function PathNodePage() {
   const lineDwellRef = useRef<Map<string, { ms: number; lastAt: number; blockId: string; index: number }>>(new Map());
   const lineCreditsRef = useRef<Map<string, number>>(new Map());
   const blockLineCreditsRef = useRef<Map<string, number>>(new Map());
+  const lineStateRef = useRef<{
+    lines: LineState[];
+    probs: number[];
+    updatedAt: number;
+    bestIndex: number;
+    bestProb: number;
+    mode: "reading" | "scanning" | "idle";
+    usedGaze: boolean;
+  } | null>(null);
   const currentBlockIdRef = useRef<string>("");
   const lastSwitchAtRef = useRef<number>(0);
   const scoreEMARef = useRef<Map<string, number>>(new Map());
@@ -951,6 +984,194 @@ export default function PathNodePage() {
     [findGazeBlock, findGazeLine]
   );
 
+  const buildVisibleLineState = useCallback(
+    (rootTop: number, rootBottom: number) => {
+      const lines: LineState[] = [];
+      const margin = 32;
+      for (const [blockId, metric] of blockMetricsRef.current.entries()) {
+        if ((metric?.ratio ?? 0) < READ_VISIBLE_RATIO_MIN) continue;
+        const blockLines = getBlockLines(blockId);
+        if (!blockLines || blockLines.length === 0) continue;
+        for (const line of blockLines) {
+          if (line.bottom < rootTop - margin || line.top > rootBottom + margin) continue;
+          const centerY = (line.top + line.bottom) * 0.5;
+          lines.push({
+            ...line,
+            blockId,
+            centerY,
+          });
+        }
+      }
+      lines.sort((a, b) => a.centerY - b.centerY);
+      return lines;
+    },
+    [getBlockLines]
+  );
+
+  const updateLineState = useCallback(
+    ({
+      nowMs,
+      rootTop,
+      rootBottom,
+      rootHeight,
+      behaviorY,
+      gazePoint,
+      dtMs,
+    }: {
+      nowMs: number;
+      rootTop: number;
+      rootBottom: number;
+      rootHeight: number;
+      behaviorY: number;
+      gazePoint: { x: number; y: number; confidence: number; velocity: number; ts: number } | null;
+      dtMs: number;
+    }) => {
+      if (!LINE_STATE_ENABLED) return null;
+      const prev = lineStateRef.current;
+      if (prev && nowMs - prev.updatedAt <= LINE_STATE_CACHE_MS) {
+        if (prev.lines.length > 0) {
+          return {
+            line: prev.lines[prev.bestIndex] ?? null,
+            confidence: prev.bestProb,
+            mode: prev.mode,
+            usedGaze: prev.usedGaze,
+          };
+        }
+      }
+
+      const lines = buildVisibleLineState(rootTop, rootBottom);
+      if (lines.length === 0) {
+        lineStateRef.current = null;
+        return null;
+      }
+
+      const heights = lines.map((l) => l.height).filter((v) => v > 0);
+      const medianHeight = heights.length ? heights.sort((a, b) => a - b)[Math.floor(heights.length / 2)] : 18;
+      const avgLineHeight = Math.max(12, medianHeight || 18);
+
+      const nextProbs = new Array(lines.length).fill(0);
+      const prevProbs = new Array(lines.length).fill(0);
+      if (prev && prev.lines.length > 0 && prev.probs.length === prev.lines.length) {
+        const prevIndexById = new Map(prev.lines.map((line, idx) => [line.id, idx]));
+        let total = 0;
+        lines.forEach((line, idx) => {
+          const prevIdx = prevIndexById.get(line.id);
+          if (prevIdx == null) return;
+          const p = prev.probs[prevIdx] ?? 0;
+          if (p > 0) {
+            prevProbs[idx] = p;
+            total += p;
+          }
+        });
+        if (total <= 0) {
+          prevProbs.fill(1 / lines.length);
+        } else if (Math.abs(total - 1) > 0.01) {
+          for (let i = 0; i < prevProbs.length; i += 1) prevProbs[i] /= total;
+        }
+      } else {
+        prevProbs.fill(1 / lines.length);
+      }
+
+      const speedScreens = rootHeight > 0 ? scrollVelocityRef.current / rootHeight : 0;
+      const scrollSign = scrollDirRef.current === "down" ? 1 : scrollDirRef.current === "up" ? -1 : 0;
+      const expectedDelta = scrollSign * Math.min(LINE_STATE_MAX_JUMP, Math.round((scrollVelocityRef.current / avgLineHeight) * (dtMs / 1000)));
+      const transitionSigma = Math.max(1, Math.abs(expectedDelta) + 0.75);
+      const window = Math.max(2, LINE_STATE_MAX_JUMP);
+
+      const predicted = new Array(lines.length).fill(0);
+      for (let i = 0; i < prevProbs.length; i += 1) {
+        const p = prevProbs[i];
+        if (p <= 0) continue;
+        for (let d = -window; d <= window; d += 1) {
+          const j = i + d;
+          if (j < 0 || j >= lines.length) continue;
+          const bias = d - expectedDelta;
+          const weight = Math.exp(-(bias * bias) / (2 * transitionSigma * transitionSigma));
+          predicted[j] += p * weight;
+        }
+      }
+      let predTotal = predicted.reduce((acc, v) => acc + v, 0);
+      if (predTotal <= 0) {
+        predicted.fill(1 / lines.length);
+      } else {
+        for (let i = 0; i < predicted.length; i += 1) predicted[i] /= predTotal;
+      }
+
+      const gazeOk =
+        gazePoint &&
+        gazePoint.confidence >= GAZE_MIN_CONFIDENCE &&
+        gazePoint.velocity <= GAZE_MAX_VELOCITY_PX_S &&
+        nowMs - (gazePoint.ts ?? nowMs) <= 800 &&
+        gazePoint.y >= rootTop &&
+        gazePoint.y <= rootBottom;
+      const gazeWeight = gazeOk
+        ? clamp(
+            (gazePoint.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
+            0.2,
+            1
+          )
+        : 0;
+      const behaviorWeight = gazeOk ? 1 - gazeWeight : 1;
+      const gazeSigma = Math.max(avgLineHeight * LINE_STATE_GAZE_SIGMA_MULT, 10);
+      const behaviorSigma = Math.max(avgLineHeight * LINE_STATE_BEHAVIOR_SIGMA_MULT, rootHeight * 0.12);
+
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
+        let likelihood = 1;
+        if (gazeOk && gazePoint) {
+          const dist = Math.abs(line.centerY - gazePoint.y);
+          const l = Math.exp(-(dist * dist) / (2 * gazeSigma * gazeSigma));
+          likelihood *= Math.pow(l, gazeWeight);
+        }
+        const distBehavior = Math.abs(line.centerY - behaviorY);
+        const lb = Math.exp(-(distBehavior * distBehavior) / (2 * behaviorSigma * behaviorSigma));
+        likelihood *= Math.pow(lb, behaviorWeight);
+        const ratio = blockMetricsRef.current.get(line.blockId)?.ratio ?? 0.5;
+        likelihood *= clamp(ratio, 0.2, 1);
+        nextProbs[i] = predicted[i] * likelihood + 1e-6;
+      }
+
+      let total = nextProbs.reduce((acc, v) => acc + v, 0);
+      if (total <= 0) {
+        nextProbs.fill(1 / lines.length);
+        total = 1;
+      } else {
+        for (let i = 0; i < nextProbs.length; i += 1) nextProbs[i] /= total;
+      }
+
+      let bestIndex = 0;
+      let bestProb = nextProbs[0] ?? 0;
+      for (let i = 1; i < nextProbs.length; i += 1) {
+        if (nextProbs[i] > bestProb) {
+          bestProb = nextProbs[i];
+          bestIndex = i;
+        }
+      }
+
+      let mode: "reading" | "scanning" | "idle" = "reading";
+      if (speedScreens > 1.2) mode = "scanning";
+      if (!gazeOk && speedScreens < 0.05) mode = "idle";
+
+      lineStateRef.current = {
+        lines,
+        probs: nextProbs,
+        updatedAt: nowMs,
+        bestIndex,
+        bestProb,
+        mode,
+        usedGaze: Boolean(gazeOk),
+      };
+
+      return {
+        line: lines[bestIndex] ?? null,
+        confidence: bestProb,
+        mode,
+        usedGaze: Boolean(gazeOk),
+      };
+    },
+    [buildVisibleLineState]
+  );
+
   const getSmoothedGaze = useCallback((nowMs: number) => {
     const gaze = gazeRef.current;
     if (!gaze) return null;
@@ -1123,6 +1344,7 @@ export default function PathNodePage() {
     lineDwellRef.current.clear();
     lineCreditsRef.current.clear();
     blockLineCreditsRef.current.clear();
+    lineStateRef.current = null;
     lastReadTickRef.current = 0;
     for (const block of docBlocks) {
       const id = String(block?.id ?? "").trim();
@@ -1142,6 +1364,7 @@ export default function PathNodePage() {
       lineDwellRef.current.clear();
       lineCreditsRef.current.clear();
       blockLineCreditsRef.current.clear();
+      lineStateRef.current = null;
     };
     window.addEventListener("resize", onResize);
     return () => {
@@ -1814,34 +2037,77 @@ export default function PathNodePage() {
       let gazeBlockId = "";
       let restrictToGaze = false;
       let gazeConfidenceFactor = 1;
+      const nowMs = Date.now();
 
       if (eyeTrackingEnabled && eyeTrackingStatus === "active") {
-        const nowMs = Date.now();
         const gazePoint = getSmoothedGaze(nowMs);
-        if (gazePoint && gazePoint.confidence >= GAZE_MIN_CONFIDENCE) {
-          const fresh = nowMs - (gazePoint.ts ?? nowMs) <= 800;
-          const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
-          const snapped = getSnappedGaze(corrected.x, corrected.y);
-          const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
-          const inViewport = snapPoint.y >= rootTop && snapPoint.y <= rootTop + rootHeight;
-          const stable = gazePoint.velocity <= GAZE_MAX_VELOCITY_PX_S;
-          if (inViewport && stable && fresh) {
-            focusY = snapPoint.y;
+        const corrected = gazePoint ? applyGazeBias(gazePoint.x, gazePoint.y) : null;
+        const fresh = gazePoint ? nowMs - (gazePoint.ts ?? nowMs) <= 800 : false;
+        const stable = gazePoint ? gazePoint.velocity <= GAZE_MAX_VELOCITY_PX_S : false;
+        const inViewport =
+          corrected != null ? corrected.y >= rootTop && corrected.y <= rootTop + rootHeight : false;
+        const gazeOk =
+          Boolean(gazePoint && corrected && gazePoint.confidence >= GAZE_MIN_CONFIDENCE && stable && fresh && inViewport);
+        const gazeSample =
+          gazeOk && gazePoint && corrected
+            ? {
+                x: corrected.x,
+                y: corrected.y,
+                confidence: gazePoint.confidence,
+                velocity: gazePoint.velocity,
+                ts: gazePoint.ts ?? nowMs,
+              }
+            : null;
+
+        const behaviorY = rootTop + rootHeight * READ_LINE_RATIO;
+        const lineState = updateLineState({
+          nowMs,
+          rootTop,
+          rootBottom: rootTop + rootHeight,
+          rootHeight,
+          behaviorY,
+          gazePoint: gazeSample,
+          dtMs,
+        });
+
+        if (lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE) {
+          focusY = lineState.line.centerY;
+          gazeBlockId = lineState.line.blockId;
+          if (gazeSample) {
             gazeConfidenceFactor = clamp(
-              (gazePoint.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
+              (gazeSample.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
               0.2,
               1
             );
-            gazeBlockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
-            const gazeLine = snapped.line ?? (gazeBlockId ? findGazeLine(gazeBlockId, snapPoint.x, snapPoint.y) : null);
-            if (gazeLine && gazeLine.inside) {
-              source = "gaze";
-              restrictToGaze = true;
-              const lineCenterX = (gazeLine.left + gazeLine.right) * 0.5;
-              const lineCenterY = (gazeLine.top + gazeLine.bottom) * 0.5;
-              updateGazeBias(corrected.x - lineCenterX, corrected.y - lineCenterY);
-              recordLineDwell(gazeBlockId, gazeLine, dtMs);
+          }
+          if (lineState.usedGaze) {
+            source = "gaze";
+            restrictToGaze = true;
+            if (gazeSample) {
+              const lineCenterX = (lineState.line.left + lineState.line.right) * 0.5;
+              const lineCenterY = lineState.line.centerY;
+              updateGazeBias(gazeSample.x - lineCenterX, gazeSample.y - lineCenterY);
             }
+            recordLineDwell(gazeBlockId, lineState.line, dtMs);
+          }
+        } else if (gazeOk && corrected && gazePoint) {
+          const snapped = getSnappedGaze(corrected.x, corrected.y);
+          const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
+          focusY = snapPoint.y;
+          gazeConfidenceFactor = clamp(
+            (gazePoint.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
+            0.2,
+            1
+          );
+          gazeBlockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
+          const gazeLine = snapped.line ?? (gazeBlockId ? findGazeLine(gazeBlockId, snapPoint.x, snapPoint.y) : null);
+          if (gazeLine && gazeLine.inside) {
+            source = "gaze";
+            restrictToGaze = true;
+            const lineCenterX = (gazeLine.left + gazeLine.right) * 0.5;
+            const lineCenterY = (gazeLine.top + gazeLine.bottom) * 0.5;
+            updateGazeBias(corrected.x - lineCenterX, corrected.y - lineCenterY);
+            recordLineDwell(gazeBlockId, gazeLine, dtMs);
           }
         }
       }
@@ -1894,6 +2160,7 @@ export default function PathNodePage() {
     recordLineDwell,
     resolveScrollContainer,
     scheduleSessionSync,
+    updateLineState,
     updateGazeBias,
   ]);
 
@@ -1907,20 +2174,44 @@ export default function PathNodePage() {
       const gazePoint = getSmoothedGaze(now);
       if (!gazePoint || gazePoint.confidence < GAZE_MIN_CONFIDENCE) return;
       const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
+      const scrollRoot = resolveScrollContainer();
+      const rootRect = scrollRoot?.getBoundingClientRect();
+      const rootTop = rootRect?.top ?? 0;
+      const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
+      const behaviorY = rootTop + rootHeight * READ_LINE_RATIO;
+      const lineState = updateLineState({
+        nowMs: now,
+        rootTop,
+        rootBottom: rootTop + rootHeight,
+        rootHeight,
+        behaviorY,
+        gazePoint: {
+          x: corrected.x,
+          y: corrected.y,
+          confidence: gazePoint.confidence,
+          velocity: gazePoint.velocity,
+          ts: gazePoint.ts ?? now,
+        },
+        dtMs: GAZE_TICK_MS,
+      });
+      const lineStateOk = lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE;
       const snapped = getSnappedGaze(corrected.x, corrected.y);
       const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
-      const blockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
+      const line = lineStateOk ? lineState?.line ?? null : snapped.line ?? null;
+      const blockId = line?.blockId || snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
       if (!blockId) return;
-      const line = snapped.line ?? findGazeLine(blockId, snapPoint.x, snapPoint.y);
+      const fallbackLine = line ?? findGazeLine(blockId, snapPoint.x, snapPoint.y);
+      const lineCenterX = fallbackLine ? (fallbackLine.left + fallbackLine.right) * 0.5 : snapPoint.x;
+      const lineCenterY = fallbackLine ? (fallbackLine.top + fallbackLine.bottom) * 0.5 : snapPoint.y;
       const dt = gazeLastHitAtRef.current > 0 ? now - gazeLastHitAtRef.current : 0;
       gazeLastHitAtRef.current = now;
       gazeLastBlockRef.current = blockId;
       gazeQueueRef.current?.enqueue({
         block_id: blockId,
-        line_id: line?.id,
-        line_index: line?.index,
-        x: snapPoint.x,
-        y: snapPoint.y,
+        line_id: fallbackLine?.id,
+        line_index: fallbackLine?.index,
+        x: lineCenterX,
+        y: lineCenterY,
         confidence: gazePoint.confidence,
         ts: new Date(now).toISOString(),
         dt_ms: dt > 0 ? dt : undefined,
@@ -1934,9 +2225,11 @@ export default function PathNodePage() {
           raw_y: gazePoint.y,
           bias_x: gazeBiasRef.current?.x ?? 0,
           bias_y: gazeBiasRef.current?.y ?? 0,
-          snap: snapped.snap,
-          snap_x: snapPoint.x,
-          snap_y: snapPoint.y,
+          snap: lineStateOk ? "line_state" : snapped.snap,
+          snap_x: lineCenterX,
+          snap_y: lineCenterY,
+          line_state_confidence: lineStateOk ? lineState?.confidence ?? 0 : 0,
+          line_state_mode: lineState?.mode ?? "reading",
         },
       });
     };
@@ -1953,6 +2246,8 @@ export default function PathNodePage() {
     gazeRef,
     gazeStreamEnabled,
     nodeId,
+    resolveScrollContainer,
+    updateLineState,
   ]);
 
   useEffect(() => {
