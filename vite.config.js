@@ -19,7 +19,13 @@ export default defineConfig(({ mode }) => {
           }
         }
         if (req.url && /face_mesh_solution_.*\\.(data|wasm|js)/.test(req.url)) {
-          res.setHeader("Cache-Control", "no-store");
+          if (req.headers) {
+            delete req.headers["if-none-match"];
+            delete req.headers["if-modified-since"];
+          }
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
         }
         next();
       });
@@ -45,7 +51,6 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
 
 
 

@@ -48,11 +48,6 @@ download_first() {
 download_url() {
   url="$1"
   out="$2"
-  if command -v curl >/dev/null 2>&1; then
-    if curl -fL "$url" -o "$out"; then
-      return 0
-    fi
-  fi
   if command -v node >/dev/null 2>&1; then
     URL="$url" OUT="$out" node - <<'NODE'
 const fs = require("fs");
@@ -87,6 +82,11 @@ function fetch(u, redirects) {
 fetch(url, 0);
 NODE
     return $?
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fL "$url" -o "$out"; then
+      return 0
+    fi
   fi
   return 1
 }
@@ -143,6 +143,15 @@ if (re1.test(text)) {
 } else if (re2.test(text)) {
   text = text.replace(re2, abs);
 }
+const bustSnippet = `
+      if (typeof window === 'object' && window.__NB_EYE_ASSET_BUST) {
+        var bust = window.__NB_EYE_ASSET_BUST;
+        REMOTE_PACKAGE_BASE += (REMOTE_PACKAGE_BASE.indexOf('?') === -1 ? '?' : '&') + 'b=' + bust;
+      }
+`;
+if (!text.includes("window.__NB_EYE_ASSET_BUST")) {
+  text = text.replace(abs + ";", abs + ";" + bustSnippet);
+}
 function replace(name, text) {
   const escaped = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
   const re = new RegExp(escaped + "(\\\\?v=[^\\\"']+)?", "g");
@@ -155,6 +164,16 @@ text = text.replace(
   /face_mesh_solution_packed_assets\.data\?v=[^'"]+\?v=[^'"]+/g,
   `face_mesh_solution_packed_assets.data?v=${version}`
 );
+const cacheHeaderSnippet = `
+        try {
+          xhr.setRequestHeader('Cache-Control', 'no-cache');
+          xhr.setRequestHeader('Pragma', 'no-cache');
+          xhr.setRequestHeader('Expires', '0');
+        } catch (e) {}
+`;
+if (!text.includes("Cache-Control")) {
+  text = text.replace("xhr.open('GET', packageName, true);", "xhr.open('GET', packageName, true);" + cacheHeaderSnippet);
+}
 fs.writeFileSync(path, text, "utf8");
 NODE
 fi

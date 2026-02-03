@@ -35,6 +35,8 @@ declare global {
 
 const CDN_URL = String(import.meta.env.VITE_EYE_TRACKING_CDN || "/eye-tracking/webgazer.js").trim();
 const FACE_MESH_BASE_RAW = String(import.meta.env.VITE_EYE_TRACKING_FACE_MESH_BASE || "/mediapipe/face_mesh").trim();
+const NO_CACHE =
+  String(import.meta.env.VITE_EYE_TRACKING_NO_CACHE || (import.meta.env.DEV ? "1" : "")).trim() === "1";
 const FACE_MESH_BASE = FACE_MESH_BASE_RAW
   ? FACE_MESH_BASE_RAW.startsWith("/") || FACE_MESH_BASE_RAW.startsWith("http")
     ? FACE_MESH_BASE_RAW
@@ -134,6 +136,9 @@ export function useEyeTracking(enabled: boolean) {
 
     (async () => {
       try {
+        if (typeof window !== "undefined" && NO_CACHE) {
+          (window as unknown as { __NB_EYE_ASSET_BUST?: number }).__NB_EYE_ASSET_BUST = Date.now();
+        }
         const wg = await loadWebGazer();
         if (!wg) {
           if (!cancelled) {
