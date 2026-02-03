@@ -5,6 +5,7 @@ import { queryKeys } from "@/shared/query/queryKeys";
 import { useUser } from "@/app/providers/UserProvider";
 
 const STORAGE_KEY = "pref:eye_tracking_enabled";
+const PERMISSION_KEY = "pref:eye_tracking_permission";
 
 function readStored(): boolean | null {
   if (typeof window === "undefined") return null;
@@ -18,6 +19,20 @@ function readStored(): boolean | null {
 function writeStored(value: boolean) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, value ? "true" : "false");
+}
+
+function readPermission(): boolean | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(PERMISSION_KEY);
+  if (raw == null) return null;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return null;
+}
+
+function writePermission(value: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PERMISSION_KEY, value ? "true" : "false");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -55,4 +70,23 @@ export function useEyeTrackingPreference() {
 
 export function persistEyeTrackingPreference(value: boolean) {
   writeStored(value);
+}
+
+export function getEyeTrackingPermission(): boolean | null {
+  return readPermission();
+}
+
+export async function requestEyeTrackingPermission(): Promise<"granted" | "denied" | "unavailable"> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return "unavailable";
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach((t) => t.stop());
+    writePermission(true);
+    return "granted";
+  } catch {
+    writePermission(false);
+    return "denied";
+  }
 }

@@ -28,7 +28,7 @@ import {
 } from "@/shared/ui/select";
 import { useToast } from "@/shared/ui/toast";
 import { cn } from "@/shared/lib/utils";
-import { persistEyeTrackingPreference } from "@/shared/hooks/useEyeTrackingPreference";
+import { persistEyeTrackingPreference, requestEyeTrackingPermission } from "@/shared/hooks/useEyeTrackingPreference";
 
 type LanguagePreference = "auto" | "en" | "es" | "fr" | "de" | "pt";
 type UnitSystem = "metric" | "imperial";
@@ -928,6 +928,35 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
   onReset: () => void;
 }) {
   const [confirmReset, setConfirmReset] = useState(false);
+  const [eyeTrackingBusy, setEyeTrackingBusy] = useState(false);
+  const { push } = useToast();
+
+  const handleEyeTrackingToggle = useCallback(
+    async (checked: boolean) => {
+      if (!checked) {
+        setPrefs((prev) => ({ ...prev, allowEyeTracking: false }));
+        return;
+      }
+      if (eyeTrackingBusy) return;
+      setEyeTrackingBusy(true);
+      const result = await requestEyeTrackingPermission();
+      setEyeTrackingBusy(false);
+      if (result === "granted") {
+        setPrefs((prev) => ({ ...prev, allowEyeTracking: true }));
+        return;
+      }
+      setPrefs((prev) => ({ ...prev, allowEyeTracking: false }));
+      push({
+        variant: "error",
+        title: result === "unavailable" ? "Camera not available" : "Camera permission denied",
+        description:
+          result === "unavailable"
+            ? "This browser doesn't support camera access for eye tracking."
+            : "Enable camera access to use eye tracking.",
+      });
+    },
+    [eyeTrackingBusy, push, setPrefs]
+  );
 
   return (
     <section className="space-y-5">
@@ -968,9 +997,8 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
         >
           <Switch
             checked={allowEyeTracking}
-            onCheckedChange={(checked) =>
-              setPrefs((prev) => ({ ...prev, allowEyeTracking: Boolean(checked) }))
-            }
+            onCheckedChange={(checked) => void handleEyeTrackingToggle(Boolean(checked))}
+            disabled={eyeTrackingBusy}
           />
         </SettingRow>
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getEyeTrackingPermission } from "@/shared/hooks/useEyeTrackingPreference";
 
 export type EyeTrackingStatus =
   | "idle"
@@ -75,6 +76,18 @@ export function useEyeTracking(enabled: boolean) {
     if (!enabled) {
       stop();
       setStatus("idle");
+      return () => {};
+    }
+
+    const permission = getEyeTrackingPermission();
+    if (permission === false) {
+      stop();
+      setStatus("denied");
+      return () => {};
+    }
+    if (permission == null) {
+      stop();
+      setStatus("unavailable");
       return () => {};
     }
 
