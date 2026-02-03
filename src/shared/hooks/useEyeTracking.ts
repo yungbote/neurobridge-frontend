@@ -33,7 +33,7 @@ declare global {
   }
 }
 
-const CDN_URL = String(import.meta.env.VITE_EYE_TRACKING_CDN || "").trim();
+const CDN_URL = String(import.meta.env.VITE_EYE_TRACKING_CDN || "/eye-tracking/webgazer.js").trim();
 let webgazerLoadPromise: Promise<WebGazerLike | null> | null = null;
 
 async function loadWebGazer(): Promise<WebGazerLike | null> {

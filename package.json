@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "fetch-eye-tracking-assets": "bash scripts/fetch-mediapipe-face-mesh.sh",
     "lint": "eslint .",
+    "postinstall": "npm run fetch-eye-tracking-assets",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "tsc --noEmit --watch"

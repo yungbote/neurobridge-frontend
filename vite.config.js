@@ -6,9 +6,20 @@ import tailwindcss from "@tailwindcss/vite";
 // https://vite.dev/config
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
+  const noStoreEyeAssets = () => ({
+    name: "no-store-eye-assets",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url && /face_mesh_solution_.*\\.(data|wasm|js)/.test(req.url)) {
+          res.setHeader("Cache-Control", "no-store");
+        }
+        next();
+      });
+    },
+  });
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), noStoreEyeAssets()],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
@@ -26,7 +37,6 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
 
 
 
