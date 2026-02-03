@@ -22,6 +22,7 @@ type WebGazerLike = {
   setGazeListener: (cb: (data: { x: number; y: number; confidence?: number } | null, ts: number) => void) => WebGazerLike;
   begin: () => Promise<void> | void;
   end: () => void;
+  setStaticVideo?: (stream: MediaStream) => WebGazerLike;
   pause?: () => void;
   resume?: () => void;
   showPredictionPoints?: (show: boolean) => void;
@@ -322,7 +323,10 @@ export function useEyeTracking(enabled: boolean) {
             source: "webgazer",
           };
         });
-        await ensureVideoStream();
+        const streamReady = await ensureVideoStream();
+        if (streamReady && manualStreamRef.current && typeof wgAny.setStaticVideo === "function") {
+          wgAny.setStaticVideo(manualStreamRef.current);
+        }
         const started = await beginWebgazer(wg);
         if (!started) {
           ensureWebgazerVideoElement();

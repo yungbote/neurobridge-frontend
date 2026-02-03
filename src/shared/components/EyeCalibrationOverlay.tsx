@@ -32,6 +32,14 @@ const TARGET_ERROR = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_TARGET
 const MIN_CONFIDENCE = Number(import.meta.env.VITE_EYE_TRACKING_MIN_CONFIDENCE) || 0.35;
 const MAX_VELOCITY = Number(import.meta.env.VITE_EYE_TRACKING_MAX_VELOCITY_PX_S) || 1400;
 const READY_TIMEOUT_MS = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_READY_TIMEOUT_MS) || 3500;
+const CAL_MARGIN_PCT = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_MARGIN_PCT) || 0.1;
+const CAL_MARGIN_MIN = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_MARGIN_MIN_PX) || 32;
+const EDGE_EXTRA_SAMPLES = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_EDGE_EXTRA_SAMPLES) || 4;
+const EDGE_DELAY_MS = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_EDGE_DELAY_MS) || 40;
+const EDGE_MAX_MS_BONUS = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_EDGE_MAX_MS_BONUS) || 1200;
+const POINT_RETRY_MAX = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_POINT_RETRY_MAX) || 2;
+const POINT_MAX_ERROR_PX = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_POINT_MAX_ERROR_PX) || 180;
+const EDGE_BIAS_PCT = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_EDGE_BIAS_PCT) || 0.12;
 const READY_POLL_MS = 80;
 
 function getWebgazerVideoElement(): HTMLVideoElement | null {
@@ -63,9 +71,14 @@ async function waitForWebgazerReady(timeoutMs: number): Promise<boolean> {
   return isWebgazerReady();
 }
 
+function computeMargins(width: number, height: number, pct: number) {
+  const marginX = Math.max(CAL_MARGIN_MIN, Math.round(width * pct));
+  const marginY = Math.max(CAL_MARGIN_MIN, Math.round(height * pct));
+  return { marginX, marginY };
+}
+
 function buildPoints(width: number, height: number): CalibrationPoint[] {
-  const marginX = Math.max(24, Math.round(width * 0.08));
-  const marginY = Math.max(24, Math.round(height * 0.08));
+  const { marginX, marginY } = computeMargins(width, height, CAL_MARGIN_PCT);
   const left = marginX;
   const right = width - marginX;
   const top = marginY;
@@ -100,8 +113,7 @@ function dedupePoints(points: CalibrationPoint[]): CalibrationPoint[] {
 }
 
 function buildAdaptivePoints(points: CalibrationPoint[], width: number, height: number) {
-  const marginX = Math.max(20, Math.round(width * 0.06));
-  const marginY = Math.max(20, Math.round(height * 0.06));
+  const { marginX, marginY } = computeMargins(width, height, Math.max(0.06, CAL_MARGIN_PCT * 0.7));
   const offsetX = Math.max(18, Math.round(width * 0.05));
   const offsetY = Math.max(18, Math.round(height * 0.05));
   const adaptive = points.flatMap((pt) => [
@@ -114,8 +126,7 @@ function buildAdaptivePoints(points: CalibrationPoint[], width: number, height: 
 }
 
 function buildValidationPoints(width: number, height: number): CalibrationPoint[] {
-  const marginX = Math.max(28, Math.round(width * 0.12));
-  const marginY = Math.max(28, Math.round(height * 0.12));
+  const { marginX, marginY } = computeMargins(width, height, Math.min(0.18, CAL_MARGIN_PCT + 0.04));
   const left = marginX;
   const right = width - marginX;
   const top = marginY;
@@ -167,17 +178,53 @@ function trimmedMean(values: number[], trimPct: number): number {
   return slice.length ? sum / slice.length : sorted[Math.floor(sorted.length / 2)];
 }
 
+function edgeScore(point: CalibrationPoint, width: number, height: number) {
+  const { marginX, marginY } = computeMargins(width, height, CAL_MARGIN_PCT);
+  const edgeX = Math.min(point.x, width - point.x) <= marginX * 1.15;
+  const edgeY = Math.min(point.y, height - point.y) <= marginY * 1.15;
+  const bottomBias = point.y >= height * (1 - EDGE_BIAS_PCT);
+  return edgeX || edgeY || bottomBias;
+}
+
+function centerWeight(point: CalibrationPoint, width: number, height: number) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const nx = Math.min(1, Math.abs(point.x - centerX) / Math.max(1, centerX));
+  const ny = Math.min(1, Math.abs(point.y - centerY) / Math.max(1, centerY));
+  const edge = Math.max(nx, ny);
+  return 0.6 + 0.4 * (1 - edge);
+}
+
+function weightedMean(values: number[], weights: number[]) {
+  if (!values.length) return Number.POSITIVE_INFINITY;
+  let sum = 0;
+  let wsum = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const w = weights[i] ?? 1;
+    if (!Number.isFinite(values[i]) || !Number.isFinite(w)) continue;
+    sum += values[i] * w;
+    wsum += w;
+  }
+  return wsum > 0 ? sum / wsum : Number.POSITIVE_INFINITY;
+}
+
 async function collectSamples({
   point,
   record,
   getGaze,
   ensureReady,
+  sampleCount,
+  sampleDelayMs,
+  sampleMaxMs,
   runIdRef,
 }: {
   point: CalibrationPoint;
   record: boolean;
   getGaze?: () => GazeSample | null;
   ensureReady?: () => Promise<boolean>;
+  sampleCount: number;
+  sampleDelayMs: number;
+  sampleMaxMs: number;
   runIdRef: { current: number };
 }): Promise<CalibrationPointResult | null> {
   const wg = (window as unknown as { webgazer?: { recordScreenPosition?: (x: number, y: number, type?: string) => void } })
@@ -194,9 +241,9 @@ async function collectSamples({
   const start = performance.now();
   const runId = runIdRef.current;
 
-  while (samples.length < SAMPLE_COUNT && performance.now() - start < SAMPLE_MAX_MS) {
+  while (samples.length < sampleCount && performance.now() - start < sampleMaxMs) {
     if (runIdRef.current !== runId) return null;
-    await new Promise((resolve) => window.setTimeout(resolve, SAMPLE_DELAY_MS));
+    await new Promise((resolve) => window.setTimeout(resolve, sampleDelayMs));
     const gaze = getGaze?.();
     if (!gaze) continue;
     if (!Number.isFinite(gaze.x) || !Number.isFinite(gaze.y)) continue;
@@ -252,6 +299,7 @@ export function EyeCalibrationOverlay({
   const [warning, setWarning] = useState<string | null>(null);
   const [results, setResults] = useState<CalibrationPointResult[]>([]);
   const runIdRef = useRef(0);
+  const retryCountsRef = useRef<Map<string, number>>(new Map());
 
   const readGaze = useCallback((): GazeSample | null => {
     if (getGaze) {
@@ -282,6 +330,7 @@ export function EyeCalibrationOverlay({
     setError(null);
     setWarning(null);
     setResults([]);
+    retryCountsRef.current.clear();
     const update = () => {
       setPoints(buildPoints(window.innerWidth, window.innerHeight));
     };
@@ -306,11 +355,22 @@ export function EyeCalibrationOverlay({
     setError(null);
     setWarning(null);
     const record = phase !== "validate";
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const isEdge = edgeScore(current, width, height);
+    const localSampleCount = SAMPLE_COUNT + (isEdge ? EDGE_EXTRA_SAMPLES : 0);
+    const localDelay = SAMPLE_DELAY_MS + (isEdge ? EDGE_DELAY_MS : 0);
+    const localMaxMs = SAMPLE_MAX_MS + (isEdge ? EDGE_MAX_MS_BONUS : 0);
+    const retryKey = `${Math.round(current.x)}:${Math.round(current.y)}:${phase}`;
+    const retries = retryCountsRef.current.get(retryKey) ?? 0;
     const result = await collectSamples({
       point: current,
       record,
       getGaze: readGaze,
       ensureReady: record ? () => waitForWebgazerReady(READY_TIMEOUT_MS) : undefined,
+      sampleCount: localSampleCount,
+      sampleDelayMs: localDelay,
+      sampleMaxMs: localMaxMs,
       runIdRef,
     });
     if (!result) {
@@ -326,6 +386,12 @@ export function EyeCalibrationOverlay({
     if (result.samples < SAMPLE_MIN) {
       setBusy(false);
       setError("Keep your gaze steady and try again.");
+      return;
+    }
+    if (Number.isFinite(result.errorPx) && result.errorPx > POINT_MAX_ERROR_PX && retries < POINT_RETRY_MAX) {
+      retryCountsRef.current.set(retryKey, retries + 1);
+      setBusy(false);
+      setWarning("That point was unstable. Try again and keep your gaze steady.");
       return;
     }
 
@@ -373,21 +439,24 @@ export function EyeCalibrationOverlay({
 
     const validation = nextResults.filter((r) => r.phase === "validate" && Number.isFinite(r.errorPx));
     const errors = validation.map((r) => r.errorPx).filter((v) => Number.isFinite(v));
+    const weights = validation.map((r) => centerWeight(r.point, window.innerWidth, window.innerHeight));
     const diag = Math.hypot(window.innerWidth || 0, window.innerHeight || 0);
     const dynamicTarget = diag > 0 ? clamp(diag * 0.12, 120, 260) : TARGET_ERROR;
+    const weighted = errors.length > 0 ? weightedMean(errors, weights.slice(0, errors.length)) : Number.POSITIVE_INFINITY;
     const robustError = errors.length > 2 ? trimmedMean(errors, 0.2) : median(errors);
-    const quality = Number.isFinite(robustError) ? clamp(1 - robustError / dynamicTarget, 0, 1) : 0;
+    const blendedError = Number.isFinite(weighted) ? (robustError + weighted) / 2 : robustError;
+    const quality = Number.isFinite(blendedError) ? clamp(1 - blendedError / dynamicTarget, 0, 1) : 0;
     if (quality < MIN_QUALITY) {
       setWarning(
         `Calibration quality is low (${Math.round(quality * 100)}%, ~${Math.round(
-          robustError
+          blendedError
         )}px error). Try again from a steady position with good lighting.`
       );
       setBusy(false);
       return;
     }
     setBusy(false);
-    onComplete({ quality, errorPx: robustError, samples: nextResults.length });
+    onComplete({ quality, errorPx: blendedError, samples: nextResults.length });
     onClose();
   }, [busy, current, getGaze, onClose, onComplete, phase, readGaze, results, step, total]);
 
