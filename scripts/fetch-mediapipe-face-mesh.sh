@@ -2,9 +2,13 @@
 set -euo pipefail
 
 BASE_URL="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619"
-OUT_DIR="$(cd "$(dirname "$0")/.." && pwd)/public/mediapipe/face_mesh"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OUT_DIR="$ROOT_DIR/public/mediapipe/face_mesh"
+# Some libs resolve assets relative to the current route (e.g. /path-nodes/*),
+# so mirror the assets under that path to avoid 404s / HTML fallbacks.
+OUT_DIR_ROUTE_MIRROR="$ROOT_DIR/public/path-nodes/mediapipe/face_mesh"
 
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR" "$OUT_DIR_ROUTE_MIRROR"
 
 files=(
   "face_mesh.js"
@@ -23,4 +27,9 @@ for file in "${files[@]}"; do
   curl -fL "$url" -o "$OUT_DIR/$file"
 done
 
-echo "Done. Assets are now available under /mediapipe/face_mesh/"
+echo "Mirroring assets under $OUT_DIR_ROUTE_MIRROR"
+for file in "${files[@]}"; do
+  cp "$OUT_DIR/$file" "$OUT_DIR_ROUTE_MIRROR/$file"
+done
+
+echo "Done. Assets are now available under /mediapipe/face_mesh/ and /path-nodes/mediapipe/face_mesh/"
