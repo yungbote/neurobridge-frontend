@@ -118,6 +118,24 @@ function averagePoint(samples: GazeSample[]): CalibrationPoint | null {
   return { x: sum.x / samples.length, y: sum.y / samples.length };
 }
 
+function median(values: number[]): number {
+  if (!values.length) return Number.POSITIVE_INFINITY;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function trimmedMean(values: number[], trimPct: number): number {
+  if (!values.length) return Number.POSITIVE_INFINITY;
+  const sorted = [...values].sort((a, b) => a - b);
+  const trim = Math.floor(sorted.length * trimPct);
+  const start = clamp(trim, 0, sorted.length - 1);
+  const end = clamp(sorted.length - trim, start + 1, sorted.length);
+  const slice = sorted.slice(start, end);
+  const sum = slice.reduce((acc, v) => acc + v, 0);
+  return slice.length ? sum / slice.length : sorted[Math.floor(sorted.length / 2)];
+}
+
 async function collectSamples({
   point,
   record,
@@ -315,20 +333,22 @@ export function EyeCalibrationOverlay({
     }
 
     const validation = nextResults.filter((r) => r.phase === "validate" && Number.isFinite(r.errorPx));
-    const avgError =
-      validation.length > 0
-        ? validation.reduce((acc, r) => acc + r.errorPx, 0) / validation.length
-        : Number.POSITIVE_INFINITY;
-    const quality = Number.isFinite(avgError) ? clamp(1 - avgError / TARGET_ERROR, 0, 1) : 0;
+    const errors = validation.map((r) => r.errorPx).filter((v) => Number.isFinite(v));
+    const diag = Math.hypot(window.innerWidth || 0, window.innerHeight || 0);
+    const dynamicTarget = diag > 0 ? clamp(diag * 0.12, 120, 260) : TARGET_ERROR;
+    const robustError = errors.length > 2 ? trimmedMean(errors, 0.2) : median(errors);
+    const quality = Number.isFinite(robustError) ? clamp(1 - robustError / dynamicTarget, 0, 1) : 0;
     if (quality < MIN_QUALITY) {
       setWarning(
-        "Calibration quality is low. Try again from a steady position with good lighting."
+        `Calibration quality is low (${Math.round(quality * 100)}%, ~${Math.round(
+          robustError
+        )}px error). Try again from a steady position with good lighting.`
       );
       setBusy(false);
       return;
     }
     setBusy(false);
-    onComplete({ quality, errorPx: avgError, samples: nextResults.length });
+    onComplete({ quality, errorPx: robustError, samples: nextResults.length });
     onClose();
   }, [busy, current, getGaze, onClose, onComplete, phase, readGaze, results, step, total]);
 
