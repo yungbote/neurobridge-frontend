@@ -586,14 +586,19 @@ export function EyeCalibrationOverlay({
       setError("Keep your gaze steady and try again.");
       return;
     }
-    if (Number.isFinite(result.errorPx) && result.errorPx > POINT_MAX_ERROR_PX && retries < POINT_RETRY_MAX) {
+    let effectiveError = result.errorPx;
+    if (phase === "validate" && result.predicted && transformRef.current) {
+      const corrected = applyTransformRaw(result.predicted, transformRef.current);
+      effectiveError = distance(corrected, result.point);
+    }
+    if (Number.isFinite(effectiveError) && effectiveError > POINT_MAX_ERROR_PX && retries < POINT_RETRY_MAX) {
       retryCountsRef.current.set(retryKey, retries + 1);
       setBusy(false);
       setWarning("That point was unstable. Try again and keep your gaze steady.");
       return;
     }
 
-    const nextResults = [...results, { ...result, phase }];
+    const nextResults = [...results, { ...result, phase, errorPx: effectiveError }];
     setResults(nextResults);
 
     if (step + 1 < total) {
