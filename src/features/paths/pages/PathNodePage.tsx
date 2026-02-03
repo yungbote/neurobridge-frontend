@@ -142,6 +142,8 @@ const LINE_STATE_BEHAVIOR_SIGMA_MULT =
     : 2.2;
 const rawLineStateCache = Number(import.meta.env.VITE_EYE_TRACKING_LINE_STATE_CACHE_MS);
 const LINE_STATE_CACHE_MS = Number.isFinite(rawLineStateCache) && rawLineStateCache >= 0 ? rawLineStateCache : 120;
+const rawLineSnapStrict = String(import.meta.env.VITE_EYE_TRACKING_LINE_SNAP_STRICT || "false").toLowerCase();
+const LINE_SNAP_STRICT = !["false", "0", "no"].includes(rawLineSnapStrict);
 const GAZE_BIAS_MAX = 80;
 const GAZE_BIAS_ALPHA = 0.12;
 
@@ -1006,6 +1008,24 @@ export default function PathNodePage() {
       return lines;
     },
     [getBlockLines]
+  );
+
+  const findNearestVisibleLine = useCallback(
+    (y: number, rootTop: number, rootBottom: number) => {
+      const lines = buildVisibleLineState(rootTop, rootBottom);
+      if (lines.length === 0) return null;
+      let best: LineState | null = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const line of lines) {
+        const dist = Math.abs(line.centerY - y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = line;
+        }
+      }
+      return best;
+    },
+    [buildVisibleLineState]
   );
 
   const updateLineState = useCallback(
@@ -2070,9 +2090,15 @@ export default function PathNodePage() {
           dtMs,
         });
 
-        if (lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE) {
-          focusY = lineState.line.centerY;
-          gazeBlockId = lineState.line.blockId;
+        const lineStateOk = Boolean(lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE);
+        const strictFallbackLine = LINE_SNAP_STRICT
+          ? findNearestVisibleLine(gazeSample?.y ?? behaviorY, rootTop, rootTop + rootHeight)
+          : null;
+        const activeLine = lineState?.line ?? strictFallbackLine;
+
+        if (activeLine && (lineStateOk || LINE_SNAP_STRICT)) {
+          focusY = activeLine.centerY;
+          gazeBlockId = activeLine.blockId;
           if (gazeSample) {
             gazeConfidenceFactor = clamp(
               (gazeSample.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
@@ -2080,15 +2106,13 @@ export default function PathNodePage() {
               1
             );
           }
-          if (lineState.usedGaze) {
+          if (lineState?.usedGaze && gazeSample) {
             source = "gaze";
             restrictToGaze = true;
-            if (gazeSample) {
-              const lineCenterX = (lineState.line.left + lineState.line.right) * 0.5;
-              const lineCenterY = lineState.line.centerY;
-              updateGazeBias(gazeSample.x - lineCenterX, gazeSample.y - lineCenterY);
-            }
-            recordLineDwell(gazeBlockId, lineState.line, dtMs);
+            const lineCenterX = (activeLine.left + activeLine.right) * 0.5;
+            const lineCenterY = activeLine.centerY;
+            updateGazeBias(gazeSample.x - lineCenterX, gazeSample.y - lineCenterY);
+            recordLineDwell(gazeBlockId, activeLine, dtMs);
           }
         } else if (gazeOk && corrected && gazePoint) {
           const snapped = getSnappedGaze(corrected.x, corrected.y);
@@ -2155,6 +2179,7 @@ export default function PathNodePage() {
     getSnappedGaze,
     gazeRef,
     getSmoothedGaze,
+    findNearestVisibleLine,
     markBlockRead,
     nodeId,
     recordLineDwell,
@@ -2194,15 +2219,19 @@ export default function PathNodePage() {
         },
         dtMs: GAZE_TICK_MS,
       });
-      const lineStateOk = lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE;
+      const lineStateOk = Boolean(lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE);
+      const strictFallbackLine = LINE_SNAP_STRICT
+        ? findNearestVisibleLine(corrected.y, rootTop, rootTop + rootHeight)
+        : null;
       const snapped = getSnappedGaze(corrected.x, corrected.y);
       const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
-      const line = lineStateOk ? lineState?.line ?? null : snapped.line ?? null;
+      const line = (lineStateOk ? lineState?.line ?? null : null) ?? strictFallbackLine ?? snapped.line ?? null;
       const blockId = line?.blockId || snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
       if (!blockId) return;
       const fallbackLine = line ?? findGazeLine(blockId, snapPoint.x, snapPoint.y);
       const lineCenterX = fallbackLine ? (fallbackLine.left + fallbackLine.right) * 0.5 : snapPoint.x;
       const lineCenterY = fallbackLine ? (fallbackLine.top + fallbackLine.bottom) * 0.5 : snapPoint.y;
+      const snapLabel = lineStateOk ? "line_state" : strictFallbackLine ? "line_strict" : snapped.snap;
       const dt = gazeLastHitAtRef.current > 0 ? now - gazeLastHitAtRef.current : 0;
       gazeLastHitAtRef.current = now;
       gazeLastBlockRef.current = blockId;
@@ -2225,7 +2254,7 @@ export default function PathNodePage() {
           raw_y: gazePoint.y,
           bias_x: gazeBiasRef.current?.x ?? 0,
           bias_y: gazeBiasRef.current?.y ?? 0,
-          snap: lineStateOk ? "line_state" : snapped.snap,
+          snap: snapLabel,
           snap_x: lineCenterX,
           snap_y: lineCenterY,
           line_state_confidence: lineStateOk ? lineState?.confidence ?? 0 : 0,
@@ -2241,6 +2270,7 @@ export default function PathNodePage() {
     applyGazeBias,
     findGazeBlock,
     findGazeLine,
+    findNearestVisibleLine,
     getSnappedGaze,
     getSmoothedGaze,
     gazeRef,
@@ -2264,9 +2294,40 @@ export default function PathNodePage() {
         const clamped = Math.max(0, Math.min(1, confidence));
         const opacity = 0.35 + clamped * 0.65;
         const corrected = applyGazeBias(point.x, point.y);
-        const snapped = getSnappedGaze(corrected.x, corrected.y);
-        const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
-        el.style.transform = `translate3d(${Math.round(snapPoint.x)}px, ${Math.round(snapPoint.y)}px, 0)`;
+        const scrollRoot = resolveScrollContainer();
+        const rootRect = scrollRoot?.getBoundingClientRect();
+        const rootTop = rootRect?.top ?? 0;
+        const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
+        const behaviorY = rootTop + rootHeight * READ_LINE_RATIO;
+        const lineState = updateLineState({
+          nowMs: Date.now(),
+          rootTop,
+          rootBottom: rootTop + rootHeight,
+          rootHeight,
+          behaviorY,
+          gazePoint: {
+            x: corrected.x,
+            y: corrected.y,
+            confidence: confidence,
+            velocity: gazeVelocityRef.current,
+            ts: gaze.ts ?? Date.now(),
+          },
+          dtMs: 16,
+        });
+        const lineStateOk = Boolean(lineState?.line && lineState.confidence >= LINE_STATE_MIN_CONFIDENCE);
+        const strictFallbackLine = LINE_SNAP_STRICT
+          ? findNearestVisibleLine(corrected.y, rootTop, rootTop + rootHeight)
+          : null;
+        const activeLine = (lineStateOk ? lineState?.line ?? null : null) ?? strictFallbackLine ?? null;
+        if (activeLine) {
+          const snapX = (activeLine.left + activeLine.right) * 0.5;
+          const snapY = activeLine.centerY;
+          el.style.transform = `translate3d(${Math.round(snapX)}px, ${Math.round(snapY)}px, 0)`;
+        } else {
+          const snapped = getSnappedGaze(corrected.x, corrected.y);
+          const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
+          el.style.transform = `translate3d(${Math.round(snapPoint.x)}px, ${Math.round(snapPoint.y)}px, 0)`;
+        }
         el.style.opacity = String(opacity);
       } else {
         el.style.opacity = "0";
@@ -2277,7 +2338,7 @@ export default function PathNodePage() {
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [applyGazeBias, getSnappedGaze, gazeDebugEnabled, gazeRef]);
+  }, [applyGazeBias, findNearestVisibleLine, getSnappedGaze, gazeDebugEnabled, gazeRef, resolveScrollContainer, updateLineState]);
 
   useEffect(() => {
     if (!nodeId || !doc) return;

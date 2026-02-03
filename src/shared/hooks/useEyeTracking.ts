@@ -131,6 +131,7 @@ export function useEyeTracking(enabled: boolean) {
   useEffect(() => {
     let cancelled = false;
     let active = true;
+    let observer: MutationObserver | null = null;
 
     const releaseWebgazer = () => {
       webgazerUsers = Math.max(0, webgazerUsers - 1);
@@ -199,6 +200,15 @@ export function useEyeTracking(enabled: boolean) {
     if (webgazerStopTimer) {
       window.clearTimeout(webgazerStopTimer);
       webgazerStopTimer = null;
+    }
+
+    if (typeof document !== "undefined") {
+      ensureWebgazerVideoElement();
+      observer = new MutationObserver(() => {
+        if (!enabled) return;
+        ensureWebgazerVideoElement();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
     }
 
     const ensureVideoStream = async (): Promise<boolean> => {
@@ -308,7 +318,12 @@ export function useEyeTracking(enabled: boolean) {
           };
         });
         await ensureVideoStream();
-        await beginWebgazer(wg);
+        const started = await beginWebgazer(wg);
+        if (!started) {
+          ensureWebgazerVideoElement();
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+          await beginWebgazer(wg);
+        }
         wg.resume?.();
         await ensureVideoStream();
         await syncViewerToVideo();
@@ -344,6 +359,10 @@ export function useEyeTracking(enabled: boolean) {
       active = false;
       stopManualStream();
       releaseWebgazer();
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
     };
   }, [enabled]);
 
