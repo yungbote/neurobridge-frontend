@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getEyeTrackingPermission } from "@/shared/hooks/useEyeTrackingPreference";
-import { readCalibrationTransform, EyeCalibrationTransform } from "@/shared/hooks/useEyeCalibration";
+import { readCalibrationModel, EyeCalibrationModel, EyeCalibrationTransform, EyeCalibrationGrid } from "@/shared/hooks/useEyeCalibration";
 
 export type EyeTrackingStatus =
   | "idle"
@@ -63,6 +63,81 @@ let webgazerBeginPromise: Promise<WebGazerLike | null> | null = null;
 let webgazerUsers = 0;
 let webgazerRunning = false;
 let webgazerStopTimer: number | null = null;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function applyAffinePoint(x: number, y: number, transform: EyeCalibrationTransform | null): { x: number; y: number } {
+  if (!transform) return { x, y };
+  const tx = transform.a * x + transform.b * y + transform.c;
+  const ty = transform.d * x + transform.e * y + transform.f;
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) return { x, y };
+  return { x: tx, y: ty };
+}
+
+function bilerp(
+  grid: EyeCalibrationGrid,
+  nx: number,
+  ny: number,
+  field: "dx" | "dy"
+): number {
+  const size = grid.size;
+  if (size < 2) return 0;
+  const gx = clamp(nx, 0, 1) * (size - 1);
+  const gy = clamp(ny, 0, 1) * (size - 1);
+  const x0 = Math.floor(gx);
+  const y0 = Math.floor(gy);
+  const x1 = Math.min(size - 1, x0 + 1);
+  const y1 = Math.min(size - 1, y0 + 1);
+  const tx = gx - x0;
+  const ty = gy - y0;
+  const idx = (ix: number, iy: number) => iy * size + ix;
+  const arr = field === "dx" ? grid.dx : grid.dy;
+  const v00 = arr[idx(x0, y0)] ?? 0;
+  const v10 = arr[idx(x1, y0)] ?? 0;
+  const v01 = arr[idx(x0, y1)] ?? 0;
+  const v11 = arr[idx(x1, y1)] ?? 0;
+  const v0 = v00 * (1 - tx) + v10 * tx;
+  const v1 = v01 * (1 - tx) + v11 * tx;
+  return v0 * (1 - ty) + v1 * ty;
+}
+
+function applyGridResidual(
+  x: number,
+  y: number,
+  model: EyeCalibrationModel | null
+): { x: number; y: number } {
+  if (!model?.grid) return { x, y };
+  const width = Number.isFinite(model.width) && model.width > 0 ? model.width : window.innerWidth;
+  const height = Number.isFinite(model.height) && model.height > 0 ? model.height : window.innerHeight;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return { x, y };
+  const nx = clamp(x / width, 0, 1);
+  const ny = clamp(y / height, 0, 1);
+  const dx = bilerp(model.grid, nx, ny, "dx");
+  const dy = bilerp(model.grid, nx, ny, "dy");
+  const scaleX = model.width > 0 ? window.innerWidth / model.width : 1;
+  const scaleY = model.height > 0 ? window.innerHeight / model.height : 1;
+  const nextX = x + dx * scaleX;
+  const nextY = y + dy * scaleY;
+  return { x: nextX, y: nextY };
+}
+
+function applyCalibrationPoint(
+  x: number,
+  y: number,
+  model: EyeCalibrationModel | null
+): { x: number; y: number } {
+  if (!model) return { x, y };
+  let next = applyAffinePoint(x, y, model.transform);
+  next = applyGridResidual(next.x, next.y, model);
+  const maxX = typeof window !== "undefined" ? window.innerWidth : next.x;
+  const maxY = typeof window !== "undefined" ? window.innerHeight : next.y;
+  return {
+    x: clamp(next.x, 0, Math.max(0, maxX)),
+    y: clamp(next.y, 0, Math.max(0, maxY)),
+  };
+}
 
 function ensureWebgazerVideoElement(): HTMLVideoElement | null {
   if (typeof document === "undefined") return null;
@@ -128,14 +203,14 @@ export function useEyeTracking(enabled: boolean) {
   const lastGazeAtRef = useRef<number>(0);
   const manualStreamRef = useRef<MediaStream | null>(null);
   const lastViewerSizeRef = useRef<{ w: number; h: number } | null>(null);
-  const calibrationTransformRef = useRef<EyeCalibrationTransform | null>(readCalibrationTransform());
+  const calibrationModelRef = useRef<EyeCalibrationModel | null>(readCalibrationModel());
   const [status, setStatus] = useState<EyeTrackingStatus>(enabled ? "starting" : "idle");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<EyeCalibrationTransform | null>).detail;
-      calibrationTransformRef.current = detail ?? readCalibrationTransform();
+      const detail = (event as CustomEvent<EyeCalibrationModel | null>).detail;
+      calibrationModelRef.current = detail ?? readCalibrationModel();
     };
     if (typeof window !== "undefined") {
       window.addEventListener("nb_eye_calibration_updated", handler as EventListener);
@@ -313,6 +388,8 @@ export function useEyeTracking(enabled: boolean) {
           wgAny.params = wgAny.params || {};
           wgAny.params.faceMeshSolutionPath = FACE_MESH_BASE;
         }
+        wgAny.params = wgAny.params || {};
+        wgAny.params.videoElementId = "webgazerVideoFeed";
         ensureWebgazerVideoElement();
         if (typeof wgAny.setCameraConstraints === "function") {
           await wgAny.setCameraConstraints({
@@ -333,26 +410,16 @@ export function useEyeTracking(enabled: boolean) {
         wg.setGazeListener((data, ts) => {
           if (!active || !data) return;
           lastGazeAtRef.current = Date.now();
-          let x = data.x;
-          let y = data.y;
-          const transform = calibrationTransformRef.current;
-          if (transform) {
-            const tx = transform.a * x + transform.b * y + transform.c;
-            const ty = transform.d * x + transform.e * y + transform.f;
-            if (Number.isFinite(tx) && Number.isFinite(ty)) {
-              const maxX = typeof window !== "undefined" ? window.innerWidth : tx;
-              const maxY = typeof window !== "undefined" ? window.innerHeight : ty;
-              x = Math.min(Math.max(0, tx), Math.max(0, maxX));
-              y = Math.min(Math.max(0, ty), Math.max(0, maxY));
-            }
-          }
+          const rawX = data.x;
+          const rawY = data.y;
+          const calibrated = applyCalibrationPoint(rawX, rawY, calibrationModelRef.current);
           const payload = {
             confidence: typeof data.confidence === "number" ? data.confidence : 0.6,
             ts: typeof ts === "number" ? ts : Date.now(),
             source: "webgazer" as const,
           };
-          rawGazeRef.current = { x: data.x, y: data.y, ...payload };
-          gazeRef.current = { x, y, ...payload };
+          rawGazeRef.current = { x: rawX, y: rawY, ...payload };
+          gazeRef.current = { x: calibrated.x, y: calibrated.y, ...payload };
         });
         const streamReady = await ensureVideoStream();
         if (streamReady && manualStreamRef.current && typeof wgAny.setStaticVideo === "function") {

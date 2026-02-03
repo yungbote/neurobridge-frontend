@@ -8,6 +8,7 @@ const KEY_VERSION = "nb_eye_calibration_v";
 const KEY_QUALITY = "nb_eye_calibration_quality";
 const KEY_ERROR = "nb_eye_calibration_error_px";
 const KEY_TRANSFORM = "nb_eye_calibration_transform";
+const KEY_MODEL = "nb_eye_calibration_model";
 
 export type EyeCalibrationTransform = {
   a: number;
@@ -16,6 +17,19 @@ export type EyeCalibrationTransform = {
   d: number;
   e: number;
   f: number;
+};
+
+export type EyeCalibrationGrid = {
+  size: number;
+  dx: number[];
+  dy: number[];
+};
+
+export type EyeCalibrationModel = {
+  transform: EyeCalibrationTransform | null;
+  grid: EyeCalibrationGrid | null;
+  width: number;
+  height: number;
 };
 
 function getMaxAgeDays(): number {
@@ -102,6 +116,7 @@ export function useEyeCalibration() {
     window.localStorage.removeItem(KEY_QUALITY);
     window.localStorage.removeItem(KEY_ERROR);
     window.localStorage.removeItem(KEY_TRANSFORM);
+    window.localStorage.removeItem(KEY_MODEL);
     setState("missing");
     setTs(null);
     setAgeDays(null);
@@ -123,8 +138,64 @@ export function useEyeCalibration() {
   };
 }
 
+function isValidGrid(grid: EyeCalibrationGrid | null | undefined): grid is EyeCalibrationGrid {
+  if (!grid) return false;
+  if (!Number.isFinite(grid.size) || grid.size < 2) return false;
+  const count = grid.size * grid.size;
+  if (!Array.isArray(grid.dx) || !Array.isArray(grid.dy)) return false;
+  if (grid.dx.length !== count || grid.dy.length !== count) return false;
+  return grid.dx.every(Number.isFinite) && grid.dy.every(Number.isFinite);
+}
+
+export function readCalibrationModel(): EyeCalibrationModel | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(KEY_MODEL);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as EyeCalibrationModel;
+      const hasTransform =
+        parsed?.transform &&
+        Number.isFinite(parsed.transform.a) &&
+        Number.isFinite(parsed.transform.b) &&
+        Number.isFinite(parsed.transform.c) &&
+        Number.isFinite(parsed.transform.d) &&
+        Number.isFinite(parsed.transform.e) &&
+        Number.isFinite(parsed.transform.f);
+      return {
+        transform: hasTransform ? parsed.transform : null,
+        grid: isValidGrid(parsed.grid) ? parsed.grid : null,
+        width: Number.isFinite(parsed.width) ? parsed.width : 0,
+        height: Number.isFinite(parsed.height) ? parsed.height : 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const rawTransform = window.localStorage.getItem(KEY_TRANSFORM);
+  if (!rawTransform) return null;
+  try {
+    const parsed = JSON.parse(rawTransform) as EyeCalibrationTransform;
+    if (
+      !Number.isFinite(parsed?.a) ||
+      !Number.isFinite(parsed?.b) ||
+      !Number.isFinite(parsed?.c) ||
+      !Number.isFinite(parsed?.d) ||
+      !Number.isFinite(parsed?.e) ||
+      !Number.isFinite(parsed?.f)
+    ) {
+      return null;
+    }
+    return { transform: parsed, grid: null, width: 0, height: 0 };
+  } catch {
+    return null;
+  }
+}
+
 export function readCalibrationTransform(): EyeCalibrationTransform | null {
   if (typeof window === "undefined") return null;
+  const model = readCalibrationModel();
+  if (model?.transform) return model.transform;
   const raw = window.localStorage.getItem(KEY_TRANSFORM);
   if (!raw) return null;
   try {
@@ -145,12 +216,32 @@ export function readCalibrationTransform(): EyeCalibrationTransform | null {
   }
 }
 
+export function writeCalibrationModel(model: EyeCalibrationModel | null) {
+  if (typeof window === "undefined") return;
+  if (!model) {
+    window.localStorage.removeItem(KEY_MODEL);
+    window.localStorage.removeItem(KEY_TRANSFORM);
+    window.dispatchEvent(new CustomEvent("nb_eye_calibration_updated", { detail: null }));
+    return;
+  }
+  window.localStorage.setItem(KEY_MODEL, JSON.stringify(model));
+  if (model.transform) {
+    window.localStorage.setItem(KEY_TRANSFORM, JSON.stringify(model.transform));
+  } else {
+    window.localStorage.removeItem(KEY_TRANSFORM);
+  }
+  window.dispatchEvent(new CustomEvent("nb_eye_calibration_updated", { detail: model }));
+}
+
 export function writeCalibrationTransform(transform: EyeCalibrationTransform | null) {
   if (typeof window === "undefined") return;
   if (!transform) {
     window.localStorage.removeItem(KEY_TRANSFORM);
+    writeCalibrationModel(null);
     return;
   }
   window.localStorage.setItem(KEY_TRANSFORM, JSON.stringify(transform));
-  window.dispatchEvent(new CustomEvent("nb_eye_calibration_updated", { detail: transform }));
+  const width = typeof window !== "undefined" ? window.innerWidth : 0;
+  const height = typeof window !== "undefined" ? window.innerHeight : 0;
+  writeCalibrationModel({ transform, grid: null, width, height });
 }

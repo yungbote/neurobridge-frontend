@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/utils";
-import { writeCalibrationTransform } from "@/shared/hooks/useEyeCalibration";
+import { writeCalibrationModel, EyeCalibrationGrid } from "@/shared/hooks/useEyeCalibration";
 
 type CalibrationPoint = { x: number; y: number };
 type CalibrationPhase = "baseline" | "adaptive" | "validate";
@@ -50,6 +50,9 @@ const EDGE_MAX_MS_BONUS = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_E
 const POINT_RETRY_MAX = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_POINT_RETRY_MAX) || 2;
 const POINT_MAX_ERROR_PX = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_POINT_MAX_ERROR_PX) || 180;
 const EDGE_BIAS_PCT = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_EDGE_BIAS_PCT) || 0.12;
+const GRID_SIZE = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_GRID_SIZE) || 4;
+const GRID_SIGMA = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_GRID_SIGMA) || 0.25;
+const GRID_MAX_SHIFT_PCT = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_GRID_MAX_SHIFT_PCT) || 0.22;
 const READY_POLL_MS = 80;
 
 function getWebgazerVideoElement(): HTMLVideoElement | null {
@@ -288,10 +291,17 @@ function solveAffineTransform(pairs: { predicted: CalibrationPoint; target: Cali
   };
 }
 
-function applyTransform(point: CalibrationPoint, transform: CalibrationTransform | null): CalibrationPoint {
+function applyTransformRaw(point: CalibrationPoint, transform: CalibrationTransform | null): CalibrationPoint {
   if (!transform) return point;
-  let x = transform.a * point.x + transform.b * point.y + transform.c;
-  let y = transform.d * point.x + transform.e * point.y + transform.f;
+  const x = transform.a * point.x + transform.b * point.y + transform.c;
+  const y = transform.d * point.x + transform.e * point.y + transform.f;
+  return { x, y };
+}
+
+function applyTransform(point: CalibrationPoint, transform: CalibrationTransform | null): CalibrationPoint {
+  const raw = applyTransformRaw(point, transform);
+  let x = raw.x;
+  let y = raw.y;
   if (typeof window !== "undefined") {
     x = clamp(x, 0, window.innerWidth);
     y = clamp(y, 0, window.innerHeight);
@@ -299,9 +309,66 @@ function applyTransform(point: CalibrationPoint, transform: CalibrationTransform
   return { x, y };
 }
 
+function buildResidualGrid(
+  results: CalibrationPointResult[],
+  transform: CalibrationTransform | null,
+  width: number,
+  height: number
+): EyeCalibrationGrid | null {
+  if (!transform) return null;
+  const size = Math.max(2, Math.round(GRID_SIZE));
+  if (width <= 0 || height <= 0) return null;
+  const count = size * size;
+  const dx = new Array(count).fill(0);
+  const dy = new Array(count).fill(0);
+  const weights = new Array(count).fill(0);
+  const sigma = Math.max(0.12, Math.min(0.6, GRID_SIGMA));
+  const sigma2 = sigma * sigma;
+  const maxShiftX = width * GRID_MAX_SHIFT_PCT;
+  const maxShiftY = height * GRID_MAX_SHIFT_PCT;
+
+  const samples = results.filter((r) => r.predicted && Number.isFinite(r.point.x) && Number.isFinite(r.point.y));
+  if (samples.length === 0) return null;
+
+  for (const sample of samples) {
+    const predicted = sample.predicted as CalibrationPoint;
+    const corrected = applyTransformRaw(predicted, transform);
+    if (!Number.isFinite(corrected.x) || !Number.isFinite(corrected.y)) continue;
+    const resX = sample.point.x - corrected.x;
+    const resY = sample.point.y - corrected.y;
+    const nx = clamp(sample.point.x / width, 0, 1);
+    const ny = clamp(sample.point.y / height, 0, 1);
+    for (let gy = 0; gy < size; gy += 1) {
+      for (let gx = 0; gx < size; gx += 1) {
+        const idx = gy * size + gx;
+        const cx = gx / (size - 1);
+        const cy = gy / (size - 1);
+        const d2 = (nx - cx) * (nx - cx) + (ny - cy) * (ny - cy);
+        const w = Math.exp(-d2 / (2 * sigma2));
+        dx[idx] += resX * w;
+        dy[idx] += resY * w;
+        weights[idx] += w;
+      }
+    }
+  }
+
+  for (let i = 0; i < count; i += 1) {
+    if (weights[i] > 0) {
+      dx[i] = clamp(dx[i] / weights[i], -maxShiftX, maxShiftX);
+      dy[i] = clamp(dy[i] / weights[i], -maxShiftY, maxShiftY);
+    } else {
+      dx[i] = 0;
+      dy[i] = 0;
+    }
+  }
+
+  return { size, dx, dy };
+}
+
 async function collectSamples({
   point,
   record,
+  phase,
   getGaze,
   ensureReady,
   sampleCount,
@@ -311,6 +378,7 @@ async function collectSamples({
 }: {
   point: CalibrationPoint;
   record: boolean;
+  phase: CalibrationPhase;
   getGaze?: () => GazeSample | null;
   ensureReady?: () => Promise<boolean>;
   sampleCount: number;
@@ -367,7 +435,7 @@ async function collectSamples({
     predicted,
     errorPx,
     samples: samples.length,
-    phase: record ? "baseline" : "validate",
+    phase,
   };
 }
 
@@ -395,29 +463,28 @@ export function EyeCalibrationOverlay({
   const dotRef = useRef<HTMLDivElement | null>(null);
   const prevGazeDotRef = useRef<boolean | null>(null);
 
-  const readGaze = useCallback((): GazeSample | null => {
+  const readRawGaze = useCallback((): GazeSample | null => {
     if (getGaze) {
-      const sample = getGaze();
-      if (sample) {
-        const corrected = applyTransform({ x: sample.x, y: sample.y }, transformRef.current);
-        return { ...sample, x: corrected.x, y: corrected.y };
-      }
-      // If a direct stream is empty, allow a safe fallback only when WebGazer is ready.
-      if (!isWebgazerReady()) return null;
+      return getGaze() ?? null;
     }
-    const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null; isReady?: () => boolean } })
-      .webgazer;
+    const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null } }).webgazer;
     if (!wg?.getCurrentPrediction) return null;
     if (!isWebgazerReady()) return null;
     try {
       const prediction = wg.getCurrentPrediction();
       if (!prediction || !Number.isFinite(prediction.x) || !Number.isFinite(prediction.y)) return null;
-      const corrected = applyTransform({ x: prediction.x, y: prediction.y }, transformRef.current);
-      return { x: corrected.x, y: corrected.y, confidence: 0.4, ts: Date.now() };
+      return { x: prediction.x, y: prediction.y, confidence: 0.4, ts: Date.now() };
     } catch {
       return null;
     }
   }, [getGaze]);
+
+  const readGaze = useCallback((): GazeSample | null => {
+    const sample = readRawGaze();
+    if (!sample) return null;
+    const corrected = applyTransform({ x: sample.x, y: sample.y }, transformRef.current);
+    return { ...sample, x: corrected.x, y: corrected.y };
+  }, [readRawGaze]);
 
   useEffect(() => {
     if (!open) return;
@@ -496,7 +563,8 @@ export function EyeCalibrationOverlay({
     const result = await collectSamples({
       point: current,
       record,
-      getGaze: readGaze,
+      phase,
+      getGaze: readRawGaze,
       ensureReady: () => waitForWebgazerReady(READY_TIMEOUT_MS),
       sampleCount: localSampleCount,
       sampleDelayMs: localDelay,
@@ -581,13 +649,29 @@ export function EyeCalibrationOverlay({
       return;
     }
 
-    const validation = nextResults.filter((r) => r.phase === "validate" && Number.isFinite(r.errorPx));
-    const errors = validation.map((r) => r.errorPx).filter((v) => Number.isFinite(v));
-    const weights = validation.map((r) => centerWeight(r.point, window.innerWidth, window.innerHeight));
-    const diag = Math.hypot(window.innerWidth || 0, window.innerHeight || 0);
+    const width = window.innerWidth || 0;
+    const height = window.innerHeight || 0;
+    const allPairs = nextResults
+      .filter((r) => r.predicted)
+      .map((r) => ({ predicted: r.predicted as CalibrationPoint, target: r.point }));
+    const finalTransform = solveAffineTransform(allPairs) ?? transformRef.current;
+    if (finalTransform) {
+      transformRef.current = finalTransform;
+    }
+    const validation = nextResults.filter((r) => r.phase === "validate" && r.predicted);
+    const correctedErrors = validation
+      .map((r) => {
+        const predicted = r.predicted as CalibrationPoint;
+        const corrected = finalTransform ? applyTransformRaw(predicted, finalTransform) : predicted;
+        return distance(corrected, r.point);
+      })
+      .filter((v) => Number.isFinite(v));
+    const weights = validation.map((r) => centerWeight(r.point, width, height));
+    const diag = Math.hypot(width || 0, height || 0);
     const dynamicTarget = diag > 0 ? clamp(diag * 0.12, 120, 260) : TARGET_ERROR;
-    const weighted = errors.length > 0 ? weightedMean(errors, weights.slice(0, errors.length)) : Number.POSITIVE_INFINITY;
-    const robustError = errors.length > 2 ? trimmedMean(errors, 0.2) : median(errors);
+    const weighted =
+      correctedErrors.length > 0 ? weightedMean(correctedErrors, weights.slice(0, correctedErrors.length)) : Number.POSITIVE_INFINITY;
+    const robustError = correctedErrors.length > 2 ? trimmedMean(correctedErrors, 0.2) : median(correctedErrors);
     const blendedError = Number.isFinite(weighted) ? (robustError + weighted) / 2 : robustError;
     const quality = Number.isFinite(blendedError) ? clamp(1 - blendedError / dynamicTarget, 0, 1) : 0;
     if (quality < MIN_QUALITY) {
@@ -600,12 +684,11 @@ export function EyeCalibrationOverlay({
       return;
     }
     setBusy(false);
-    if (transformRef.current) {
-      writeCalibrationTransform(transformRef.current);
-    }
+    const grid = finalTransform ? buildResidualGrid(nextResults, finalTransform, width, height) : null;
+    writeCalibrationModel({ transform: finalTransform ?? null, grid, width, height });
     onComplete({ quality, errorPx: blendedError, samples: nextResults.length });
     onClose();
-  }, [busy, current, getGaze, onClose, onComplete, phase, readGaze, results, step, total]);
+  }, [busy, current, getGaze, onClose, onComplete, phase, readRawGaze, results, step, total]);
 
   const handleRetry = useCallback(() => {
     runIdRef.current += 1;
