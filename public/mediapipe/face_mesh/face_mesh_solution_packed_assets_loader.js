@@ -16,7 +16,7 @@
         PACKAGE_PATH = encodeURIComponent(location.pathname.toString().substring(0, location.pathname.toString().lastIndexOf('/')) + '/');
       }
       var PACKAGE_NAME = 'blaze-out/k8-opt/genfiles/third_party/mediapipe/web/solutions/face_mesh/face_mesh_solution_packed_assets.data?v=20260203';
-      var REMOTE_PACKAGE_BASE = 'face_mesh_solution_packed_assets.data?v=20260203';
+      var REMOTE_PACKAGE_BASE = '/mediapipe/face_mesh/face_mesh_solution_packed_assets.data?v=20260203';
       if (typeof Module['locateFilePackage'] === 'function' && !Module['locateFile']) {
         Module['locateFile'] = Module['locateFilePackage'];
         err('warning: you defined Module.locateFilePackage, that has been renamed to Module.locateFile (using your locateFilePackage for now)');

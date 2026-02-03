@@ -10,6 +10,14 @@ export default defineConfig(({ mode }) => {
     name: "no-store-eye-assets",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (req.url) {
+          if (req.url.startsWith("/path-nodes/mediapipe/face_mesh/")) {
+            req.url = req.url.replace("/path-nodes", "");
+          }
+          if (req.url.startsWith("/path-nodes/eye-tracking/")) {
+            req.url = req.url.replace("/path-nodes", "");
+          }
+        }
         if (req.url && /face_mesh_solution_.*\\.(data|wasm|js)/.test(req.url)) {
           res.setHeader("Cache-Control", "no-store");
         }
@@ -37,7 +45,6 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
 
 
 
