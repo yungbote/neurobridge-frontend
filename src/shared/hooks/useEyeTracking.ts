@@ -34,6 +34,12 @@ declare global {
 }
 
 const CDN_URL = String(import.meta.env.VITE_EYE_TRACKING_CDN || "/eye-tracking/webgazer.js").trim();
+const FACE_MESH_BASE_RAW = String(import.meta.env.VITE_EYE_TRACKING_FACE_MESH_BASE || "/mediapipe/face_mesh").trim();
+const FACE_MESH_BASE = FACE_MESH_BASE_RAW
+  ? FACE_MESH_BASE_RAW.startsWith("/") || FACE_MESH_BASE_RAW.startsWith("http")
+    ? FACE_MESH_BASE_RAW
+    : `/${FACE_MESH_BASE_RAW}`
+  : "";
 let webgazerLoadPromise: Promise<WebGazerLike | null> | null = null;
 
 async function loadWebGazer(): Promise<WebGazerLike | null> {
@@ -135,6 +141,11 @@ export function useEyeTracking(enabled: boolean) {
             setError("webgazer unavailable");
           }
           return;
+        }
+        const wgAny = wg as WebGazerLike & { params?: Record<string, unknown> };
+        if (FACE_MESH_BASE) {
+          wgAny.params = wgAny.params || {};
+          wgAny.params.faceMeshSolutionPath = FACE_MESH_BASE;
         }
         wg.showPredictionPoints?.(false);
         wg.setGazeListener((data, ts) => {

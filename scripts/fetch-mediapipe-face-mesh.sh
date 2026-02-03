@@ -97,6 +97,18 @@ if ! download_first "$WEBGAZER_DIR/webgazer.js" $WEBGAZER_URLS; then
   exit 1
 fi
 safe_copy "$WEBGAZER_DIR/webgazer.js" "$WEBGAZER_MIRROR/webgazer.js"
+python - <<'PY'
+from pathlib import Path
+path = Path("public/eye-tracking/webgazer.js")
+if not path.exists():
+    raise SystemExit(0)
+text = path.read_text(encoding="utf-8")
+needle = 'faceMeshSolutionPath:"./mediapipe/face_mesh"'
+if needle in text:
+    text = text.replace(needle, 'faceMeshSolutionPath:"/mediapipe/face_mesh"')
+    path.write_text(text, encoding="utf-8")
+PY
+safe_copy "$WEBGAZER_DIR/webgazer.js" "$WEBGAZER_MIRROR/webgazer.js"
 
 echo "Downloading MediaPipe Face Mesh assets to $OUT_DIR"
 for file in $FILES; do
