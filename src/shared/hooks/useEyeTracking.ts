@@ -50,6 +50,8 @@ const FACE_MESH_BASE = FACE_MESH_BASE_RAW
     ? FACE_MESH_BASE_RAW
     : `/${FACE_MESH_BASE_RAW}`
   : "";
+const PREVIEW_MAX_W = Number(import.meta.env.VITE_EYE_TRACKING_PREVIEW_MAX_W) || 320;
+const PREVIEW_MAX_H = Number(import.meta.env.VITE_EYE_TRACKING_PREVIEW_MAX_H) || 240;
 let webgazerLoadPromise: Promise<WebGazerLike | null> | null = null;
 
 async function loadWebGazer(): Promise<WebGazerLike | null> {
@@ -168,7 +170,11 @@ export function useEyeTracking(enabled: boolean) {
       if (prev && prev.w === w && prev.h === h) return;
       lastViewerSizeRef.current = { w, h };
       if (typeof wgAny.setVideoViewerSize === "function") {
-        wgAny.setVideoViewerSize(w, h);
+        const scale =
+          w > 0 && h > 0 ? Math.min(PREVIEW_MAX_W / w, PREVIEW_MAX_H / h, 1) : 1;
+        const displayW = Math.max(1, Math.round(w * scale));
+        const displayH = Math.max(1, Math.round(h * scale));
+        wgAny.setVideoViewerSize(displayW, displayH);
       }
       // Expand feedback box to cover full webcam width so eyes are always within bounds.
       const minDim = Math.min(w, h);

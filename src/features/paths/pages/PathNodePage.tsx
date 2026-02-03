@@ -38,6 +38,8 @@ import { useLessons } from "@/app/providers/LessonProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
 import { useEyeTracking } from "@/shared/hooks/useEyeTracking";
 import { useEyeTrackingPreference } from "@/shared/hooks/useEyeTrackingPreference";
+import { useEyeCalibration } from "@/shared/hooks/useEyeCalibration";
+import { EyeCalibrationOverlay } from "@/shared/components/EyeCalibrationOverlay";
 import {
   asRecord,
   messageKindFromMetadata,
@@ -1010,6 +1012,8 @@ export default function PathNodePage() {
 
   const { enabled: eyeTrackingEnabled } = useEyeTrackingPreference();
   const { gazeRef, status: eyeTrackingStatus, error: eyeTrackingError } = useEyeTracking(eyeTrackingEnabled);
+  const { calibrationState, needsCalibration, markCalibrated } = useEyeCalibration();
+  const [showCalibration, setShowCalibration] = useState(false);
   const gazeStreamEnabled = useMemo(() => {
     const raw = String(import.meta.env.VITE_EYE_TRACKING_STREAM_ENABLED ?? "true").toLowerCase();
     return raw !== "false" && raw !== "0" && raw !== "off";
@@ -2523,6 +2527,16 @@ export default function PathNodePage() {
                     : `Eye tracking ${eyeTrackingStatus}`}
                 </span>
               ) : null}
+              {eyeTrackingEnabled && needsCalibration ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="h-6 rounded-full px-2 text-[10px] xs:text-[11px]"
+                  onClick={() => setShowCalibration(true)}
+                >
+                  Calibrate
+                </Button>
+              ) : null}
             </div>
 
             {/* Title - responsive typography */}
@@ -2752,6 +2766,15 @@ export default function PathNodePage() {
           aria-hidden="true"
         />
       ) : null}
+
+      <EyeCalibrationOverlay
+        open={showCalibration}
+        onClose={() => setShowCalibration(false)}
+        onComplete={() => {
+          markCalibrated();
+          setShowCalibration(false);
+        }}
+      />
 
       <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>
         <DialogContent>
