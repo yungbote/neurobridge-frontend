@@ -202,12 +202,24 @@ export function EyeCalibrationOverlay({
     if (getGaze) {
       const sample = getGaze();
       if (sample) return sample;
+      // When a direct gaze stream is provided, don't fall back to webgazer prediction.
+      return null;
     }
     const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null } })
       .webgazer;
-    const prediction = wg?.getCurrentPrediction?.();
-    if (!prediction || !Number.isFinite(prediction.x) || !Number.isFinite(prediction.y)) return null;
-    return { x: prediction.x, y: prediction.y, confidence: 0.4, ts: Date.now() };
+    if (!wg?.getCurrentPrediction) return null;
+    const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
+    if (!video) return null;
+    const widthReady = (video.videoWidth || video.clientWidth || 0) > 1;
+    const heightReady = (video.videoHeight || video.clientHeight || 0) > 1;
+    if (!widthReady || !heightReady) return null;
+    try {
+      const prediction = wg.getCurrentPrediction();
+      if (!prediction || !Number.isFinite(prediction.x) || !Number.isFinite(prediction.y)) return null;
+      return { x: prediction.x, y: prediction.y, confidence: 0.4, ts: Date.now() };
+    } catch {
+      return null;
+    }
   }, [getGaze]);
 
   useEffect(() => {
