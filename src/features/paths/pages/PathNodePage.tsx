@@ -939,7 +939,7 @@ export default function PathNodePage() {
       velocity: gazeVelocityRef.current,
       source: gaze.source,
     };
-  }, [gazeRef]);
+  }, []);
 
   const applyGazeBias = useCallback((x: number, y: number) => {
     const bias = gazeBiasRef.current;
