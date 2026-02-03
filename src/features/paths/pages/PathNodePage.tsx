@@ -65,6 +65,17 @@ type DocBlock = {
   [key: string]: unknown;
 };
 
+type LineRect = {
+  id: string;
+  index: number;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  height: number;
+  width: number;
+};
+
 type BlockFeedback = "" | "like" | "dislike";
 
 const VISIBLE_RATIO_MIN = 0.1;
@@ -84,9 +95,23 @@ const GAZE_TICK_MS = Number.isFinite(rawGazeTickMs) && rawGazeTickMs > 0 ? rawGa
 const rawGazeConfidence = Number(import.meta.env.VITE_EYE_TRACKING_MIN_CONFIDENCE);
 const GAZE_MIN_CONFIDENCE =
   Number.isFinite(rawGazeConfidence) && rawGazeConfidence > 0 ? rawGazeConfidence : 0.4;
+const rawGazeMaxVelocity = Number(import.meta.env.VITE_EYE_TRACKING_MAX_VELOCITY_PX_S);
+const GAZE_MAX_VELOCITY_PX_S =
+  Number.isFinite(rawGazeMaxVelocity) && rawGazeMaxVelocity > 0 ? rawGazeMaxVelocity : 1200;
+const rawLineFixationMs = Number(import.meta.env.VITE_EYE_TRACKING_LINE_MIN_FIXATION_MS);
+const LINE_MIN_FIXATION_MS =
+  Number.isFinite(rawLineFixationMs) && rawLineFixationMs > 0 ? rawLineFixationMs : 550;
+const rawLineDistanceFactor = Number(import.meta.env.VITE_EYE_TRACKING_LINE_DISTANCE_FACTOR);
+const LINE_DISTANCE_FACTOR =
+  Number.isFinite(rawLineDistanceFactor) && rawLineDistanceFactor > 0 ? rawLineDistanceFactor : 1.1;
+const rawLineXPadding = Number(import.meta.env.VITE_EYE_TRACKING_LINE_X_PADDING);
+const LINE_X_PADDING =
+  Number.isFinite(rawLineXPadding) && rawLineXPadding >= 0 ? rawLineXPadding : 24;
 const rawGazeBlockTtl = Number(import.meta.env.VITE_EYE_TRACKING_BLOCK_TTL_MS);
 const GAZE_BLOCK_TTL_MS =
   Number.isFinite(rawGazeBlockTtl) && rawGazeBlockTtl > 0 ? rawGazeBlockTtl : 4000;
+const GAZE_BIAS_MAX = 80;
+const GAZE_BIAS_ALPHA = 0.12;
 
 export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
@@ -675,9 +700,10 @@ export default function PathNodePage() {
   const blockBoundsRef = useRef<Map<string, { top: number; bottom: number; left: number; right: number; seenAt: number }>>(
     new Map()
   );
-  const blockLineRectsRef = useRef<
-    Map<string, Array<{ id: string; top: number; bottom: number; left: number; right: number; index: number }>>
-  >(new Map());
+  const blockLineRectsRef = useRef<Map<string, LineRect[]>>(new Map());
+  const lineDwellRef = useRef<Map<string, { ms: number; lastAt: number; blockId: string; index: number }>>(new Map());
+  const lineCreditsRef = useRef<Map<string, number>>(new Map());
+  const blockLineCreditsRef = useRef<Map<string, number>>(new Map());
   const currentBlockIdRef = useRef<string>("");
   const lastSwitchAtRef = useRef<number>(0);
   const scoreEMARef = useRef<Map<string, number>>(new Map());
@@ -717,6 +743,9 @@ export default function PathNodePage() {
   const gazeLastHitAtRef = useRef<number>(0);
   const gazeLastBlockRef = useRef<string>("");
   const gazeSmoothRef = useRef<{ x: number; y: number; ts: number } | null>(null);
+  const gazeLastPointRef = useRef<{ x: number; y: number; ts: number } | null>(null);
+  const gazeVelocityRef = useRef<number>(0);
+  const gazeBiasRef = useRef<{ x: number; y: number } | null>(null);
   const gazeDebugRef = useRef<HTMLDivElement | null>(null);
 
   const resolveScrollContainer = useCallback(() => {
@@ -796,6 +825,8 @@ export default function PathNodePage() {
         bottom: rect.bottom,
         left: rect.left,
         right: rect.right,
+        height: Math.max(1, rect.bottom - rect.top),
+        width: Math.max(1, rect.right - rect.left),
       }));
     return lines;
   }, []);
@@ -841,9 +872,9 @@ export default function PathNodePage() {
     return bestInside?.id || bestNear?.id || "";
   }, []);
 
-  const findGazeLine = useCallback(
-    (blockId: string, x: number, y: number) => {
-      if (!blockId) return null;
+  const getBlockLines = useCallback(
+    (blockId: string) => {
+      if (!blockId) return [];
       let lines = blockLineRectsRef.current.get(blockId);
       if (!lines || lines.length === 0) {
         const el = getBlockElement(blockId);
@@ -852,19 +883,111 @@ export default function PathNodePage() {
           blockLineRectsRef.current.set(blockId, lines);
         }
       }
-      if (!lines || lines.length === 0) return null;
-      let best: { id: string; index: number; dist: number } | null = null;
-      for (const line of lines) {
-        const inside = x >= line.left && x <= line.right && y >= line.top && y <= line.bottom;
-        const dist = inside ? 0 : Math.abs((line.top + line.bottom) * 0.5 - y);
-        if (!best || dist < best.dist) {
-          best = { id: line.id, index: line.index, dist };
-        }
-        if (dist === 0) break;
-      }
-      return best ? { id: best.id, index: best.index } : null;
+      return lines ?? [];
     },
     [computeLineRects, getBlockElement]
+  );
+
+  const findGazeLine = useCallback(
+    (blockId: string, x: number, y: number) => {
+      const lines = getBlockLines(blockId);
+      if (!lines || lines.length === 0) return null;
+      let best: { line: LineRect; dist: number; inside: boolean } | null = null;
+      for (const line of lines) {
+        const centerY = (line.top + line.bottom) * 0.5;
+        const yTol = Math.max(line.height * LINE_DISTANCE_FACTOR, 4);
+        const withinY = Math.abs(y - centerY) <= yTol;
+        const left = line.left - LINE_X_PADDING;
+        const right = line.right + LINE_X_PADDING;
+        const withinX = x >= left && x <= right;
+        const inside = withinX && withinY;
+        const yDist = withinY ? 0 : Math.abs(y - centerY) - yTol;
+        const xDist = withinX ? 0 : Math.min(Math.abs(x - left), Math.abs(x - right));
+        const dist = Math.max(0, yDist) + xDist * 0.25;
+        if (!best || dist < best.dist) {
+          best = { line, dist, inside };
+        }
+        if (inside) break;
+      }
+      if (!best) return null;
+      return { ...best.line, dist: best.dist, inside: best.inside };
+    },
+    [getBlockLines]
+  );
+
+  const getSmoothedGaze = useCallback((nowMs: number) => {
+    const gaze = gazeRef.current;
+    if (!gaze) return null;
+    const prev = gazeSmoothRef.current;
+    const smoothWeight = 0.65;
+    const smoothX = prev ? prev.x * smoothWeight + gaze.x * (1 - smoothWeight) : gaze.x;
+    const smoothY = prev ? prev.y * smoothWeight + gaze.y * (1 - smoothWeight) : gaze.y;
+    gazeSmoothRef.current = { x: smoothX, y: smoothY, ts: nowMs };
+    const last = gazeLastPointRef.current;
+    if (last) {
+      const dt = Math.max(16, nowMs - last.ts);
+      const dist = Math.hypot(smoothX - last.x, smoothY - last.y);
+      gazeVelocityRef.current = (dist / dt) * 1000;
+    } else {
+      gazeVelocityRef.current = 0;
+    }
+    gazeLastPointRef.current = { x: smoothX, y: smoothY, ts: nowMs };
+    return {
+      x: smoothX,
+      y: smoothY,
+      confidence: gaze.confidence,
+      velocity: gazeVelocityRef.current,
+      source: gaze.source,
+    };
+  }, [gazeRef]);
+
+  const applyGazeBias = useCallback((x: number, y: number) => {
+    const bias = gazeBiasRef.current;
+    if (!bias) return { x, y };
+    return { x: x - bias.x, y: y - bias.y };
+  }, []);
+
+  const updateGazeBias = useCallback((errX: number, errY: number) => {
+    const prev = gazeBiasRef.current ?? { x: 0, y: 0 };
+    const next = {
+      x: clamp(prev.x + errX * GAZE_BIAS_ALPHA, -GAZE_BIAS_MAX, GAZE_BIAS_MAX),
+      y: clamp(prev.y + errY * GAZE_BIAS_ALPHA, -GAZE_BIAS_MAX, GAZE_BIAS_MAX),
+    };
+    gazeBiasRef.current = next;
+  }, []);
+
+  const recordLineDwell = useCallback(
+    (blockId: string, line: LineRect, dtMs: number) => {
+      if (!blockId || !line) return blockLineCreditsRef.current.get(blockId) ?? 0;
+      const safeDt = Math.max(0, Math.min(dtMs, 1000));
+      if (safeDt <= 0) return blockLineCreditsRef.current.get(blockId) ?? 0;
+      const now = Date.now();
+      const key = line.id;
+      const entry = lineDwellRef.current.get(key) ?? {
+        ms: 0,
+        lastAt: now,
+        blockId,
+        index: line.index,
+      };
+      entry.ms += safeDt;
+      entry.lastAt = now;
+      lineDwellRef.current.set(key, entry);
+
+      const prevLineCredit = lineCreditsRef.current.get(key) ?? 0;
+      const nextLineCredit = clamp(entry.ms / LINE_MIN_FIXATION_MS, 0, 1);
+      if (nextLineCredit > prevLineCredit) {
+        lineCreditsRef.current.set(key, nextLineCredit);
+        const lines = getBlockLines(blockId);
+        const lineCount = Math.max(1, lines.length || 1);
+        const delta = nextLineCredit - prevLineCredit;
+        const prevBlock = blockLineCreditsRef.current.get(blockId) ?? 0;
+        const nextBlock = clamp(prevBlock + delta / lineCount, 0, 1);
+        blockLineCreditsRef.current.set(blockId, nextBlock);
+        return nextBlock;
+      }
+      return blockLineCreditsRef.current.get(blockId) ?? 0;
+    },
+    [getBlockLines]
   );
 
   const scrollToBlockId = useCallback(
@@ -960,6 +1083,9 @@ export default function PathNodePage() {
     readTargetSecondsRef.current = new Map();
     readCreditsRef.current.clear();
     readBlocksRef.current.clear();
+    lineDwellRef.current.clear();
+    lineCreditsRef.current.clear();
+    blockLineCreditsRef.current.clear();
     lastReadTickRef.current = 0;
     for (const block of docBlocks) {
       const id = String(block?.id ?? "").trim();
@@ -968,11 +1094,17 @@ export default function PathNodePage() {
     }
     blockLineRectsRef.current.clear();
     gazeSmoothRef.current = null;
+    gazeLastPointRef.current = null;
+    gazeVelocityRef.current = 0;
+    gazeBiasRef.current = null;
   }, [docBlocks, nodeId]);
 
   useEffect(() => {
     const onResize = () => {
       blockLineRectsRef.current.clear();
+      lineDwellRef.current.clear();
+      lineCreditsRef.current.clear();
+      blockLineCreditsRef.current.clear();
     };
     window.addEventListener("resize", onResize);
     return () => {
@@ -1001,6 +1133,9 @@ export default function PathNodePage() {
     gazeLastHitAtRef.current = 0;
     gazeLastBlockRef.current = "";
     gazeSmoothRef.current = null;
+    gazeLastPointRef.current = null;
+    gazeVelocityRef.current = 0;
+    gazeBiasRef.current = null;
   }, [nodeId]);
 
   const conceptGraphQuery = useQuery({
@@ -1155,15 +1290,22 @@ export default function PathNodePage() {
     const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
     const rootBottom = rootTop + rootHeight;
     const readingLine = rootHeight * 0.35;
-    const gaze = gazeRef.current;
+    const gazeRaw = gazeRef.current;
+    const gazeSmooth = gazeSmoothRef.current;
+    const gazePoint =
+      gazeSmooth && gazeRaw
+        ? { x: gazeSmooth.x, y: gazeSmooth.y, confidence: gazeRaw.confidence }
+        : gazeRaw;
+    const corrected = gazePoint ? applyGazeBias(gazePoint.x, gazePoint.y) : null;
     const gazeOk =
       eyeTrackingEnabled &&
       eyeTrackingStatus === "active" &&
-      gaze &&
-      gaze.confidence >= GAZE_MIN_CONFIDENCE &&
-      gaze.y >= rootTop &&
-      gaze.y <= rootBottom;
-    const focusLine = gazeOk ? gaze.y - rootTop : readingLine;
+      corrected &&
+      gazePoint &&
+      gazePoint.confidence >= GAZE_MIN_CONFIDENCE &&
+      corrected.y >= rootTop &&
+      corrected.y <= rootBottom;
+    const focusLine = gazeOk && corrected ? corrected.y - rootTop : readingLine;
 
     const getElementForId = (id: string) => {
       if (!id) return null;
@@ -1341,7 +1483,7 @@ export default function PathNodePage() {
         confidence: Math.round(confidence * 1000) / 1000,
       },
     };
-  }, [eyeTrackingEnabled, eyeTrackingStatus, gazeRef, resolveScrollContainer]);
+  }, [applyGazeBias, eyeTrackingEnabled, eyeTrackingStatus, gazeRef, resolveScrollContainer]);
 
   const buildReadingSnapshot = useCallback(() => {
     const credits = Array.from(readCreditsRef.current.entries());
@@ -1350,12 +1492,27 @@ export default function PathNodePage() {
     for (const [id, credit] of credits.slice(0, 12)) {
       topCredits[id] = Math.round(credit * 1000) / 1000;
     }
+    const lineCredits = Array.from(lineCreditsRef.current.entries());
+    lineCredits.sort((a, b) => b[1] - a[1]);
+    const topLineCredits: Record<string, number> = {};
+    for (const [id, credit] of lineCredits.slice(0, 12)) {
+      topLineCredits[id] = Math.round(credit * 1000) / 1000;
+    }
+    const blockLineCredits = Array.from(blockLineCreditsRef.current.entries());
+    blockLineCredits.sort((a, b) => b[1] - a[1]);
+    const topBlockLineCredits: Record<string, number> = {};
+    for (const [id, credit] of blockLineCredits.slice(0, 12)) {
+      topBlockLineCredits[id] = Math.round(credit * 1000) / 1000;
+    }
     const allRead = Array.from(readBlocksRef.current);
     const trimmedRead = allRead.length > 80 ? allRead.slice(-80) : allRead;
     return {
       read_blocks: trimmedRead,
       read_block_count: readBlocksRef.current.size,
       read_credit_top: topCredits,
+      line_read_count: lineCreditsRef.current.size,
+      line_credit_top: topLineCredits,
+      block_line_credit_top: topBlockLineCredits,
       eye_tracking: {
         enabled: eyeTrackingEnabled,
         status: eyeTrackingStatus,
@@ -1571,32 +1728,59 @@ export default function PathNodePage() {
       const speedFactor = clamp(1 - speedScreens / READ_MAX_SCREENS_PER_SEC, 0, 1);
       if (speedFactor <= 0.05) return;
 
-      const gaze = gazeRef.current;
-      const gazeOk =
-        eyeTrackingEnabled &&
-        eyeTrackingStatus === "active" &&
-        gaze &&
-        gaze.confidence >= 0.5 &&
-        gaze.y >= rootTop &&
-        gaze.y <= rootTop + rootHeight;
-      const focusY = gazeOk ? gaze.y : rootTop + rootHeight * READ_LINE_RATIO;
-      const source: "behavioral" | "gaze" = gazeOk ? "gaze" : "behavioral";
-
-      const dtSec = Math.min(dt, 1000) / 1000;
+      const dtMs = Math.min(dt, 1000);
+      const dtSec = dtMs / 1000;
       let updated = false;
 
+      let focusY = rootTop + rootHeight * READ_LINE_RATIO;
+      let source: "behavioral" | "gaze" = "behavioral";
+      let gazeBlockId = "";
+      let restrictToGaze = false;
+      let gazeConfidenceFactor = 1;
+
+      if (eyeTrackingEnabled && eyeTrackingStatus === "active") {
+        const nowMs = Date.now();
+        const gazePoint = getSmoothedGaze(nowMs);
+        if (gazePoint && gazePoint.confidence >= GAZE_MIN_CONFIDENCE) {
+          const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
+          const inViewport = corrected.y >= rootTop && corrected.y <= rootTop + rootHeight;
+          const stable = gazePoint.velocity <= GAZE_MAX_VELOCITY_PX_S;
+          if (inViewport && stable) {
+            focusY = corrected.y;
+            gazeConfidenceFactor = clamp(
+              (gazePoint.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
+              0.2,
+              1
+            );
+            gazeBlockId = findGazeBlock(corrected.x, corrected.y);
+            const gazeLine = gazeBlockId ? findGazeLine(gazeBlockId, corrected.x, corrected.y) : null;
+            if (gazeLine && gazeLine.inside) {
+              source = "gaze";
+              restrictToGaze = true;
+              const lineCenterX = (gazeLine.left + gazeLine.right) * 0.5;
+              const lineCenterY = (gazeLine.top + gazeLine.bottom) * 0.5;
+              updateGazeBias(corrected.x - lineCenterX, corrected.y - lineCenterY);
+              recordLineDwell(gazeBlockId, gazeLine, dtMs);
+            }
+          }
+        }
+      }
+
       for (const [id, metric] of blockMetricsRef.current.entries()) {
+        if (restrictToGaze && id !== gazeBlockId) continue;
         const ratio = metric.ratio ?? 0;
         if (ratio < READ_VISIBLE_RATIO_MIN) continue;
         const height = metric.height || 1;
         const centerY = rootTop + (metric.topDelta || 0) + height * 0.5;
         const distance = Math.abs(centerY - focusY);
         const focusFactor = 1 - Math.min(distance / Math.max(rootHeight, 1), 1);
-        const weight = ratio * focusFactor * speedFactor;
+        const weight = ratio * focusFactor * speedFactor * gazeConfidenceFactor;
         if (weight < READ_MIN_WEIGHT) continue;
         const required = readTargetSecondsRef.current.get(id) ?? 4;
         const prev = readCreditsRef.current.get(id) ?? 0;
-        const next = clamp(prev + (dtSec / required) * weight, 0, 1);
+        let next = clamp(prev + (dtSec / required) * weight, 0, 1);
+        const lineCredit = blockLineCreditsRef.current.get(id) ?? 0;
+        if (lineCredit > next) next = lineCredit;
         if (next !== prev) {
           readCreditsRef.current.set(id, next);
           updated = true;
@@ -1616,14 +1800,20 @@ export default function PathNodePage() {
       if (timer != null) window.clearInterval(timer);
     };
   }, [
+    applyGazeBias,
     docBlocks.length,
     eyeTrackingEnabled,
     eyeTrackingStatus,
+    findGazeBlock,
+    findGazeLine,
     gazeRef,
+    getSmoothedGaze,
     markBlockRead,
     nodeId,
+    recordLineDwell,
     resolveScrollContainer,
     scheduleSessionSync,
+    updateGazeBias,
   ]);
 
   useEffect(() => {
@@ -1632,18 +1822,13 @@ export default function PathNodePage() {
     const tick = () => {
       if (!gazeStreamEnabled || !gazeEnabledRef.current) return;
       if (document.hidden) return;
-      const gaze = gazeRef.current;
-      if (!gaze || gaze.confidence < GAZE_MIN_CONFIDENCE) return;
       const now = Date.now();
-      const prevSmooth = gazeSmoothRef.current;
-      const smoothWeight = 0.65;
-      const smoothX = prevSmooth ? prevSmooth.x * smoothWeight + gaze.x * (1 - smoothWeight) : gaze.x;
-      const smoothY = prevSmooth ? prevSmooth.y * smoothWeight + gaze.y * (1 - smoothWeight) : gaze.y;
-      gazeSmoothRef.current = { x: smoothX, y: smoothY, ts: now };
-
-      const blockId = findGazeBlock(smoothX, smoothY);
+      const gazePoint = getSmoothedGaze(now);
+      if (!gazePoint || gazePoint.confidence < GAZE_MIN_CONFIDENCE) return;
+      const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
+      const blockId = findGazeBlock(corrected.x, corrected.y);
       if (!blockId) return;
-      const line = findGazeLine(blockId, smoothX, smoothY);
+      const line = findGazeLine(blockId, corrected.x, corrected.y);
       const dt = gazeLastHitAtRef.current > 0 ? now - gazeLastHitAtRef.current : 0;
       gazeLastHitAtRef.current = now;
       gazeLastBlockRef.current = blockId;
@@ -1651,22 +1836,29 @@ export default function PathNodePage() {
         block_id: blockId,
         line_id: line?.id,
         line_index: line?.index,
-        x: smoothX,
-        y: smoothY,
-        confidence: gaze.confidence,
+        x: corrected.x,
+        y: corrected.y,
+        confidence: gazePoint.confidence,
         ts: new Date(now).toISOString(),
         dt_ms: dt > 0 ? dt : undefined,
         read_credit: readCreditsRef.current.get(blockId) ?? 0,
-        source: gaze.source,
+        source: gazePoint.source,
         screen_w: window.innerWidth,
         screen_h: window.innerHeight,
+        extra: {
+          velocity_px_s: gazePoint.velocity,
+          raw_x: gazePoint.x,
+          raw_y: gazePoint.y,
+          bias_x: gazeBiasRef.current?.x ?? 0,
+          bias_y: gazeBiasRef.current?.y ?? 0,
+        },
       });
     };
     timer = window.setInterval(tick, Math.max(60, GAZE_TICK_MS));
     return () => {
       if (timer != null) window.clearInterval(timer);
     };
-  }, [findGazeBlock, findGazeLine, gazeRef, gazeStreamEnabled, nodeId]);
+  }, [applyGazeBias, findGazeBlock, findGazeLine, getSmoothedGaze, gazeRef, gazeStreamEnabled, nodeId]);
 
   useEffect(() => {
     if (!gazeDebugEnabled) return;

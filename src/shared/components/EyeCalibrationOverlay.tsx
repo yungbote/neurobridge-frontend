@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "@/shared/components/ui/button";
+import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/utils";
 
 type CalibrationPoint = { x: number; y: number };
