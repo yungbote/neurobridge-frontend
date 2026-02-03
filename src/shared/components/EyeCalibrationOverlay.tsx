@@ -305,8 +305,8 @@ export function EyeCalibrationOverlay({
     if (getGaze) {
       const sample = getGaze();
       if (sample) return sample;
-      // When a direct gaze stream is provided, don't fall back to webgazer prediction.
-      return null;
+      // If a direct stream is empty, allow a safe fallback only when WebGazer is ready.
+      if (!isWebgazerReady()) return null;
     }
     const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null; isReady?: () => boolean } })
       .webgazer;
@@ -367,7 +367,7 @@ export function EyeCalibrationOverlay({
       point: current,
       record,
       getGaze: readGaze,
-      ensureReady: record ? () => waitForWebgazerReady(READY_TIMEOUT_MS) : undefined,
+      ensureReady: () => waitForWebgazerReady(READY_TIMEOUT_MS),
       sampleCount: localSampleCount,
       sampleDelayMs: localDelay,
       sampleMaxMs: localMaxMs,
