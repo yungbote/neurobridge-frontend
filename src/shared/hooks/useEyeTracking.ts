@@ -58,6 +58,7 @@ export function useEyeTracking(enabled: boolean) {
   const lastGazeAtRef = useRef<number>(0);
   const manualStreamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<EyeTrackingStatus>(enabled ? "starting" : "idle");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +83,7 @@ export function useEyeTracking(enabled: boolean) {
     if (!enabled) {
       stop();
       setStatus("idle");
+      setError(null);
       return () => {};
     }
 
@@ -89,20 +91,24 @@ export function useEyeTracking(enabled: boolean) {
     if (permission === false) {
       stop();
       setStatus("denied");
+      setError(null);
       return () => {};
     }
     if (permission == null) {
       stop();
       setStatus("unavailable");
+      setError(null);
       return () => {};
     }
 
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setStatus("unsupported");
+      setError(null);
       return () => {};
     }
 
     setStatus("starting");
+    setError(null);
 
     const ensureVideoStream = async (): Promise<boolean> => {
       if (typeof document === "undefined") return false;
@@ -124,7 +130,10 @@ export function useEyeTracking(enabled: boolean) {
       try {
         const wg = await loadWebGazer();
         if (!wg) {
-          if (!cancelled) setStatus("unavailable");
+          if (!cancelled) {
+            setStatus("unavailable");
+            setError("webgazer unavailable");
+          }
           return;
         }
         wg.showPredictionPoints?.(false);
@@ -141,7 +150,10 @@ export function useEyeTracking(enabled: boolean) {
         });
         await wg.begin();
         await ensureVideoStream();
-        if (!cancelled) setStatus("active");
+        if (!cancelled) {
+          setStatus("active");
+          setError(null);
+        }
         const startAt = Date.now();
         window.setTimeout(async () => {
           if (cancelled) return;
@@ -153,8 +165,11 @@ export function useEyeTracking(enabled: boolean) {
           const msg = String((err as Error)?.message || "").toLowerCase();
           if (msg.includes("denied") || msg.includes("permission")) {
             setStatus("denied");
+            setError(null);
           } else {
             setStatus("error");
+            const text = String((err as Error)?.message || "unknown error");
+            setError(text);
           }
         }
       }
@@ -167,5 +182,5 @@ export function useEyeTracking(enabled: boolean) {
     };
   }, [enabled]);
 
-  return { gazeRef, status };
+  return { gazeRef, status, error };
 }

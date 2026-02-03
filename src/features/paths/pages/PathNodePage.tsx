@@ -1009,7 +1009,7 @@ export default function PathNodePage() {
   });
 
   const { enabled: eyeTrackingEnabled } = useEyeTrackingPreference();
-  const { gazeRef, status: eyeTrackingStatus } = useEyeTracking(eyeTrackingEnabled);
+  const { gazeRef, status: eyeTrackingStatus, error: eyeTrackingError } = useEyeTracking(eyeTrackingEnabled);
   const gazeStreamEnabled = useMemo(() => {
     const raw = String(import.meta.env.VITE_EYE_TRACKING_STREAM_ENABLED ?? "true").toLowerCase();
     return raw !== "false" && raw !== "0" && raw !== "off";
@@ -2501,6 +2501,11 @@ export default function PathNodePage() {
                       ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
                       : "border-border/60 bg-muted/40 text-muted-foreground"
                   )}
+                  title={
+                    eyeTrackingStatus === "error"
+                      ? `Eye tracking error: ${eyeTrackingError || "unknown"}`
+                      : undefined
+                  }
                 >
                   <span
                     className={cn(
@@ -2508,7 +2513,11 @@ export default function PathNodePage() {
                       eyeTrackingStatus === "active" ? "bg-emerald-500" : "bg-muted-foreground/60"
                     )}
                   />
-                  Eye tracking {eyeTrackingStatus === "active" ? "on" : eyeTrackingStatus}
+                  {eyeTrackingStatus === "active"
+                    ? "Eye tracking on"
+                    : eyeTrackingStatus === "error"
+                    ? `Eye tracking error: ${eyeTrackingError || "unknown"}`
+                    : `Eye tracking ${eyeTrackingStatus}`}
                 </span>
               ) : null}
             </div>
