@@ -74,12 +74,12 @@ import re
 path = "$LOADER"
 with open(path, "r", encoding="utf-8") as f:
     text = f.read()
-def replace(name):
-    pattern = re.compile(re.escape(name) + r"(\\?v=[^\\\"']+)?")
+def replace(name, text):
+    pattern = re.compile(re.escape(name) + r"(\\?v=[^\"']+)?")
     return pattern.sub(name + "?v=$ASSET_VERSION", text)
-text = replace("face_mesh_solution_packed_assets.data")
-text = replace("face_mesh_solution_simd_wasm_bin.wasm")
-text = replace("face_mesh_solution_wasm_bin.wasm")
+text = replace("face_mesh_solution_packed_assets.data", text)
+text = replace("face_mesh_solution_simd_wasm_bin.wasm", text)
+text = replace("face_mesh_solution_wasm_bin.wasm", text)
 with open(path, "w", encoding="utf-8") as f:
     f.write(text)
 PY
