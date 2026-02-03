@@ -57,6 +57,47 @@ const CAM_HEIGHT = Number(import.meta.env.VITE_EYE_TRACKING_CAM_HEIGHT) || 720;
 const CAM_FPS = Number(import.meta.env.VITE_EYE_TRACKING_CAM_FPS) || 30;
 const CAM_FACING = String(import.meta.env.VITE_EYE_TRACKING_CAM_FACING || "user").trim();
 let webgazerLoadPromise: Promise<WebGazerLike | null> | null = null;
+let webgazerBeginPromise: Promise<WebGazerLike | null> | null = null;
+let webgazerUsers = 0;
+let webgazerRunning = false;
+let webgazerStopTimer: number | null = null;
+
+function ensureWebgazerVideoElement(): HTMLVideoElement | null {
+  if (typeof document === "undefined") return null;
+  let video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
+  if (!video) {
+    video = document.createElement("video");
+    video.id = "webgazerVideoFeed";
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "true");
+    video.style.position = "fixed";
+    video.style.opacity = "0";
+    video.style.pointerEvents = "none";
+    video.style.width = "1px";
+    video.style.height = "1px";
+    video.style.left = "-9999px";
+    video.style.top = "0";
+    document.body.appendChild(video);
+  }
+  if (!video.width) video.width = CAM_WIDTH;
+  if (!video.height) video.height = CAM_HEIGHT;
+  return video;
+}
+
+async function beginWebgazer(wg: WebGazerLike): Promise<WebGazerLike | null> {
+  if (webgazerRunning) return wg;
+  if (!webgazerBeginPromise) {
+    webgazerBeginPromise = (async () => {
+      ensureWebgazerVideoElement();
+      await wg.begin();
+      webgazerRunning = true;
+      return wg;
+    })().catch(() => null);
+  }
+  return webgazerBeginPromise;
+}
 
 async function loadWebGazer(): Promise<WebGazerLike | null> {
   if (typeof window === "undefined") return null;
@@ -87,16 +128,34 @@ export function useEyeTracking(enabled: boolean) {
     let cancelled = false;
     let active = true;
 
-    const stop = () => {
+    const releaseWebgazer = () => {
+      webgazerUsers = Math.max(0, webgazerUsers - 1);
+      if (webgazerUsers > 0) return;
       const wg = window.webgazer;
-      if (wg) {
-        try {
-          wg.pause?.();
-          wg.end();
-        } catch {
-          // ignore
-        }
+      try {
+        wg?.pause?.();
+      } catch {
+        // ignore
       }
+      if (webgazerStopTimer) {
+        window.clearTimeout(webgazerStopTimer);
+      }
+      webgazerStopTimer = window.setTimeout(() => {
+        if (webgazerUsers > 0) return;
+        const wgStop = window.webgazer;
+        if (wgStop) {
+          try {
+            wgStop.end();
+          } catch {
+            // ignore
+          }
+        }
+        webgazerRunning = false;
+        webgazerBeginPromise = null;
+      }, 250);
+    };
+
+    const stopManualStream = () => {
       if (manualStreamRef.current) {
         manualStreamRef.current.getTracks().forEach((track) => track.stop());
         manualStreamRef.current = null;
@@ -104,7 +163,7 @@ export function useEyeTracking(enabled: boolean) {
     };
 
     if (!enabled) {
-      stop();
+      stopManualStream();
       setStatus("idle");
       setError(null);
       return () => {};
@@ -112,13 +171,13 @@ export function useEyeTracking(enabled: boolean) {
 
     const permission = getEyeTrackingPermission();
     if (permission === false) {
-      stop();
+      stopManualStream();
       setStatus("denied");
       setError(null);
       return () => {};
     }
     if (permission == null) {
-      stop();
+      stopManualStream();
       setStatus("unavailable");
       setError(null);
       return () => {};
@@ -132,10 +191,16 @@ export function useEyeTracking(enabled: boolean) {
 
     setStatus("starting");
     setError(null);
+    webgazerUsers += 1;
+    if (webgazerStopTimer) {
+      window.clearTimeout(webgazerStopTimer);
+      webgazerStopTimer = null;
+    }
 
     const ensureVideoStream = async (): Promise<boolean> => {
       if (typeof document === "undefined") return false;
-      const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
+      const ensured = ensureWebgazerVideoElement();
+      const video = ensured ?? (document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null);
       if (!video) return false;
       if (video.srcObject) return true;
       try {
@@ -159,7 +224,7 @@ export function useEyeTracking(enabled: boolean) {
     const syncViewerToVideo = async (): Promise<void> => {
       const wgAny = window.webgazer as WebGazerLike | undefined;
       if (!wgAny || typeof document === "undefined") return;
-      const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
+      const video = ensureWebgazerVideoElement();
       if (!video) return;
       if (!video.videoWidth || !video.videoHeight) {
         await new Promise<void>((resolve) => {
@@ -207,6 +272,7 @@ export function useEyeTracking(enabled: boolean) {
             setStatus("unavailable");
             setError("webgazer unavailable");
           }
+          releaseWebgazer();
           return;
         }
         const wgAny = wg as WebGazerLike & { params?: Record<string, unknown> };
@@ -214,6 +280,7 @@ export function useEyeTracking(enabled: boolean) {
           wgAny.params = wgAny.params || {};
           wgAny.params.faceMeshSolutionPath = FACE_MESH_BASE;
         }
+        ensureWebgazerVideoElement();
         if (typeof wgAny.setCameraConstraints === "function") {
           await wgAny.setCameraConstraints({
             video: {
@@ -236,7 +303,9 @@ export function useEyeTracking(enabled: boolean) {
             source: "webgazer",
           };
         });
-        await wg.begin();
+        await ensureVideoStream();
+        await beginWebgazer(wg);
+        wg.resume?.();
         await ensureVideoStream();
         await syncViewerToVideo();
         if (!cancelled) {
@@ -262,13 +331,15 @@ export function useEyeTracking(enabled: boolean) {
             setError(text);
           }
         }
+        releaseWebgazer();
       }
     })();
 
     return () => {
       cancelled = true;
       active = false;
-      stop();
+      stopManualStream();
+      releaseWebgazer();
     };
   }, [enabled]);
 

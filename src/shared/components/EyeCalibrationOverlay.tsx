@@ -223,9 +223,10 @@ export function EyeCalibrationOverlay({
       // When a direct gaze stream is provided, don't fall back to webgazer prediction.
       return null;
     }
-    const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null } })
+    const wg = (window as unknown as { webgazer?: { getCurrentPrediction?: () => { x: number; y: number } | null; isReady?: () => boolean } })
       .webgazer;
     if (!wg?.getCurrentPrediction) return null;
+    if (typeof wg.isReady === "function" && !wg.isReady()) return null;
     const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
     if (!video) return null;
     const widthReady = (video.videoWidth || video.clientWidth || 0) > 1;
