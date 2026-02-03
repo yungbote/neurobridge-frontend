@@ -4,6 +4,7 @@ export const queryKeys = {
   paths: () => ["paths"] as const,
   path: (id: string) => ["paths", id] as const,
   pathNodes: (pathId: string) => ["pathNodes", pathId] as const,
+  pathRuntime: (pathId: string) => ["pathRuntime", pathId] as const,
   conceptGraph: (pathId: string) => ["conceptGraph", pathId] as const,
   materialFiles: () => ["materialFiles"] as const,
   chatThreads: ({

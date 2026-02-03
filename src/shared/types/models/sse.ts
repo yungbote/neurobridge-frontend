@@ -37,3 +37,15 @@ export interface UserAvatarChangedPayload {
   avatar_url?: string;
   avatar_color?: string;
 }
+
+export interface RuntimePromptPayload {
+  path_id?: string;
+  node_id?: string;
+  block_id?: string;
+  type?: string;
+  reason?: string;
+  prompt_id?: string;
+  created_at?: string;
+  break_min?: number;
+  break_max?: number;
+}

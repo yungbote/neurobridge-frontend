@@ -8,6 +8,16 @@ const axiosClient: AxiosInstance = axios.create({
 });
 
 axiosClient.interceptors.request.use((config) => {
+  // Avoid accidental double "/api" when baseURL already includes it.
+  if (config.url && typeof config.url === "string" && config.baseURL) {
+    const base = String(config.baseURL);
+    const url = String(config.url);
+    if ((base.endsWith("/api") || base.endsWith("/api/")) && url.startsWith("/api/")) {
+      config.url = url.replace(/^\/api\//, "/");
+    } else if ((base.endsWith("/api") || base.endsWith("/api/")) && url === "/api") {
+      config.url = "/";
+    }
+  }
   const token = getAccessToken();
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;

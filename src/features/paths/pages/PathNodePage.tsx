@@ -23,8 +23,10 @@ import {
   listDrillsForNode,
   listPathNodeDocRevisions,
 } from "@/shared/api/PathNodeService";
+import { getPathRuntime } from "@/shared/api/RuntimeService";
+import { GazeQueue } from "@/shared/services/GazeQueue";
 import { NodeContentRenderer } from "@/features/paths/components/NodeContentRenderer";
-import { NodeDocRenderer } from "@/features/paths/components/NodeDocRenderer";
+import { Flashcard, NodeDocRenderer, QuickCheck } from "@/features/paths/components/NodeDocRenderer";
 import { Container } from "@/shared/layout/Container";
 import { queryKeys } from "@/shared/query/queryKeys";
 import { CodeBlock, InlineCode } from "@/shared/components/CodeBlock";
@@ -34,6 +36,8 @@ import { usePaths } from "@/app/providers/PathProvider";
 import { useChatDock } from "@/app/providers/ChatDockProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
 import { useI18n } from "@/app/providers/I18nProvider";
+import { useEyeTracking } from "@/shared/hooks/useEyeTracking";
+import { useEyeTrackingPreference } from "@/shared/hooks/useEyeTrackingPreference";
 import {
   asRecord,
   messageKindFromMetadata,
@@ -51,7 +55,7 @@ import type {
   Path,
   PathNode,
 } from "@/shared/types/models";
-import type { JobEventPayload } from "@/shared/types/models";
+import type { JobEventPayload, RuntimePromptPayload } from "@/shared/types/models";
 
 type DocBlock = {
   id?: string;
@@ -67,6 +71,20 @@ const MAX_VISIBLE_BLOCKS = 20;
 const SESSION_SYNC_MIN_INTERVAL_MS = 350;
 const SESSION_SYNC_IDLE_MS = 180;
 const SESSION_SYNC_MAX_LATENCY_MS = 1400;
+const READ_VISIBLE_RATIO_MIN = 0.45;
+const READ_CREDIT_THRESHOLD = 0.7;
+const READ_TICK_MS = 200;
+const READ_LINE_RATIO = 0.4;
+const READ_MAX_SCREENS_PER_SEC = 2.2;
+const READ_MIN_WEIGHT = 0.08;
+const rawGazeTickMs = Number(import.meta.env.VITE_EYE_TRACKING_TICK_MS);
+const GAZE_TICK_MS = Number.isFinite(rawGazeTickMs) && rawGazeTickMs > 0 ? rawGazeTickMs : 120;
+const rawGazeConfidence = Number(import.meta.env.VITE_EYE_TRACKING_MIN_CONFIDENCE);
+const GAZE_MIN_CONFIDENCE =
+  Number.isFinite(rawGazeConfidence) && rawGazeConfidence > 0 ? rawGazeConfidence : 0.4;
+const rawGazeBlockTtl = Number(import.meta.env.VITE_EYE_TRACKING_BLOCK_TTL_MS);
+const GAZE_BLOCK_TTL_MS =
+  Number.isFinite(rawGazeBlockTtl) && rawGazeBlockTtl > 0 ? rawGazeBlockTtl : 4000;
 
 export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
@@ -142,6 +160,51 @@ function safeParseJSON(v: unknown): unknown {
     }
   }
   return null;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function extractBlockText(block: DocBlock): string {
+  if (!block || typeof block !== "object") return "";
+  const fields = [
+    "title",
+    "heading",
+    "subtitle",
+    "text",
+    "body_md",
+    "prompt_md",
+    "answer_md",
+    "front_md",
+    "back_md",
+    "content",
+    "caption",
+  ];
+  const parts: string[] = [];
+  for (const key of fields) {
+    const val = (block as Record<string, unknown>)[key];
+    if (typeof val === "string" && val.trim()) {
+      parts.push(val);
+    }
+  }
+  if (parts.length > 0) return parts.join(" ");
+  try {
+    return JSON.stringify(block);
+  } catch {
+    return "";
+  }
+}
+
+function estimateReadSeconds(block: DocBlock): number {
+  const raw = extractBlockText(block);
+  const words = raw.trim().split(/\s+/).filter(Boolean).length;
+  const base = words > 0 ? words / 3 : 1.2; // ~180 wpm
+  const kind = String(block?.type ?? "").toLowerCase();
+  let factor = 1;
+  if (kind === "heading" || kind === "title") factor = 0.6;
+  if (kind === "quick_check" || kind === "flashcard") factor = 0.75;
+  return clamp(base * factor, 0.8, 12);
 }
 
 function resolvePayload(raw: unknown): Record<string, unknown> | null {
@@ -554,6 +617,8 @@ export default function PathNodePage() {
   const [path, setPath] = useState<Path | null>(null);
   const [drills, setDrills] = useState<DrillSpec[]>([]);
   const [err, setErr] = useState<unknown | null>(null);
+  const [runtimePrompt, setRuntimePrompt] = useState<RuntimePromptPayload | null>(null);
+  const [completedInteractiveBlocks, setCompletedInteractiveBlocks] = useState<Record<string, boolean>>({});
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState("");
@@ -590,7 +655,26 @@ export default function PathNodePage() {
   const currentScrollPercentRef = useRef<number>(0);
   const visibleBlocksRef = useRef<Map<string, number>>(new Map());
   const blockMetricsRef = useRef<
-    Map<string, { ratio: number; topDelta: number; height: number; rootHeight: number; seenAt: number }>
+    Map<
+      string,
+      {
+        ratio: number;
+        topDelta: number;
+        height: number;
+        rootHeight: number;
+        top: number;
+        bottom: number;
+        left: number;
+        right: number;
+        seenAt: number;
+      }
+    >
+  >(new Map());
+  const blockBoundsRef = useRef<Map<string, { top: number; bottom: number; left: number; right: number; seenAt: number }>>(
+    new Map()
+  );
+  const blockLineRectsRef = useRef<
+    Map<string, Array<{ id: string; top: number; bottom: number; left: number; right: number; index: number }>>
   >(new Map());
   const currentBlockIdRef = useRef<string>("");
   const lastSwitchAtRef = useRef<number>(0);
@@ -598,6 +682,12 @@ export default function PathNodePage() {
   const lastCurrentAtRef = useRef<Map<string, number>>(new Map());
   const scrollDirRef = useRef<"up" | "down" | "none">("none");
   const lastScrollTopRef = useRef<number>(0);
+  const lastScrollAtRef = useRef<number>(0);
+  const scrollVelocityRef = useRef<number>(0);
+  const readCreditsRef = useRef<Map<string, number>>(new Map());
+  const readBlocksRef = useRef<Set<string>>(new Set());
+  const readTargetSecondsRef = useRef<Map<string, number>>(new Map());
+  const lastReadTickRef = useRef<number>(0);
   const debugCandidatesRef = useRef<
     Array<{
       id: string;
@@ -620,6 +710,12 @@ export default function PathNodePage() {
   const nodeIdRef = useRef<string>("");
   const pathIdRef = useRef<string>("");
   const docContainerRef = useRef<HTMLDivElement | null>(null);
+  const gazeQueueRef = useRef<GazeQueue | null>(null);
+  const gazeEnabledRef = useRef<boolean>(false);
+  const gazeLastHitAtRef = useRef<number>(0);
+  const gazeLastBlockRef = useRef<string>("");
+  const gazeSmoothRef = useRef<{ x: number; y: number; ts: number } | null>(null);
+  const gazeDebugRef = useRef<HTMLDivElement | null>(null);
 
   const resolveScrollContainer = useCallback(() => {
     let el = docContainerRef.current;
@@ -633,6 +729,141 @@ export default function PathNodePage() {
     }
     return null;
   }, []);
+
+  const getBlockElement = useCallback((id: string) => {
+    const blockId = String(id || "").trim();
+    if (!blockId) return null;
+    const container = docContainerRef.current ?? document;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(blockId)
+        : blockId.replace(/"/g, '\\"');
+    return container.querySelector<HTMLElement>(`[data-doc-block-id="${escaped}"]`);
+  }, []);
+
+  const computeLineRects = useCallback((blockId: string, el: HTMLElement | null) => {
+    if (!el || typeof document === "undefined") return [];
+    const linesByTop = new Map<number, { top: number; bottom: number; left: number; right: number }>();
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        const text = node.textContent ?? "";
+        return text.trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    let node = walker.nextNode();
+    while (node) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = Array.from(range.getClientRects());
+      rects.forEach((rect) => {
+        if (rect.width < 2 || rect.height < 2) return;
+        const key = Math.round(rect.top / 3) * 3;
+        const existing = linesByTop.get(key);
+        if (!existing) {
+          linesByTop.set(key, {
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            right: rect.right,
+          });
+          return;
+        }
+        existing.top = Math.min(existing.top, rect.top);
+        existing.bottom = Math.max(existing.bottom, rect.bottom);
+        existing.left = Math.min(existing.left, rect.left);
+        existing.right = Math.max(existing.right, rect.right);
+        linesByTop.set(key, existing);
+      });
+      node = walker.nextNode();
+    }
+    if (linesByTop.size === 0) {
+      const rect = el.getBoundingClientRect();
+      linesByTop.set(Math.round(rect.top / 3) * 3, {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+      });
+    }
+    const lines = Array.from(linesByTop.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([_, rect], idx) => ({
+        id: `${blockId}:line:${idx + 1}`,
+        index: idx,
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+      }));
+    return lines;
+  }, []);
+
+  const findGazeBlock = useCallback((x: number, y: number) => {
+    const now = Date.now();
+    if (blockBoundsRef.current.size === 0) {
+      const container = docContainerRef.current ?? document;
+      const blocks = Array.from(container.querySelectorAll<HTMLElement>("[data-doc-block-id]"));
+      blocks.forEach((el) => {
+        const id = String(el.dataset.docBlockId || "").trim();
+        if (!id) return;
+        const rect = el.getBoundingClientRect();
+        blockBoundsRef.current.set(id, {
+          top: rect.top,
+          bottom: rect.bottom,
+          left: rect.left,
+          right: rect.right,
+          seenAt: now,
+        });
+      });
+    }
+    let bestInside: { id: string; ratio: number } | null = null;
+    let bestNear: { id: string; distance: number } | null = null;
+    blockBoundsRef.current.forEach((bounds, id) => {
+      if (!id) return;
+      if (GAZE_BLOCK_TTL_MS > 0 && now - (bounds.seenAt || 0) > GAZE_BLOCK_TTL_MS) return;
+      const inside = x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
+      const ratio = blockMetricsRef.current.get(id)?.ratio ?? 0;
+      if (inside) {
+        if (!bestInside || ratio > bestInside.ratio) {
+          bestInside = { id, ratio };
+        }
+        return;
+      }
+      const centerX = (bounds.left + bounds.right) * 0.5;
+      const centerY = (bounds.top + bounds.bottom) * 0.5;
+      const dist = Math.abs(centerY - y) + Math.abs(centerX - x) * 0.15;
+      if (!bestNear || dist < bestNear.distance) {
+        bestNear = { id, distance: dist };
+      }
+    });
+    return bestInside?.id || bestNear?.id || "";
+  }, []);
+
+  const findGazeLine = useCallback(
+    (blockId: string, x: number, y: number) => {
+      if (!blockId) return null;
+      let lines = blockLineRectsRef.current.get(blockId);
+      if (!lines || lines.length === 0) {
+        const el = getBlockElement(blockId);
+        lines = computeLineRects(blockId, el);
+        if (lines.length > 0) {
+          blockLineRectsRef.current.set(blockId, lines);
+        }
+      }
+      if (!lines || lines.length === 0) return null;
+      let best: { id: string; index: number; dist: number } | null = null;
+      for (const line of lines) {
+        const inside = x >= line.left && x <= line.right && y >= line.top && y <= line.bottom;
+        const dist = inside ? 0 : Math.abs((line.top + line.bottom) * 0.5 - y);
+        if (!best || dist < best.dist) {
+          best = { id: line.id, index: line.index, dist };
+        }
+        if (dist === 0) break;
+      }
+      return best ? { id: best.id, index: best.index } : null;
+    },
+    [computeLineRects, getBlockElement]
+  );
 
   const scrollToBlockId = useCallback(
     (blockId: string) => {
@@ -716,6 +947,44 @@ export default function PathNodePage() {
   }, [nodeId, activateLesson, activatePath, loadDoc]);
 
   const conceptKeys = useMemo(() => extractConceptKeys(node), [node]);
+  const docBlocks = useMemo(() => {
+    const parsed = safeParseJSON(doc);
+    const blocks = (parsed as { blocks?: unknown })?.blocks;
+    if (!Array.isArray(blocks)) return [];
+    return blocks as DocBlock[];
+  }, [doc]);
+
+  useEffect(() => {
+    readTargetSecondsRef.current = new Map();
+    readCreditsRef.current.clear();
+    readBlocksRef.current.clear();
+    lastReadTickRef.current = 0;
+    for (const block of docBlocks) {
+      const id = String(block?.id ?? "").trim();
+      if (!id) continue;
+      readTargetSecondsRef.current.set(id, estimateReadSeconds(block));
+    }
+    blockLineRectsRef.current.clear();
+    gazeSmoothRef.current = null;
+  }, [docBlocks, nodeId]);
+
+  useEffect(() => {
+    const onResize = () => {
+      blockLineRectsRef.current.clear();
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+  const blockById = useMemo(() => {
+    const map = new Map<string, DocBlock>();
+    docBlocks.forEach((b) => {
+      const id = String(b?.id ?? "").trim();
+      if (id) map.set(id, b);
+    });
+    return map;
+  }, [docBlocks]);
 
   const pathId = node?.pathId || path?.id || "";
   useEffect(() => {
@@ -726,12 +995,78 @@ export default function PathNodePage() {
     nodeIdRef.current = nodeId ? String(nodeId) : "";
   }, [nodeId]);
 
+  useEffect(() => {
+    gazeLastHitAtRef.current = 0;
+    gazeLastBlockRef.current = "";
+    gazeSmoothRef.current = null;
+  }, [nodeId]);
+
   const conceptGraphQuery = useQuery({
     queryKey: queryKeys.conceptGraph(pathId || "unknown"),
     enabled: Boolean(pathId),
     staleTime: 10 * 60_000,
     queryFn: () => getConceptGraph(pathId),
   });
+
+  const { enabled: eyeTrackingEnabled } = useEyeTrackingPreference();
+  const { gazeRef, status: eyeTrackingStatus } = useEyeTracking(eyeTrackingEnabled);
+  const gazeStreamEnabled = useMemo(() => {
+    const raw = String(import.meta.env.VITE_EYE_TRACKING_STREAM_ENABLED ?? "true").toLowerCase();
+    return raw !== "false" && raw !== "0" && raw !== "off";
+  }, []);
+  const gazeDebugEnabled = useMemo(() => {
+    const raw = String(import.meta.env.VITE_EYE_TRACKING_DEBUG ?? "").toLowerCase();
+    return raw === "true" || raw === "1" || raw === "yes";
+  }, []);
+
+  useEffect(() => {
+    gazeEnabledRef.current = Boolean(gazeStreamEnabled && eyeTrackingEnabled && eyeTrackingStatus === "active");
+  }, [eyeTrackingEnabled, eyeTrackingStatus, gazeStreamEnabled]);
+
+  useEffect(() => {
+    if (!gazeQueueRef.current) {
+      gazeQueueRef.current = new GazeQueue({
+        flushIntervalMs: 1000,
+        maxBatch: 200,
+        maxQueueSize: 2000,
+        enabled: () => gazeEnabledRef.current,
+        context: () => ({
+          pathId: pathIdRef.current || "",
+          nodeId: nodeIdRef.current || "",
+        }),
+      });
+    }
+    gazeQueueRef.current.start();
+    return () => {
+      gazeQueueRef.current?.stop(true);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.hidden) {
+        void gazeQueueRef.current?.flush();
+      }
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+    };
+  }, []);
+
+  const runtimeStateQuery = useQuery({
+    queryKey: queryKeys.pathRuntime(pathId || "unknown"),
+    enabled: Boolean(pathId),
+    staleTime: 10_000,
+    queryFn: () => getPathRuntime(pathId),
+  });
+
+  const runtimePromptBlock = useMemo(() => {
+    const id = String(runtimePrompt?.block_id ?? "").trim();
+    if (!id) return null;
+    return blockById.get(id) ?? null;
+  }, [blockById, runtimePrompt?.block_id]);
+  const interactiveMode = runtimeStateQuery.data ? "runtime" : "inline";
 
   const conceptNameByKey = useMemo(() => {
     const map = new Map<string, string>();
@@ -755,6 +1090,49 @@ export default function PathNodePage() {
     return map;
   }, [conceptGraphQuery.data]);
 
+  useEffect(() => {
+    const data = runtimeStateQuery.data as Record<string, unknown> | undefined;
+    if (!data) return;
+    const pathRun = data.path_run as Record<string, unknown> | null | undefined;
+    const nodeRun = data.node_run as Record<string, unknown> | null | undefined;
+    const prMeta = asRecord(pathRun?.metadata);
+    const prRuntime = asRecord(prMeta?.runtime);
+    const prompt = asRecord(prRuntime?.runtime_prompt);
+    const status = String(prompt?.status ?? "").toLowerCase();
+    if (prompt && String(prompt?.id ?? "").trim() && status === "pending") {
+      setRuntimePrompt((prev) => {
+        const next = {
+          path_id: String((prompt?.path_id ?? pathId) || ""),
+          node_id: String(prompt?.node_id ?? ""),
+          block_id: String(prompt?.block_id ?? ""),
+          type: String(prompt?.type ?? ""),
+          reason: String(prompt?.reason ?? ""),
+          prompt_id: String(prompt?.id ?? ""),
+          created_at: String(prompt?.created_at ?? ""),
+        };
+        if (prev?.prompt_id && prev.prompt_id === next.prompt_id) {
+          return prev;
+        }
+        return next;
+      });
+    } else {
+      setRuntimePrompt((prev) => {
+        if (prev?.prompt_id) return prev;
+        return null;
+      });
+    }
+
+    const nrMeta = asRecord(nodeRun?.metadata);
+    const nrRuntime = asRecord(nrMeta?.runtime);
+    const completed = Array.isArray(nrRuntime?.completed_blocks) ? nrRuntime?.completed_blocks : [];
+    const map: Record<string, boolean> = {};
+    completed.forEach((id: unknown) => {
+      const s = String(id || "").trim();
+      if (s) map[s] = true;
+    });
+    setCompletedInteractiveBlocks(map);
+  }, [pathId, runtimeStateQuery.data]);
+
   const nodeConceptIds = useMemo(() => {
     const ids = conceptKeys
       .map((k) => conceptIdByKey.get(String(k || "").trim().toLowerCase()) || "")
@@ -770,9 +1148,18 @@ export default function PathNodePage() {
     const scrollRoot = resolveScrollContainer();
     const rootRect = scrollRoot?.getBoundingClientRect();
     const rootTop = rootRect?.top ?? 0;
-    const rootHeight = (rootRect?.height ?? window.innerHeight) || 1;
+    const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
     const rootBottom = rootTop + rootHeight;
     const readingLine = rootHeight * 0.35;
+    const gaze = gazeRef.current;
+    const gazeOk =
+      eyeTrackingEnabled &&
+      eyeTrackingStatus === "active" &&
+      gaze &&
+      gaze.confidence >= GAZE_MIN_CONFIDENCE &&
+      gaze.y >= rootTop &&
+      gaze.y <= rootBottom;
+    const focusLine = gazeOk ? gaze.y - rootTop : readingLine;
 
     const getElementForId = (id: string) => {
       if (!id) return null;
@@ -807,6 +1194,17 @@ export default function PathNodePage() {
             topDelta: rect.top - rootTop,
             height,
             rootHeight,
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            right: rect.right,
+            seenAt: Date.now(),
+          });
+          blockBoundsRef.current.set(id, {
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            right: rect.right,
             seenAt: Date.now(),
           });
         }
@@ -857,7 +1255,7 @@ export default function PathNodePage() {
       const bottomY = topDelta + height;
 
       const topProx = 1 - Math.min(Math.abs(topDelta) / Math.max(rootH, 1), 1);
-      const readingProx = 1 - Math.min(Math.abs(centerY - readingLine) / Math.max(rootH, 1), 1);
+      const readingProx = 1 - Math.min(Math.abs(centerY - focusLine) / Math.max(rootH, 1), 1);
 
       const lastCurrent = lastCurrentAtRef.current.get(entry.id) ?? 0;
       const dwellBonus =
@@ -911,9 +1309,9 @@ export default function PathNodePage() {
       const pastMinInterval = nowSwitchWindow > 250;
       let directionGate = true;
       if (direction === "down") {
-        directionGate = best.topDelta <= readingLine * 1.05;
+        directionGate = best.topDelta <= focusLine * 1.05;
       } else if (direction === "up") {
-        directionGate = best.bottomY >= readingLine * 0.95;
+        directionGate = best.bottomY >= focusLine * 0.95;
       }
       if (!(pastMinInterval && enoughGap && directionGate)) {
         selected = current;
@@ -928,7 +1326,7 @@ export default function PathNodePage() {
 
     const proximity = Math.max(
       0,
-      1 - Math.min(Math.abs(selected.centerY - readingLine) / Math.max(rootHeight, 1), 1)
+      1 - Math.min(Math.abs(selected.centerY - focusLine) / Math.max(rootHeight, 1), 1)
     );
     const confidence = Math.min(1, Math.max(0, 0.55 * selected.ratio + 0.45 * proximity));
 
@@ -939,7 +1337,27 @@ export default function PathNodePage() {
         confidence: Math.round(confidence * 1000) / 1000,
       },
     };
-  }, [resolveScrollContainer]);
+  }, [eyeTrackingEnabled, eyeTrackingStatus, gazeRef, resolveScrollContainer]);
+
+  const buildReadingSnapshot = useCallback(() => {
+    const credits = Array.from(readCreditsRef.current.entries());
+    credits.sort((a, b) => b[1] - a[1]);
+    const topCredits: Record<string, number> = {};
+    for (const [id, credit] of credits.slice(0, 12)) {
+      topCredits[id] = Math.round(credit * 1000) / 1000;
+    }
+    const allRead = Array.from(readBlocksRef.current);
+    const trimmedRead = allRead.length > 80 ? allRead.slice(-80) : allRead;
+    return {
+      read_blocks: trimmedRead,
+      read_block_count: readBlocksRef.current.size,
+      read_credit_top: topCredits,
+      eye_tracking: {
+        enabled: eyeTrackingEnabled,
+        status: eyeTrackingStatus,
+      },
+    };
+  }, [eyeTrackingEnabled, eyeTrackingStatus]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -975,6 +1393,7 @@ export default function PathNodePage() {
         visible_blocks: snapshot.visible,
         current_block: snapshot.current,
         visible_block_count: snapshot.visible.length,
+        reading: clear ? null : buildReadingSnapshot(),
         viewport: {
           w: typeof window !== "undefined" ? window.innerWidth : 0,
           h: typeof window !== "undefined" ? window.innerHeight : 0,
@@ -1001,7 +1420,7 @@ export default function PathNodePage() {
         { immediate: Boolean(opts?.immediate) }
       );
     },
-    [buildVisibleSnapshot, user?.id]
+    [buildReadingSnapshot, buildVisibleSnapshot, user?.id]
   );
 
   const scheduleSessionSync = useCallback(
@@ -1041,6 +1460,27 @@ export default function PathNodePage() {
     [flushSessionSync]
   );
 
+  const markBlockRead = useCallback(
+    (blockId: string, source: "behavioral" | "gaze", credit: number) => {
+      const id = String(blockId || "").trim();
+      if (!id || readBlocksRef.current.has(id)) return;
+      readBlocksRef.current.add(id);
+      readCreditsRef.current.set(id, Math.max(credit, 1));
+      queueEvent({
+        type: "block_read",
+        pathId: pathIdRef.current || "",
+        pathNodeId: nodeId || "",
+        data: {
+          block_id: id,
+          read_credit: Math.min(1, Math.max(credit, 0)),
+          source,
+        },
+      });
+      scheduleSessionSync({ immediate: true });
+    },
+    [nodeId, scheduleSessionSync]
+  );
+
   // Record exposure as aggregated scroll depth + dwell time (production-safe: one event per node view).
   useEffect(() => {
     if (!nodeId) return;
@@ -1057,10 +1497,17 @@ export default function PathNodePage() {
       const scrollHeight =
         scrollContainer?.scrollHeight ?? (typeof docEl.scrollHeight === "number" ? docEl.scrollHeight : 0);
       const clientHeight =
-        scrollContainer?.clientHeight ?? (typeof docEl.clientHeight === "number" ? docEl.clientHeight : window.innerHeight || 1);
+        scrollContainer?.clientHeight ??
+        (typeof docEl.clientHeight === "number" ? docEl.clientHeight : Math.max(window.innerHeight, 1));
       const denom = Math.max(1, scrollHeight - clientHeight);
       const pct = Math.max(0, Math.min(100, Math.round((scrollTop / denom) * 100)));
       const delta = scrollTop - (lastScrollTopRef.current || 0);
+      const now = Date.now();
+      const elapsed = now - (lastScrollAtRef.current || now);
+      if (elapsed > 0) {
+        scrollVelocityRef.current = Math.abs(delta) / elapsed * 1000;
+      }
+      lastScrollAtRef.current = now;
       if (Math.abs(delta) > 2) {
         scrollDirRef.current = delta > 0 ? "down" : "up";
       }
@@ -1101,6 +1548,146 @@ export default function PathNodePage() {
   }, [nodeId, resolveScrollContainer, scheduleSessionSync]);
 
   useEffect(() => {
+    if (!nodeId || docBlocks.length === 0) return;
+    let timer: number | null = null;
+    lastReadTickRef.current = performance.now();
+
+    const tick = () => {
+      const now = performance.now();
+      const last = lastReadTickRef.current || now;
+      const dt = now - last;
+      lastReadTickRef.current = now;
+      if (dt <= 0 || document.hidden) return;
+
+      const scrollRoot = resolveScrollContainer();
+      const rootRect = scrollRoot?.getBoundingClientRect();
+      const rootTop = rootRect?.top ?? 0;
+      const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
+      const speedScreens = rootHeight > 0 ? scrollVelocityRef.current / rootHeight : 0;
+      const speedFactor = clamp(1 - speedScreens / READ_MAX_SCREENS_PER_SEC, 0, 1);
+      if (speedFactor <= 0.05) return;
+
+      const gaze = gazeRef.current;
+      const gazeOk =
+        eyeTrackingEnabled &&
+        eyeTrackingStatus === "active" &&
+        gaze &&
+        gaze.confidence >= 0.5 &&
+        gaze.y >= rootTop &&
+        gaze.y <= rootTop + rootHeight;
+      const focusY = gazeOk ? gaze.y : rootTop + rootHeight * READ_LINE_RATIO;
+      const source: "behavioral" | "gaze" = gazeOk ? "gaze" : "behavioral";
+
+      const dtSec = Math.min(dt, 1000) / 1000;
+      let updated = false;
+
+      for (const [id, metric] of blockMetricsRef.current.entries()) {
+        const ratio = metric.ratio ?? 0;
+        if (ratio < READ_VISIBLE_RATIO_MIN) continue;
+        const height = metric.height || 1;
+        const centerY = rootTop + (metric.topDelta || 0) + height * 0.5;
+        const distance = Math.abs(centerY - focusY);
+        const focusFactor = 1 - Math.min(distance / Math.max(rootHeight, 1), 1);
+        const weight = ratio * focusFactor * speedFactor;
+        if (weight < READ_MIN_WEIGHT) continue;
+        const required = readTargetSecondsRef.current.get(id) ?? 4;
+        const prev = readCreditsRef.current.get(id) ?? 0;
+        const next = clamp(prev + (dtSec / required) * weight, 0, 1);
+        if (next !== prev) {
+          readCreditsRef.current.set(id, next);
+          updated = true;
+        }
+        if (next >= READ_CREDIT_THRESHOLD && !readBlocksRef.current.has(id)) {
+          markBlockRead(id, source, next);
+        }
+      }
+
+      if (updated) {
+        scheduleSessionSync();
+      }
+    };
+
+    timer = window.setInterval(tick, READ_TICK_MS);
+    return () => {
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [
+    docBlocks.length,
+    eyeTrackingEnabled,
+    eyeTrackingStatus,
+    gazeRef,
+    markBlockRead,
+    nodeId,
+    resolveScrollContainer,
+    scheduleSessionSync,
+  ]);
+
+  useEffect(() => {
+    if (!nodeId) return;
+    let timer: number | null = null;
+    const tick = () => {
+      if (!gazeStreamEnabled || !gazeEnabledRef.current) return;
+      if (document.hidden) return;
+      const gaze = gazeRef.current;
+      if (!gaze || gaze.confidence < GAZE_MIN_CONFIDENCE) return;
+      const now = Date.now();
+      const prevSmooth = gazeSmoothRef.current;
+      const smoothWeight = 0.65;
+      const smoothX = prevSmooth ? prevSmooth.x * smoothWeight + gaze.x * (1 - smoothWeight) : gaze.x;
+      const smoothY = prevSmooth ? prevSmooth.y * smoothWeight + gaze.y * (1 - smoothWeight) : gaze.y;
+      gazeSmoothRef.current = { x: smoothX, y: smoothY, ts: now };
+
+      const blockId = findGazeBlock(smoothX, smoothY);
+      if (!blockId) return;
+      const line = findGazeLine(blockId, smoothX, smoothY);
+      const dt = gazeLastHitAtRef.current > 0 ? now - gazeLastHitAtRef.current : 0;
+      gazeLastHitAtRef.current = now;
+      gazeLastBlockRef.current = blockId;
+      gazeQueueRef.current?.enqueue({
+        block_id: blockId,
+        line_id: line?.id,
+        line_index: line?.index,
+        x: smoothX,
+        y: smoothY,
+        confidence: gaze.confidence,
+        ts: new Date(now).toISOString(),
+        dt_ms: dt > 0 ? dt : undefined,
+        read_credit: readCreditsRef.current.get(blockId) ?? 0,
+        source: gaze.source,
+        screen_w: window.innerWidth,
+        screen_h: window.innerHeight,
+      });
+    };
+    timer = window.setInterval(tick, Math.max(60, GAZE_TICK_MS));
+    return () => {
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [findGazeBlock, findGazeLine, gazeRef, gazeStreamEnabled, nodeId]);
+
+  useEffect(() => {
+    if (!gazeDebugEnabled) return;
+    let raf = 0;
+    const el = gazeDebugRef.current;
+    if (!el) return;
+    const tick = () => {
+      const gaze = gazeRef.current;
+      const smooth = gazeSmoothRef.current;
+      const point = smooth && gaze ? { x: smooth.x, y: smooth.y, confidence: gaze.confidence } : gaze;
+      if (point && point.confidence >= GAZE_MIN_CONFIDENCE) {
+        el.style.transform = `translate(${Math.round(point.x)}px, ${Math.round(point.y)}px)`;
+        el.style.opacity = "1";
+      } else {
+        el.style.opacity = "0";
+      }
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [gazeDebugEnabled, gazeRef]);
+
+  useEffect(() => {
     if (!nodeId || !doc) return;
     let observer: IntersectionObserver | null = null;
     let raf = 0;
@@ -1124,12 +1711,23 @@ export default function PathNodePage() {
             const rect = target.getBoundingClientRect();
             const rootRect = scrollContainer?.getBoundingClientRect();
             const rootTop = rootRect?.top ?? 0;
-            const rootHeight = (rootRect?.height ?? window.innerHeight) || 1;
+            const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
             blockMetricsRef.current.set(id, {
               ratio,
               topDelta: rect.top - rootTop,
               height: rect.height,
               rootHeight,
+              top: rect.top,
+              bottom: rect.bottom,
+              left: rect.left,
+              right: rect.right,
+              seenAt: Date.now(),
+            });
+            blockBoundsRef.current.set(id, {
+              top: rect.top,
+              bottom: rect.bottom,
+              left: rect.left,
+              right: rect.right,
               seenAt: Date.now(),
             });
             if (ratio < VISIBLE_RATIO_MIN) {
@@ -1170,6 +1768,8 @@ export default function PathNodePage() {
       }
       visibleBlocksRef.current.clear();
       blockMetricsRef.current.clear();
+      blockBoundsRef.current.clear();
+      blockLineRectsRef.current.clear();
       scoreEMARef.current.clear();
       lastCurrentAtRef.current.clear();
       currentBlockIdRef.current = "";
@@ -1367,6 +1967,16 @@ export default function PathNodePage() {
     [applyPendingEdit, clearPendingEdit, schedulePendingEditPoll]
   );
 
+  const handleRuntimePromptEvent = useCallback((data: unknown) => {
+    if (!data || typeof data !== "object") return;
+    const payload = data as RuntimePromptPayload;
+    const payloadPathId = String(payload.path_id ?? "").trim();
+    const payloadNodeId = String(payload.node_id ?? "").trim();
+    if (payloadPathId && payloadPathId !== String(pathIdRef.current || "")) return;
+    if (payloadNodeId && payloadNodeId !== String(nodeIdRef.current || "")) return;
+    setRuntimePrompt(payload);
+  }, []);
+
   const handleJobUpdate = useCallback(
     (event: string, data: unknown) => {
       if (!data || typeof data !== "object") return;
@@ -1449,10 +2059,14 @@ export default function PathNodePage() {
       }
       if (event.startsWith("chatmessage")) {
         handleChatMessageEvent(event, msg.data);
+        continue;
+      }
+      if (event === "runtimeprompt") {
+        handleRuntimePromptEvent(msg.data);
       }
     }
     lastSseIndexRef.current = messages.length;
-  }, [handleChatMessageEvent, handleJobUpdate, messages, user?.id]);
+  }, [handleChatMessageEvent, handleJobUpdate, handleRuntimePromptEvent, messages, user?.id]);
 
   useEffect(() => {
     if (!connected) return;
@@ -1806,8 +2420,8 @@ export default function PathNodePage() {
     [nodeId]
   );
 
-	  const openDrill = useCallback(
-	    async (kind: string, label?: string) => {
+  const openDrill = useCallback(
+    async (kind: string, label?: string) => {
 	      if (!nodeId) return;
 	      setDrawerOpen(true);
 	      setDrawerKind(kind);
@@ -1824,8 +2438,28 @@ export default function PathNodePage() {
 	        setDrawerLoading(false);
 	      }
 	    },
-	    [nodeId, t]
-	  );
+    [nodeId, t]
+  );
+
+  const submitRuntimePromptDecision = useCallback(
+    async (decision: "completed" | "dismissed") => {
+      if (!runtimePrompt) return;
+      const type = decision === "completed" ? "runtime_prompt_completed" : "runtime_prompt_dismissed";
+      queueEvent({
+        type,
+        pathId: pathIdRef.current || undefined,
+        pathNodeId: runtimePrompt.node_id || nodeId || undefined,
+        data: {
+          prompt_id: runtimePrompt.prompt_id,
+          prompt_type: runtimePrompt.type,
+          block_id: runtimePrompt.block_id,
+        },
+      });
+      setRuntimePrompt(null);
+      runtimeStateQuery.refetch().catch(() => undefined);
+    },
+    [nodeId, runtimePrompt, runtimeStateQuery]
+  );
 
   const drillPayload = drawerDrill && typeof drawerDrill === "object" ? drawerDrill : null;
 
@@ -1858,6 +2492,24 @@ export default function PathNodePage() {
                 <div className="text-[11px] xs:text-xs sm:text-xs text-muted-foreground truncate max-w-[50vw] sm:max-w-none">
                   {path.title}
                 </div>
+              ) : null}
+              {eyeTrackingEnabled ? (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] xs:text-[11px]",
+                    eyeTrackingStatus === "active"
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
+                      : "border-border/60 bg-muted/40 text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      eyeTrackingStatus === "active" ? "bg-emerald-500" : "bg-muted-foreground/60"
+                    )}
+                  />
+                  Eye tracking {eyeTrackingStatus === "active" ? "on" : eyeTrackingStatus}
+                </span>
               ) : null}
             </div>
 
@@ -1941,6 +2593,8 @@ export default function PathNodePage() {
                 <NodeDocRenderer
                   doc={doc}
                   pathNodeId={nodeId}
+                  interactiveMode={interactiveMode}
+                  completedInteractiveBlocks={completedInteractiveBlocks}
                   pendingBlocks={pendingBlocks}
                   pendingEdit={pendingEdit}
                   editBusy={pendingEditBusy}
@@ -1969,6 +2623,80 @@ export default function PathNodePage() {
           </div>
         </div>
       </Container>
+
+      <Dialog
+        open={Boolean(runtimePrompt)}
+        onOpenChange={(open) => {
+          if (!open) void submitRuntimePromptDecision("dismissed");
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {runtimePrompt?.type === "break"
+                ? "Take a short break"
+                : runtimePrompt?.type === "flashcard"
+                  ? "Flashcard"
+                  : "Quick check"}
+            </DialogTitle>
+            <DialogDescription>
+              {runtimePrompt?.type === "break"
+                ? "A short pause can improve retention and accuracy."
+                : "Respond and then confirm when you are ready to continue."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {runtimePrompt?.type === "break" ? (
+            <div className="space-y-2 rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-foreground/90">
+              <div>
+                Suggested break:{" "}
+                <span className="font-medium">
+                  {runtimePrompt.break_min ?? 3}–{runtimePrompt.break_max ?? 8} minutes
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                You can keep going if you prefer; this just helps pacing.
+              </div>
+            </div>
+          ) : runtimePrompt?.type === "quick_check" ? (
+            runtimePromptBlock ? (
+              <QuickCheck
+                pathNodeId={runtimePrompt.node_id || nodeId || undefined}
+                blockId={runtimePrompt.block_id}
+                promptMd={runtimePromptBlock?.prompt_md as string}
+                answerMd={runtimePromptBlock?.answer_md as string}
+                kind={runtimePromptBlock?.kind}
+                options={runtimePromptBlock?.options}
+              />
+            ) : (
+              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+                Loading the quick check…
+              </div>
+            )
+          ) : runtimePrompt?.type === "flashcard" ? (
+            runtimePromptBlock ? (
+              <Flashcard
+                frontMd={runtimePromptBlock?.front_md as string}
+                backMd={runtimePromptBlock?.back_md as string}
+              />
+            ) : (
+              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+                Loading the flashcard…
+              </div>
+            )
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void submitRuntimePromptDecision("dismissed")}
+            >
+              Dismiss
+            </Button>
+            <Button onClick={() => void submitRuntimePromptDecision("completed")}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {debugOverlay ? (
         <div
@@ -2002,6 +2730,15 @@ export default function PathNodePage() {
           </div>
           <div className="mt-3 text-[10px] text-muted-foreground">Toggle: Ctrl/Cmd + Shift + `</div>
         </div>
+      ) : null}
+
+      {gazeDebugEnabled ? (
+        <div
+          ref={gazeDebugRef}
+          className="pointer-events-none fixed left-0 top-0 z-[70] h-3.5 w-3.5 rounded-full bg-primary/70 ring-2 ring-primary/40 shadow"
+          style={{ transform: "translate(-9999px, -9999px)", opacity: 0 }}
+          aria-hidden="true"
+        />
       ) : null}
 
       <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>

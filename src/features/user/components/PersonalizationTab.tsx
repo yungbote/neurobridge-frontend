@@ -28,6 +28,7 @@ import {
 } from "@/shared/ui/select";
 import { useToast } from "@/shared/ui/toast";
 import { cn } from "@/shared/lib/utils";
+import { persistEyeTrackingPreference } from "@/shared/hooks/useEyeTrackingPreference";
 
 type LanguagePreference = "auto" | "en" | "es" | "fr" | "de" | "pt";
 type UnitSystem = "metric" | "imperial";
@@ -82,6 +83,7 @@ type PersonalizationPrefsV1 = {
 
   allowBehaviorPersonalization: boolean;
   allowTelemetry: boolean;
+  allowEyeTracking: boolean;
 };
 
 function safeParseJSON(value: string): unknown | null {
@@ -196,6 +198,7 @@ function buildDefaults(opts: {
 
     allowBehaviorPersonalization: true,
     allowTelemetry: true,
+    allowEyeTracking: false,
   };
 }
 
@@ -287,6 +290,7 @@ function normalizePrefs(raw: unknown, defaults: PersonalizationPrefsV1): Persona
 
     allowBehaviorPersonalization: bool(obj.allowBehaviorPersonalization, defaults.allowBehaviorPersonalization),
     allowTelemetry: bool(obj.allowTelemetry, defaults.allowTelemetry),
+    allowEyeTracking: bool((obj as { allowEyeTracking?: unknown }).allowEyeTracking, defaults.allowEyeTracking),
   };
 }
 
@@ -913,11 +917,13 @@ const DefaultTeachingStyleSection = memo(function DefaultTeachingStyleSection({
 const PersonalizationControlsSection = memo(function PersonalizationControlsSection({
   allowBehaviorPersonalization,
   allowTelemetry,
+  allowEyeTracking,
   setPrefs,
   onReset,
 }: {
   allowBehaviorPersonalization: boolean;
   allowTelemetry: boolean;
+  allowEyeTracking: boolean;
   setPrefs: PrefsSetter;
   onReset: () => void;
 }) {
@@ -952,6 +958,18 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
             checked={allowTelemetry}
             onCheckedChange={(checked) =>
               setPrefs((prev) => ({ ...prev, allowTelemetry: Boolean(checked) }))
+            }
+          />
+        </SettingRow>
+
+        <SettingRow
+          title="Camera-based reading detection"
+          description="Optional. Uses on-device camera signals to improve reading detection accuracy."
+        >
+          <Switch
+            checked={allowEyeTracking}
+            onCheckedChange={(checked) =>
+              setPrefs((prev) => ({ ...prev, allowEyeTracking: Boolean(checked) }))
             }
           />
         </SettingRow>
@@ -1082,6 +1100,10 @@ export function PersonalizationTab() {
   useEffect(() => {
     prefsRef.current = prefs;
   }, [prefs]);
+
+  useEffect(() => {
+    persistEyeTrackingPreference(Boolean(prefs.allowEyeTracking));
+  }, [prefs.allowEyeTracking]);
 
   useEffect(() => {
     if (prevUserIdRef.current === userId) return;
@@ -1318,6 +1340,7 @@ export function PersonalizationTab() {
       <PersonalizationControlsSection
         allowBehaviorPersonalization={prefs.allowBehaviorPersonalization}
         allowTelemetry={prefs.allowTelemetry}
+        allowEyeTracking={prefs.allowEyeTracking}
         setPrefs={setPrefs}
         onReset={resetToDefaults}
       />

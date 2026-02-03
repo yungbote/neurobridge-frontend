@@ -76,6 +76,8 @@ interface NodeDocRendererProps {
   editBusy?: boolean;
   blockFeedback?: Record<string, string>;
   undoableBlocks?: Record<string, boolean>;
+  interactiveMode?: "inline" | "runtime";
+  completedInteractiveBlocks?: Record<string, boolean>;
   onLike?: (block: DocBlock, index: number) => void;
   onDislike?: (block: DocBlock, index: number) => void;
   onRegenerate?: (block: DocBlock, index: number) => void;
@@ -470,7 +472,30 @@ function svgToDataURL(svg: unknown) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(stripped)}`;
 }
 
-function QuickCheck({
+function CompletedInteractive({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className="rounded-full border border-emerald-600/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+          Completed
+        </div>
+      </div>
+      {title ? <div className="mt-2 text-sm font-medium text-foreground">{title}</div> : null}
+      {children ? <div className="mt-3 text-sm text-foreground/90">{children}</div> : null}
+    </div>
+  );
+}
+
+export function QuickCheck({
   pathNodeId,
   blockId,
   promptMd,
@@ -683,7 +708,7 @@ function QuickCheck({
   );
 }
 
-function Flashcard({ frontMd, backMd }: { frontMd?: string; backMd?: string }) {
+export function Flashcard({ frontMd, backMd }: { frontMd?: string; backMd?: string }) {
   const [showBack, setShowBack] = useState(false);
   const front = safeString(frontMd).trim();
   const back = safeString(backMd).trim();
@@ -841,6 +866,8 @@ export function NodeDocRenderer({
   editBusy = false,
   blockFeedback = {},
   undoableBlocks = {},
+  interactiveMode = "inline",
+  completedInteractiveBlocks = {},
   onLike,
   onDislike,
   onRegenerate,
@@ -879,6 +906,11 @@ export function NodeDocRenderer({
     (b: DocBlock, i: number, isLast = false) => {
       const type = safeString(b?.type).toLowerCase();
       const blockId = safeString(b?.id) || String(i);
+      const isInteractive = type === "quick_check" || type === "flashcard";
+      const isCompleted = Boolean(blockId && completedInteractiveBlocks[blockId]);
+      if (interactiveMode === "runtime" && isInteractive && !isCompleted) {
+        return null;
+      }
       const isPending = Boolean(pendingBlocks?.[blockId]);
       const editBlockId = pendingEdit ? normalizeProposalText(pendingEdit.block_id) : "";
       const editIndex =
@@ -1344,6 +1376,15 @@ export function NodeDocRenderer({
       }
 
       if (type === "quick_check") {
+        if (interactiveMode === "runtime" && isCompleted) {
+          return wrap(
+            <CompletedInteractive label="Quick check" title={safeString(b?.title)}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                {safeString(b?.prompt_md)}
+              </ReactMarkdown>
+            </CompletedInteractive>
+          );
+        }
         return wrap(
           <QuickCheck
             pathNodeId={pathNodeId}
@@ -1357,6 +1398,22 @@ export function NodeDocRenderer({
       }
 
       if (type === "flashcard") {
+        if (interactiveMode === "runtime" && isCompleted) {
+          return wrap(
+            <CompletedInteractive label="Flashcard" title={safeString(b?.title)}>
+              <div className="space-y-2">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                  {safeString(b?.front_md)}
+                </ReactMarkdown>
+                {safeString(b?.back_md) ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents()} skipHtml>
+                    {safeString(b?.back_md)}
+                  </ReactMarkdown>
+                ) : null}
+              </div>
+            </CompletedInteractive>
+          );
+        }
         return wrap(<Flashcard frontMd={b?.front_md} backMd={b?.back_md} />);
       }
 
@@ -1364,7 +1421,9 @@ export function NodeDocRenderer({
     },
     [
       blockFeedback,
+      completedInteractiveBlocks,
       editBusy,
+      interactiveMode,
       onChat,
       onDislike,
       onEditConfirm,
