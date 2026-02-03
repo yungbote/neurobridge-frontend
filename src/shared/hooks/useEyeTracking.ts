@@ -55,6 +55,8 @@ async function loadWebGazer(): Promise<WebGazerLike | null> {
 
 export function useEyeTracking(enabled: boolean) {
   const gazeRef = useRef<GazePoint | null>(null);
+  const lastGazeAtRef = useRef<number>(0);
+  const manualStreamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<EyeTrackingStatus>(enabled ? "starting" : "idle");
 
   useEffect(() => {
@@ -70,6 +72,10 @@ export function useEyeTracking(enabled: boolean) {
         } catch {
           // ignore
         }
+      }
+      if (manualStreamRef.current) {
+        manualStreamRef.current.getTracks().forEach((track) => track.stop());
+        manualStreamRef.current = null;
       }
     };
 
@@ -98,6 +104,22 @@ export function useEyeTracking(enabled: boolean) {
 
     setStatus("starting");
 
+    const ensureVideoStream = async (): Promise<boolean> => {
+      if (typeof document === "undefined") return false;
+      const video = document.getElementById("webgazerVideoFeed") as HTMLVideoElement | null;
+      if (!video) return false;
+      if (video.srcObject) return true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        manualStreamRef.current = stream;
+        video.srcObject = stream;
+        await video.play().catch(() => undefined);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     (async () => {
       try {
         const wg = await loadWebGazer();
@@ -108,6 +130,7 @@ export function useEyeTracking(enabled: boolean) {
         wg.showPredictionPoints?.(false);
         wg.setGazeListener((data, ts) => {
           if (!active || !data) return;
+          lastGazeAtRef.current = Date.now();
           gazeRef.current = {
             x: data.x,
             y: data.y,
@@ -117,7 +140,14 @@ export function useEyeTracking(enabled: boolean) {
           };
         });
         await wg.begin();
+        await ensureVideoStream();
         if (!cancelled) setStatus("active");
+        const startAt = Date.now();
+        window.setTimeout(async () => {
+          if (cancelled) return;
+          if (lastGazeAtRef.current > startAt) return;
+          await ensureVideoStream();
+        }, 1500);
       } catch (err) {
         if (!cancelled) {
           const msg = String((err as Error)?.message || "").toLowerCase();
