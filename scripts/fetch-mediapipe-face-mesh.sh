@@ -23,10 +23,55 @@ download_first() {
   shift
   for url in "$@"; do
     echo "- $url"
-    if curl -fL "$url" -o "$out"; then
+    if download_url "$url" "$out"; then
       return 0
     fi
   done
+  return 1
+}
+
+download_url() {
+  url="$1"
+  out="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL "$url" -o "$out"
+    return $?
+  fi
+  if command -v node >/dev/null 2>&1; then
+    URL="$url" OUT="$out" node - <<'NODE'
+const fs = require("fs");
+const http = require("http");
+const https = require("https");
+
+const url = process.env.URL;
+const out = process.env.OUT;
+const maxRedirects = 5;
+
+function fetch(u, redirects) {
+  const client = u.startsWith("https") ? https : http;
+  const req = client.get(u, (res) => {
+    const status = res.statusCode || 0;
+    if (status >= 300 && status < 400 && res.headers.location && redirects < maxRedirects) {
+      const next = new URL(res.headers.location, u).toString();
+      res.resume();
+      return fetch(next, redirects + 1);
+    }
+    if (status >= 200 && status < 300) {
+      const file = fs.createWriteStream(out);
+      res.pipe(file);
+      file.on("finish", () => file.close(() => process.exit(0)));
+      return;
+    }
+    res.resume();
+    process.exit(1);
+  });
+  req.on("error", () => process.exit(1));
+}
+
+fetch(url, 0);
+NODE
+    return $?
+  fi
   return 1
 }
 
