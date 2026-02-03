@@ -306,6 +306,11 @@ export function useEyeTracking(enabled: boolean) {
           });
         }
         wg.showPredictionPoints?.(DEBUG_POINTS);
+        try {
+          wg.removeMouseEventListeners?.();
+        } catch {
+          // ignore
+        }
         wg.setGazeListener((data, ts) => {
           if (!active || !data) return;
           lastGazeAtRef.current = Date.now();
