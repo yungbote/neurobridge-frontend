@@ -25,6 +25,7 @@ type WebGazerLike = {
   pause?: () => void;
   resume?: () => void;
   showPredictionPoints?: (show: boolean) => void;
+  showFaceFeedbackBox?: (show: boolean) => void;
   setVideoViewerSize?: (width: number, height: number) => WebGazerLike;
   setCameraConstraints?: (constraints: MediaStreamConstraints) => Promise<WebGazerLike> | WebGazerLike;
   params?: Record<string, unknown>;
@@ -169,6 +170,13 @@ export function useEyeTracking(enabled: boolean) {
       if (typeof wgAny.setVideoViewerSize === "function") {
         wgAny.setVideoViewerSize(w, h);
       }
+      // Expand feedback box to cover full webcam width so eyes are always within bounds.
+      const minDim = Math.min(w, h);
+      const maxDim = Math.max(w, h);
+      const ratio = minDim > 0 ? maxDim / minDim : 1;
+      wgAny.params = wgAny.params || {};
+      wgAny.params.faceFeedbackBoxRatio = ratio;
+      wgAny.showFaceFeedbackBox?.(true);
     };
 
     (async () => {
