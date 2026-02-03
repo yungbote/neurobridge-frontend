@@ -13,6 +13,12 @@ export default defineConfig(({ mode }) => {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (req.url) {
+          if (req.url.includes("/mediapipe/face_mesh//mediapipe/face_mesh/")) {
+            req.url = req.url.replace(
+              "/mediapipe/face_mesh//mediapipe/face_mesh/",
+              "/mediapipe/face_mesh/"
+            );
+          }
           if (req.url.startsWith("/path-nodes/mediapipe/face_mesh/")) {
             req.url = req.url.replace("/path-nodes", "");
           }
@@ -70,7 +76,11 @@ export default defineConfig(({ mode }) => {
           ) {
             return next();
           }
-          const cleaned = rawUrl.startsWith("/path-nodes/") ? rawUrl.replace("/path-nodes", "") : rawUrl;
+          let cleaned = rawUrl.startsWith("/path-nodes/") ? rawUrl.replace("/path-nodes", "") : rawUrl;
+          cleaned = cleaned.replace(
+            "/mediapipe/face_mesh//mediapipe/face_mesh/",
+            "/mediapipe/face_mesh/"
+          );
           const url = new URL(cleaned, "http://localhost");
           const rel = url.pathname.replace("/mediapipe/face_mesh/", "");
           const localPath = path.join(baseDir, rel);
@@ -109,7 +119,6 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
 
 
 

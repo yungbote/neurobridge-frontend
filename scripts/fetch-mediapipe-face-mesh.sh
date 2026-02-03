@@ -135,7 +135,7 @@ const fs = require("fs");
 const path = process.env.LOADER;
 const version = process.env.ASSET_VERSION || "20260203";
 let text = fs.readFileSync(path, "utf8");
-const abs = "REMOTE_PACKAGE_BASE = '/mediapipe/face_mesh/face_mesh_solution_packed_assets.data'";
+const abs = "REMOTE_PACKAGE_BASE = 'face_mesh_solution_packed_assets.data'";
 const re1 = /REMOTE_PACKAGE_BASE\s*=\s*'face_mesh_solution_packed_assets\.data[^']*'/;
 const re2 = /REMOTE_PACKAGE_BASE\s*=\s*'[^']*face_mesh_solution_packed_assets\.data[^']*'/;
 if (re1.test(text)) {

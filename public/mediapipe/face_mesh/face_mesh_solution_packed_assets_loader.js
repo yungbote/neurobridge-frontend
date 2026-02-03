@@ -16,7 +16,7 @@
         PACKAGE_PATH = encodeURIComponent(location.pathname.toString().substring(0, location.pathname.toString().lastIndexOf('/')) + '/');
       }
       var PACKAGE_NAME = 'blaze-out/k8-opt/genfiles/third_party/mediapipe/web/solutions/face_mesh/face_mesh_solution_packed_assets.data?v=20260203';
-      var REMOTE_PACKAGE_BASE = '/mediapipe/face_mesh/face_mesh_solution_packed_assets.data?v=20260203';
+      var REMOTE_PACKAGE_BASE = 'face_mesh_solution_packed_assets.data?v=20260203';
       if (typeof window === 'object' && window.__NB_EYE_ASSET_BUST) {
         var bust = window.__NB_EYE_ASSET_BUST;
         REMOTE_PACKAGE_BASE += (REMOTE_PACKAGE_BASE.indexOf('?') === -1 ? '?' : '&') + 'b=' + bust;
