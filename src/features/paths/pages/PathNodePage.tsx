@@ -937,6 +937,7 @@ export default function PathNodePage() {
       y: smoothY,
       confidence: gaze.confidence,
       velocity: gazeVelocityRef.current,
+      ts: typeof gaze.ts === "number" ? gaze.ts : nowMs,
       source: gaze.source,
     };
   }, []);
@@ -1149,6 +1150,7 @@ export default function PathNodePage() {
   const { gazeRef, status: eyeTrackingStatus, error: eyeTrackingError } = useEyeTracking(eyeTrackingEnabled);
   const { calibrationState, needsCalibration, markCalibrated } = useEyeCalibration();
   const [showCalibration, setShowCalibration] = useState(false);
+  const [eyeQuality, setEyeQuality] = useState<"good" | "ok" | "poor" | "stale" | "off">("off");
   const gazeStreamEnabled = useMemo(() => {
     const raw = String(import.meta.env.VITE_EYE_TRACKING_STREAM_ENABLED ?? "true").toLowerCase();
     return raw !== "false" && raw !== "0" && raw !== "off";
@@ -1161,6 +1163,44 @@ export default function PathNodePage() {
   useEffect(() => {
     gazeEnabledRef.current = Boolean(gazeStreamEnabled && eyeTrackingEnabled && eyeTrackingStatus === "active");
   }, [eyeTrackingEnabled, eyeTrackingStatus, gazeStreamEnabled]);
+
+  useEffect(() => {
+    if (!eyeTrackingEnabled || eyeTrackingStatus !== "active") {
+      setEyeQuality("off");
+      return () => {};
+    }
+    let timer: number | null = null;
+    const tick = () => {
+      const gaze = gazeRef.current;
+      if (!gaze) {
+        setEyeQuality("stale");
+        return;
+      }
+      const now = Date.now();
+      const ageMs = now - (typeof gaze.ts === "number" ? gaze.ts : now);
+      if (ageMs > 1200) {
+        setEyeQuality("stale");
+        return;
+      }
+      const confidence = gaze.confidence ?? 0;
+      const velocity = gazeVelocityRef.current || 0;
+      const confScore = clamp(
+        (confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
+        0,
+        1
+      );
+      const velScore = clamp(1 - velocity / Math.max(GAZE_MAX_VELOCITY_PX_S, 1), 0, 1);
+      const score = 0.65 * confScore + 0.35 * velScore;
+      if (score >= 0.7) setEyeQuality("good");
+      else if (score >= 0.4) setEyeQuality("ok");
+      else setEyeQuality("poor");
+    };
+    timer = window.setInterval(tick, 400);
+    tick();
+    return () => {
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [eyeTrackingEnabled, eyeTrackingStatus, gazeRef]);
 
   useEffect(() => {
     if (!gazeQueueRef.current) {
@@ -1516,9 +1556,10 @@ export default function PathNodePage() {
       eye_tracking: {
         enabled: eyeTrackingEnabled,
         status: eyeTrackingStatus,
+        quality: eyeQuality,
       },
     };
-  }, [eyeTrackingEnabled, eyeTrackingStatus]);
+  }, [eyeTrackingEnabled, eyeTrackingStatus, eyeQuality]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1742,10 +1783,11 @@ export default function PathNodePage() {
         const nowMs = Date.now();
         const gazePoint = getSmoothedGaze(nowMs);
         if (gazePoint && gazePoint.confidence >= GAZE_MIN_CONFIDENCE) {
+          const fresh = nowMs - (gazePoint.ts ?? nowMs) <= 800;
           const corrected = applyGazeBias(gazePoint.x, gazePoint.y);
           const inViewport = corrected.y >= rootTop && corrected.y <= rootTop + rootHeight;
           const stable = gazePoint.velocity <= GAZE_MAX_VELOCITY_PX_S;
-          if (inViewport && stable) {
+          if (inViewport && stable && fresh) {
             focusY = corrected.y;
             gazeConfidenceFactor = clamp(
               (gazePoint.confidence - GAZE_MIN_CONFIDENCE) / Math.max(1 - GAZE_MIN_CONFIDENCE, 0.01),
@@ -2713,7 +2755,7 @@ export default function PathNodePage() {
                     )}
                   />
                   {eyeTrackingStatus === "active"
-                    ? "Eye tracking on"
+                    ? `Eye tracking ${eyeQuality === "off" ? "on" : eyeQuality}`
                     : eyeTrackingStatus === "error"
                     ? `Eye tracking error: ${eyeTrackingError || "unknown"}`
                     : `Eye tracking ${eyeTrackingStatus}`}
@@ -2962,10 +3004,11 @@ export default function PathNodePage() {
       <EyeCalibrationOverlay
         open={showCalibration}
         onClose={() => setShowCalibration(false)}
-        onComplete={() => {
-          markCalibrated();
+        onComplete={(result) => {
+          markCalibrated(result);
           setShowCalibration(false);
         }}
+        getGaze={() => gazeRef.current}
       />
 
       <Dialog open={regenDialogOpen} onOpenChange={(open) => !regenSubmitting && setRegenDialogOpen(open)}>

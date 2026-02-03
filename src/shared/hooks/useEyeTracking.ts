@@ -52,6 +52,10 @@ const FACE_MESH_BASE = FACE_MESH_BASE_RAW
   : "";
 const PREVIEW_MAX_W = Number(import.meta.env.VITE_EYE_TRACKING_PREVIEW_MAX_W) || 320;
 const PREVIEW_MAX_H = Number(import.meta.env.VITE_EYE_TRACKING_PREVIEW_MAX_H) || 240;
+const CAM_WIDTH = Number(import.meta.env.VITE_EYE_TRACKING_CAM_WIDTH) || 1280;
+const CAM_HEIGHT = Number(import.meta.env.VITE_EYE_TRACKING_CAM_HEIGHT) || 720;
+const CAM_FPS = Number(import.meta.env.VITE_EYE_TRACKING_CAM_FPS) || 30;
+const CAM_FACING = String(import.meta.env.VITE_EYE_TRACKING_CAM_FACING || "user").trim();
 let webgazerLoadPromise: Promise<WebGazerLike | null> | null = null;
 
 async function loadWebGazer(): Promise<WebGazerLike | null> {
@@ -135,7 +139,14 @@ export function useEyeTracking(enabled: boolean) {
       if (!video) return false;
       if (video.srcObject) return true;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: CAM_WIDTH },
+            height: { ideal: CAM_HEIGHT },
+            frameRate: { ideal: CAM_FPS },
+            facingMode: CAM_FACING || "user",
+          },
+        });
         manualStreamRef.current = stream;
         video.srcObject = stream;
         await video.play().catch(() => undefined);
@@ -202,6 +213,16 @@ export function useEyeTracking(enabled: boolean) {
         if (FACE_MESH_BASE) {
           wgAny.params = wgAny.params || {};
           wgAny.params.faceMeshSolutionPath = FACE_MESH_BASE;
+        }
+        if (typeof wgAny.setCameraConstraints === "function") {
+          await wgAny.setCameraConstraints({
+            video: {
+              width: { ideal: CAM_WIDTH },
+              height: { ideal: CAM_HEIGHT },
+              frameRate: { ideal: CAM_FPS },
+              facingMode: CAM_FACING || "user",
+            },
+          });
         }
         wg.showPredictionPoints?.(DEBUG_POINTS);
         wg.setGazeListener((data, ts) => {

@@ -1073,8 +1073,8 @@ const PersonalizationControlsSection = memo(function PersonalizationControlsSect
       <EyeCalibrationOverlay
         open={showCalibration}
         onClose={() => setShowCalibration(false)}
-        onComplete={() => {
-          markCalibrated();
+        onComplete={(result) => {
+          markCalibrated(result);
           setShowCalibration(false);
         }}
       />
