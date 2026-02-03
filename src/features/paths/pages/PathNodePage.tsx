@@ -1673,9 +1673,12 @@ export default function PathNodePage() {
       const gaze = gazeRef.current;
       const smooth = gazeSmoothRef.current;
       const point = smooth && gaze ? { x: smooth.x, y: smooth.y, confidence: gaze.confidence } : gaze;
-      if (point && point.confidence >= GAZE_MIN_CONFIDENCE) {
-        el.style.transform = `translate(${Math.round(point.x)}px, ${Math.round(point.y)}px)`;
-        el.style.opacity = "1";
+      if (point) {
+        const confidence = typeof point.confidence === "number" ? point.confidence : 0;
+        const clamped = Math.max(0, Math.min(1, confidence));
+        const opacity = 0.35 + clamped * 0.65;
+        el.style.transform = `translate3d(${Math.round(point.x)}px, ${Math.round(point.y)}px, 0)`;
+        el.style.opacity = String(opacity);
       } else {
         el.style.opacity = "0";
       }

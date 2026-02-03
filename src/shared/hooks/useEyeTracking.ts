@@ -37,6 +37,10 @@ const CDN_URL = String(import.meta.env.VITE_EYE_TRACKING_CDN || "/eye-tracking/w
 const FACE_MESH_BASE_RAW = String(import.meta.env.VITE_EYE_TRACKING_FACE_MESH_BASE || "/mediapipe/face_mesh").trim();
 const NO_CACHE =
   String(import.meta.env.VITE_EYE_TRACKING_NO_CACHE || (import.meta.env.DEV ? "1" : "")).trim() === "1";
+const DEBUG_POINTS =
+  String(import.meta.env.VITE_EYE_TRACKING_DEBUG || "").toLowerCase() === "true" ||
+  String(import.meta.env.VITE_EYE_TRACKING_DEBUG || "").toLowerCase() === "1" ||
+  String(import.meta.env.VITE_EYE_TRACKING_DEBUG || "").toLowerCase() === "yes";
 const FACE_MESH_BASE = FACE_MESH_BASE_RAW
   ? FACE_MESH_BASE_RAW.startsWith("/") || FACE_MESH_BASE_RAW.startsWith("http")
     ? FACE_MESH_BASE_RAW
@@ -152,7 +156,7 @@ export function useEyeTracking(enabled: boolean) {
           wgAny.params = wgAny.params || {};
           wgAny.params.faceMeshSolutionPath = FACE_MESH_BASE;
         }
-        wg.showPredictionPoints?.(false);
+        wg.showPredictionPoints?.(DEBUG_POINTS);
         wg.setGazeListener((data, ts) => {
           if (!active || !data) return;
           lastGazeAtRef.current = Date.now();
