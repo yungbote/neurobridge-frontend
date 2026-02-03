@@ -7,6 +7,16 @@ const KEY_TS = "nb_eye_calibrated_at";
 const KEY_VERSION = "nb_eye_calibration_v";
 const KEY_QUALITY = "nb_eye_calibration_quality";
 const KEY_ERROR = "nb_eye_calibration_error_px";
+const KEY_TRANSFORM = "nb_eye_calibration_transform";
+
+export type EyeCalibrationTransform = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+};
 
 function getMaxAgeDays(): number {
   const raw = Number(import.meta.env.VITE_EYE_TRACKING_CALIBRATION_MAX_DAYS);
@@ -91,6 +101,7 @@ export function useEyeCalibration() {
     window.localStorage.removeItem(KEY_VERSION);
     window.localStorage.removeItem(KEY_QUALITY);
     window.localStorage.removeItem(KEY_ERROR);
+    window.localStorage.removeItem(KEY_TRANSFORM);
     setState("missing");
     setTs(null);
     setAgeDays(null);
@@ -110,4 +121,36 @@ export function useEyeCalibration() {
     markCalibrated,
     clearCalibration,
   };
+}
+
+export function readCalibrationTransform(): EyeCalibrationTransform | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(KEY_TRANSFORM);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as EyeCalibrationTransform;
+    if (
+      !Number.isFinite(parsed?.a) ||
+      !Number.isFinite(parsed?.b) ||
+      !Number.isFinite(parsed?.c) ||
+      !Number.isFinite(parsed?.d) ||
+      !Number.isFinite(parsed?.e) ||
+      !Number.isFinite(parsed?.f)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCalibrationTransform(transform: EyeCalibrationTransform | null) {
+  if (typeof window === "undefined") return;
+  if (!transform) {
+    window.localStorage.removeItem(KEY_TRANSFORM);
+    return;
+  }
+  window.localStorage.setItem(KEY_TRANSFORM, JSON.stringify(transform));
+  window.dispatchEvent(new CustomEvent("nb_eye_calibration_updated", { detail: transform }));
 }

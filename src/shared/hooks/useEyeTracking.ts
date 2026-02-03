@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getEyeTrackingPermission } from "@/shared/hooks/useEyeTrackingPreference";
+import { readCalibrationTransform, EyeCalibrationTransform } from "@/shared/hooks/useEyeCalibration";
 
 export type EyeTrackingStatus =
   | "idle"
@@ -126,8 +127,24 @@ export function useEyeTracking(enabled: boolean) {
   const lastGazeAtRef = useRef<number>(0);
   const manualStreamRef = useRef<MediaStream | null>(null);
   const lastViewerSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const calibrationTransformRef = useRef<EyeCalibrationTransform | null>(readCalibrationTransform());
   const [status, setStatus] = useState<EyeTrackingStatus>(enabled ? "starting" : "idle");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<EyeCalibrationTransform | null>).detail;
+      calibrationTransformRef.current = detail ?? readCalibrationTransform();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("nb_eye_calibration_updated", handler as EventListener);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("nb_eye_calibration_updated", handler as EventListener);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -315,9 +332,22 @@ export function useEyeTracking(enabled: boolean) {
         wg.setGazeListener((data, ts) => {
           if (!active || !data) return;
           lastGazeAtRef.current = Date.now();
+          let x = data.x;
+          let y = data.y;
+          const transform = calibrationTransformRef.current;
+          if (transform) {
+            const tx = transform.a * x + transform.b * y + transform.c;
+            const ty = transform.d * x + transform.e * y + transform.f;
+            if (Number.isFinite(tx) && Number.isFinite(ty)) {
+              const maxX = typeof window !== "undefined" ? window.innerWidth : tx;
+              const maxY = typeof window !== "undefined" ? window.innerHeight : ty;
+              x = Math.min(Math.max(0, tx), Math.max(0, maxX));
+              y = Math.min(Math.max(0, ty), Math.max(0, maxY));
+            }
+          }
           gazeRef.current = {
-            x: data.x,
-            y: data.y,
+            x,
+            y,
             confidence: typeof data.confidence === "number" ? data.confidence : 0.6,
             ts: typeof ts === "number" ? ts : Date.now(),
             source: "webgazer",

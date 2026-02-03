@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/utils";
+import { writeCalibrationTransform } from "@/shared/hooks/useEyeCalibration";
 
 type CalibrationPoint = { x: number; y: number };
 type CalibrationPhase = "baseline" | "adaptive" | "validate";
@@ -11,6 +12,15 @@ type CalibrationResult = {
   quality: number;
   errorPx: number;
   samples: number;
+};
+
+type CalibrationTransform = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
 };
 
 type CalibrationPointResult = {
@@ -208,6 +218,87 @@ function weightedMean(values: number[], weights: number[]) {
   return wsum > 0 ? sum / wsum : Number.POSITIVE_INFINITY;
 }
 
+function invert3x3(m: number[][]): number[][] | null {
+  const [[a, b, c], [d, e, f], [g, h, i]] = m;
+  const A = e * i - f * h;
+  const B = -(d * i - f * g);
+  const C = d * h - e * g;
+  const D = -(b * i - c * h);
+  const E = a * i - c * g;
+  const F = -(a * h - b * g);
+  const G = b * f - c * e;
+  const H = -(a * f - c * d);
+  const I = a * e - b * d;
+  const det = a * A + b * B + c * C;
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-8) return null;
+  const invDet = 1 / det;
+  return [
+    [A * invDet, D * invDet, G * invDet],
+    [B * invDet, E * invDet, H * invDet],
+    [C * invDet, F * invDet, I * invDet],
+  ];
+}
+
+function solveAffineTransform(pairs: { predicted: CalibrationPoint; target: CalibrationPoint }[]): CalibrationTransform | null {
+  if (pairs.length < 3) return null;
+  const XTX = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const XTyX = [0, 0, 0];
+  const XTyY = [0, 0, 0];
+
+  for (const pair of pairs) {
+    const px = pair.predicted.x;
+    const py = pair.predicted.y;
+    const tx = pair.target.x;
+    const ty = pair.target.y;
+    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(tx) || !Number.isFinite(ty)) continue;
+    const row = [px, py, 1];
+    for (let r = 0; r < 3; r += 1) {
+      for (let c = 0; c < 3; c += 1) {
+        XTX[r][c] += row[r] * row[c];
+      }
+      XTyX[r] += row[r] * tx;
+      XTyY[r] += row[r] * ty;
+    }
+  }
+
+  const inv = invert3x3(XTX);
+  if (!inv) return null;
+  const coeffX = [
+    inv[0][0] * XTyX[0] + inv[0][1] * XTyX[1] + inv[0][2] * XTyX[2],
+    inv[1][0] * XTyX[0] + inv[1][1] * XTyX[1] + inv[1][2] * XTyX[2],
+    inv[2][0] * XTyX[0] + inv[2][1] * XTyX[1] + inv[2][2] * XTyX[2],
+  ];
+  const coeffY = [
+    inv[0][0] * XTyY[0] + inv[0][1] * XTyY[1] + inv[0][2] * XTyY[2],
+    inv[1][0] * XTyY[0] + inv[1][1] * XTyY[1] + inv[1][2] * XTyY[2],
+    inv[2][0] * XTyY[0] + inv[2][1] * XTyY[1] + inv[2][2] * XTyY[2],
+  ];
+
+  return {
+    a: coeffX[0],
+    b: coeffX[1],
+    c: coeffX[2],
+    d: coeffY[0],
+    e: coeffY[1],
+    f: coeffY[2],
+  };
+}
+
+function applyTransform(point: CalibrationPoint, transform: CalibrationTransform | null): CalibrationPoint {
+  if (!transform) return point;
+  let x = transform.a * point.x + transform.b * point.y + transform.c;
+  let y = transform.d * point.x + transform.e * point.y + transform.f;
+  if (typeof window !== "undefined") {
+    x = clamp(x, 0, window.innerWidth);
+    y = clamp(y, 0, window.innerHeight);
+  }
+  return { x, y };
+}
+
 async function collectSamples({
   point,
   record,
@@ -300,11 +391,17 @@ export function EyeCalibrationOverlay({
   const [results, setResults] = useState<CalibrationPointResult[]>([]);
   const runIdRef = useRef(0);
   const retryCountsRef = useRef<Map<string, number>>(new Map());
+  const transformRef = useRef<CalibrationTransform | null>(null);
+  const dotRef = useRef<HTMLDivElement | null>(null);
+  const prevGazeDotRef = useRef<boolean | null>(null);
 
   const readGaze = useCallback((): GazeSample | null => {
     if (getGaze) {
       const sample = getGaze();
-      if (sample) return sample;
+      if (sample) {
+        const corrected = applyTransform({ x: sample.x, y: sample.y }, transformRef.current);
+        return { ...sample, x: corrected.x, y: corrected.y };
+      }
       // If a direct stream is empty, allow a safe fallback only when WebGazer is ready.
       if (!isWebgazerReady()) return null;
     }
@@ -315,7 +412,8 @@ export function EyeCalibrationOverlay({
     try {
       const prediction = wg.getCurrentPrediction();
       if (!prediction || !Number.isFinite(prediction.x) || !Number.isFinite(prediction.y)) return null;
-      return { x: prediction.x, y: prediction.y, confidence: 0.4, ts: Date.now() };
+      const corrected = applyTransform({ x: prediction.x, y: prediction.y }, transformRef.current);
+      return { x: corrected.x, y: corrected.y, confidence: 0.4, ts: Date.now() };
     } catch {
       return null;
     }
@@ -331,6 +429,7 @@ export function EyeCalibrationOverlay({
     setWarning(null);
     setResults([]);
     retryCountsRef.current.clear();
+    transformRef.current = null;
     const update = () => {
       setPoints(buildPoints(window.innerWidth, window.innerHeight));
     };
@@ -338,13 +437,44 @@ export function EyeCalibrationOverlay({
     window.addEventListener("resize", update);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const wg = (window as unknown as { webgazer?: { clearData?: () => void } }).webgazer;
+    const wg = (window as unknown as { webgazer?: { clearData?: () => void; params?: { showGazeDot?: boolean } } })
+      .webgazer;
     wg?.clearData?.();
+    if (wg?.showPredictionPoints) {
+      prevGazeDotRef.current = typeof wg.params?.showGazeDot === "boolean" ? wg.params.showGazeDot : null;
+      wg.showPredictionPoints(false);
+    }
     return () => {
       window.removeEventListener("resize", update);
       document.body.style.overflow = prevOverflow;
+      if (wg?.showPredictionPoints) {
+        const restore = prevGazeDotRef.current;
+        wg.showPredictionPoints(restore ?? false);
+      }
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let raf = 0;
+    const el = dotRef.current;
+    if (!el) return undefined;
+    const tick = () => {
+      const gaze = readGaze();
+      if (gaze) {
+        const opacity = 0.35 + clamp(gaze.confidence || 0, 0, 1) * 0.65;
+        el.style.opacity = String(opacity);
+        el.style.transform = `translate3d(${Math.round(gaze.x)}px, ${Math.round(gaze.y)}px, 0)`;
+      } else {
+        el.style.opacity = "0";
+      }
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [open, readGaze]);
 
   const current = points[step];
   const total = points.length || 0;
@@ -405,6 +535,13 @@ export function EyeCalibrationOverlay({
     }
 
     if (phase === "baseline") {
+      const basePairs = nextResults
+        .filter((r) => r.phase === "baseline" && r.predicted)
+        .map((r) => ({ predicted: r.predicted as CalibrationPoint, target: r.point }));
+      const baseTransform = solveAffineTransform(basePairs);
+      if (baseTransform) {
+        transformRef.current = baseTransform;
+      }
       const baseline = nextResults.filter((r) => r.phase === "baseline" && Number.isFinite(r.errorPx));
       const worst = baseline
         .slice()
@@ -430,6 +567,13 @@ export function EyeCalibrationOverlay({
     }
 
     if (phase === "adaptive") {
+      const adaptivePairs = nextResults
+        .filter((r) => r.predicted)
+        .map((r) => ({ predicted: r.predicted as CalibrationPoint, target: r.point }));
+      const adaptiveTransform = solveAffineTransform(adaptivePairs);
+      if (adaptiveTransform) {
+        transformRef.current = adaptiveTransform;
+      }
       setPhase("validate");
       setPoints(buildValidationPoints(window.innerWidth, window.innerHeight));
       setStep(0);
@@ -456,12 +600,16 @@ export function EyeCalibrationOverlay({
       return;
     }
     setBusy(false);
+    if (transformRef.current) {
+      writeCalibrationTransform(transformRef.current);
+    }
     onComplete({ quality, errorPx: blendedError, samples: nextResults.length });
     onClose();
   }, [busy, current, getGaze, onClose, onComplete, phase, readGaze, results, step, total]);
 
   const handleRetry = useCallback(() => {
     runIdRef.current += 1;
+    transformRef.current = null;
     setPhase("baseline");
     setPoints(buildPoints(window.innerWidth, window.innerHeight));
     setStep(0);
@@ -477,6 +625,12 @@ export function EyeCalibrationOverlay({
     return (
       <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/90 backdrop-blur-sm">
         <div className="pointer-events-none absolute inset-0" />
+        <div
+          ref={dotRef}
+          className="pointer-events-none fixed left-0 top-0 z-[91] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/80 shadow"
+          style={{ transform: "translate(-9999px, -9999px)", opacity: 0 }}
+          aria-hidden="true"
+        />
         <div className="pointer-events-auto absolute left-1/2 top-8 w-[92%] max-w-lg -translate-x-1/2 rounded-2xl border border-border/60 bg-background/95 p-4 shadow-xl">
           <div className="text-sm font-semibold text-foreground">Eye tracking calibration</div>
           <div className="mt-1 text-xs text-muted-foreground">
