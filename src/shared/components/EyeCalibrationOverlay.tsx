@@ -654,8 +654,8 @@ export function EyeCalibrationOverlay({
       return;
     }
 
-    const width = window.innerWidth || 0;
-    const height = window.innerHeight || 0;
+    const viewportWidth = window.innerWidth || 0;
+    const viewportHeight = window.innerHeight || 0;
     const allPairs = nextResults
       .filter((r) => r.predicted)
       .map((r) => ({ predicted: r.predicted as CalibrationPoint, target: r.point }));
@@ -671,8 +671,8 @@ export function EyeCalibrationOverlay({
         return distance(corrected, r.point);
       })
       .filter((v) => Number.isFinite(v));
-    const weights = validation.map((r) => centerWeight(r.point, width, height));
-    const diag = Math.hypot(width || 0, height || 0);
+    const weights = validation.map((r) => centerWeight(r.point, viewportWidth, viewportHeight));
+    const diag = Math.hypot(viewportWidth || 0, viewportHeight || 0);
     const dynamicTarget = diag > 0 ? clamp(diag * 0.12, 120, 260) : TARGET_ERROR;
     const weighted =
       correctedErrors.length > 0 ? weightedMean(correctedErrors, weights.slice(0, correctedErrors.length)) : Number.POSITIVE_INFINITY;
@@ -689,8 +689,8 @@ export function EyeCalibrationOverlay({
       return;
     }
     setBusy(false);
-    const grid = finalTransform ? buildResidualGrid(nextResults, finalTransform, width, height) : null;
-    writeCalibrationModel({ transform: finalTransform ?? null, grid, width, height });
+    const grid = finalTransform ? buildResidualGrid(nextResults, finalTransform, viewportWidth, viewportHeight) : null;
+    writeCalibrationModel({ transform: finalTransform ?? null, grid, width: viewportWidth, height: viewportHeight });
     onComplete({ quality, errorPx: blendedError, samples: nextResults.length });
     onClose();
   }, [busy, current, getGaze, onClose, onComplete, phase, readRawGaze, results, step, total]);
