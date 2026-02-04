@@ -39,6 +39,7 @@ import {
 import { AnimatePresence, m } from "framer-motion";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { useMaterials } from "@/app/providers/MaterialProvider";
+import { useChatDock } from "@/app/providers/ChatDockProvider";
 import { usePaths } from "@/app/providers/PathProvider";
 import { useLessons } from "@/app/providers/LessonProvider";
 import type { MaterialFile, Path, PathNode } from "@/shared/types/models";
@@ -283,6 +284,7 @@ export function AppSideBar() {
   const { isAuthenticated } = useAuth();
   const { t } = useI18n();
   const { files: materialFiles, loading: materialFilesLoading } = useMaterials();
+  const { openThread: openChatDockThread } = useChatDock();
   const {
     paths,
     loading: pathsLoading,
@@ -1144,10 +1146,15 @@ export function AppSideBar() {
                                       !isActionHover && "group-hover/menu-sub-item:text-sidebar-accent-foreground",
                                       isActionHover && "data-[active=true]:bg-transparent data-[active=true]:text-sidebar-foreground"
                                     )}
-                                  >
+                                    >
                                     <Link
                                       to={`/chat/threads/${thread.id}`}
                                       aria-label={t("sidebar.chats.open", { title: thread.title })}
+                                      onClick={(event) => {
+                                        if (!isPathMode) return;
+                                        event.preventDefault();
+                                        openChatDockThread(String(thread.id));
+                                      }}
                                     >
                                       <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
                                         <MessageSquare className="h-4 w-4" />
@@ -1177,9 +1184,15 @@ export function AppSideBar() {
                                         <MoreHorizontal className="h-4 w-4" />
                                       </Button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" side="right" className="w-56">
-                                      <DropdownMenuItem
-                                        onSelect={() => navigate(`/chat/threads/${thread.id}`)}
+                                      <DropdownMenuContent align="end" side="right" className="w-56">
+                                        <DropdownMenuItem
+                                        onSelect={() => {
+                                          if (isPathMode) {
+                                            openChatDockThread(String(thread.id));
+                                            return;
+                                          }
+                                          navigate(`/chat/threads/${thread.id}`);
+                                        }}
                                         className="gap-2"
                                       >
                                         <MessageSquare className="h-4 w-4" />
@@ -1744,6 +1757,11 @@ export function AppSideBar() {
 		                                      <Link
 		                                        to={`/chat/threads/${thread.id}`}
 		                                        aria-label={t("sidebar.chats.open", { title: thread.title })}
+		                                        onClick={(event) => {
+		                                          if (!isPathMode) return;
+		                                          event.preventDefault();
+		                                          openChatDockThread(String(thread.id));
+		                                        }}
 		                                      >
 		                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/40 text-muted-foreground">
 		                                          <MessageSquare className="h-4 w-4" />
@@ -1775,7 +1793,13 @@ export function AppSideBar() {
 		                                      </DropdownMenuTrigger>
 		                                      <DropdownMenuContent align="end" side="right" className="w-56">
 		                                        <DropdownMenuItem
-		                                          onSelect={() => navigate(`/chat/threads/${thread.id}`)}
+		                                          onSelect={() => {
+		                                            if (isPathMode) {
+		                                              openChatDockThread(String(thread.id));
+		                                              return;
+		                                            }
+		                                            navigate(`/chat/threads/${thread.id}`);
+		                                          }}
 		                                          className="gap-2"
 		                                        >
 		                                          <MessageSquare className="h-4 w-4" />

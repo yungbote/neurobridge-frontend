@@ -81,6 +81,20 @@ type LineState = LineRect & {
   centerY: number;
 };
 
+type ProgressState = "idle" | "progressing" | "scanning" | "searching";
+
+type ProgressEntry = {
+  id: string;
+  index: number;
+  at: number;
+  confidence: number;
+  ratio: number;
+  source: "behavioral" | "gaze" | "unknown";
+  engagedMs?: number;
+  direction?: "forward" | "back";
+  jump?: number;
+};
+
 type BlockFeedback = "" | "like" | "dislike";
 
 const VISIBLE_RATIO_MIN = 0.1;
@@ -95,6 +109,22 @@ const READ_TICK_MS = 200;
 const READ_LINE_RATIO = 0.4;
 const READ_MAX_SCREENS_PER_SEC = 2.2;
 const READ_MIN_WEIGHT = 0.08;
+const PROGRESS_TICK_MS = 240;
+const PROGRESS_ENGAGE_BASE_MS = 700;
+const PROGRESS_ENGAGE_PER_SEC_MS = 200;
+const PROGRESS_ENGAGE_MIN_MS = 800;
+const PROGRESS_ENGAGE_MAX_MS = 2400;
+const PROGRESS_ENGAGE_CONF_MIN = 0.6;
+const PROGRESS_ENGAGE_RATIO_MIN = 0.5;
+const PROGRESS_MAX_SCREENS_PER_SEC = 0.5;
+const PROGRESS_SCAN_SCREENS_PER_SEC = 1.2;
+const PROGRESS_MAX_FORWARD_JUMP = 4;
+const PROGRESS_WINDOW_MS = 120_000;
+const PROGRESS_MIN_FORWARD = 2;
+const PROGRESS_MIN_FORWARD_RATIO = 0.7;
+const PROGRESS_MIN_REGRESSION = 2;
+const PROGRESS_ACTIVE_CHANGE_WINDOW_MS = 5000;
+const PROGRESS_ACTIVE_CHANGE_MIN = 4;
 const rawGazeTickMs = Number(import.meta.env.VITE_EYE_TRACKING_TICK_MS);
 const GAZE_TICK_MS = Number.isFinite(rawGazeTickMs) && rawGazeTickMs > 0 ? rawGazeTickMs : 120;
 const rawGazeConfidence = Number(import.meta.env.VITE_EYE_TRACKING_MIN_CONFIDENCE);
@@ -112,6 +142,8 @@ const LINE_DISTANCE_FACTOR =
 const rawLineXPadding = Number(import.meta.env.VITE_EYE_TRACKING_LINE_X_PADDING);
 const LINE_X_PADDING =
   Number.isFinite(rawLineXPadding) && rawLineXPadding >= 0 ? rawLineXPadding : 24;
+const rawLessonDebugOverlay = String(import.meta.env.VITE_LESSON_DEBUG_OVERLAY || "false").toLowerCase();
+const LESSON_DEBUG_OVERLAY = !["false", "0", "no", ""].includes(rawLessonDebugOverlay);
 const rawGazeBlockTtl = Number(import.meta.env.VITE_EYE_TRACKING_BLOCK_TTL_MS);
 const GAZE_BLOCK_TTL_MS =
   Number.isFinite(rawGazeBlockTtl) && rawGazeBlockTtl > 0 ? rawGazeBlockTtl : 4000;
@@ -722,11 +754,17 @@ export default function PathNodePage() {
         ratio: number;
         topDelta: number;
         height: number;
+        visibleHeight: number;
         rootHeight: number;
         top: number;
         bottom: number;
         left: number;
         right: number;
+        visibleStartPct: number;
+        visibleEndPct: number;
+        hiddenTopPct: number;
+        hiddenBottomPct: number;
+        anchorPct: number;
         seenAt: number;
       }
     >
@@ -748,6 +786,7 @@ export default function PathNodePage() {
     usedGaze: boolean;
   } | null>(null);
   const currentBlockIdRef = useRef<string>("");
+  const currentBlockConfidenceRef = useRef<number>(0);
   const lastSwitchAtRef = useRef<number>(0);
   const scoreEMARef = useRef<Map<string, number>>(new Map());
   const lastCurrentAtRef = useRef<Map<string, number>>(new Map());
@@ -757,8 +796,42 @@ export default function PathNodePage() {
   const scrollVelocityRef = useRef<number>(0);
   const readCreditsRef = useRef<Map<string, number>>(new Map());
   const readBlocksRef = useRef<Set<string>>(new Set());
+  const engagedBlocksRef = useRef<Set<string>>(new Set());
   const readTargetSecondsRef = useRef<Map<string, number>>(new Map());
   const lastReadTickRef = useRef<number>(0);
+  const progressRef = useRef<{
+    state: ProgressState;
+    confidence: number;
+    engaged: ProgressEntry | null;
+    engagedSeq: ProgressEntry[];
+    completedSeq: ProgressEntry[];
+    regressionSeq: ProgressEntry[];
+    forwardCount: number;
+    regressionCount: number;
+    lastProgressAt: number;
+    lastEngageAt: number;
+    lastCompleteAt: number;
+    lastActiveId: string;
+    lastActiveAt: number;
+    activeChanges: number[];
+  }>({
+    state: "idle",
+    confidence: 0,
+    engaged: null,
+    engagedSeq: [],
+    completedSeq: [],
+    regressionSeq: [],
+    forwardCount: 0,
+    regressionCount: 0,
+    progressingSince: 0,
+    lastProgressAt: 0,
+    lastEngageAt: 0,
+    lastCompleteAt: 0,
+    lastActiveId: "",
+    lastActiveAt: 0,
+    activeChanges: [],
+  });
+  const progressSignatureRef = useRef<string>("");
   const debugCandidatesRef = useRef<
     Array<{
       id: string;
@@ -766,9 +839,62 @@ export default function PathNodePage() {
       ratio: number;
       topDelta: number;
       centerY: number;
+      anchor: number;
     }>
   >([]);
-  const [debugOverlay, setDebugOverlay] = useState(false);
+  const [debugOverlay, setDebugOverlay] = useState(LESSON_DEBUG_OVERLAY);
+  const [debugOverlayData, setDebugOverlayData] = useState<{
+    activeId: string | null;
+    activeMetric: {
+      ratio: number;
+      topDelta: number;
+      height: number;
+      rootHeight: number;
+      visibleStartPct: number;
+      visibleEndPct: number;
+      hiddenTopPct: number;
+      hiddenBottomPct: number;
+      anchorPct: number;
+    } | null;
+    visible: Array<{
+      id: string;
+      ratio: number;
+      topDelta: number;
+      visibleStartPct: number;
+      visibleEndPct: number;
+      hiddenTopPct: number;
+      hiddenBottomPct: number;
+      anchorPct: number;
+    }>;
+    scrollPercent: number;
+    progress: {
+      state: ProgressState;
+      confidence: number;
+      engagedId: string | null;
+      completedId: string | null;
+      forwardCount: number;
+      regressionCount: number;
+      engagedSeq: string[];
+      completedSeq: string[];
+      progressingSinceSec: number;
+    };
+  }>({
+    activeId: null,
+    activeMetric: null,
+    visible: [],
+    scrollPercent: 0,
+    progress: {
+      state: "idle",
+      confidence: 0,
+      engagedId: null,
+      completedId: null,
+      forwardCount: 0,
+      regressionCount: 0,
+      engagedSeq: [],
+      completedSeq: [],
+      progressingSinceSec: 0,
+    },
+  });
   const debugOverlayRef = useRef<HTMLDivElement | null>(null);
   const sessionSyncTimerRef = useRef<number | null>(null);
   const sessionIdleTimerRef = useRef<number | null>(null);
@@ -1362,11 +1488,29 @@ export default function PathNodePage() {
     readTargetSecondsRef.current = new Map();
     readCreditsRef.current.clear();
     readBlocksRef.current.clear();
+    engagedBlocksRef.current.clear();
     lineDwellRef.current.clear();
     lineCreditsRef.current.clear();
     blockLineCreditsRef.current.clear();
     lineStateRef.current = null;
     lastReadTickRef.current = 0;
+    progressRef.current = {
+      state: "idle",
+      confidence: 0,
+      engaged: null,
+      engagedSeq: [],
+      completedSeq: [],
+      regressionSeq: [],
+      forwardCount: 0,
+      regressionCount: 0,
+      lastProgressAt: 0,
+      lastEngageAt: 0,
+      lastCompleteAt: 0,
+      lastActiveId: "",
+      lastActiveAt: 0,
+      activeChanges: [],
+    };
+    progressSignatureRef.current = "";
     for (const block of docBlocks) {
       const id = String(block?.id ?? "").trim();
       if (!id) continue;
@@ -1397,6 +1541,14 @@ export default function PathNodePage() {
     docBlocks.forEach((b) => {
       const id = String(b?.id ?? "").trim();
       if (id) map.set(id, b);
+    });
+    return map;
+  }, [docBlocks]);
+  const blockOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    docBlocks.forEach((b, idx) => {
+      const id = String(b?.id ?? "").trim();
+      if (id) map.set(id, idx);
     });
     return map;
   }, [docBlocks]);
@@ -1637,7 +1789,16 @@ export default function PathNodePage() {
       return (scrollRoot ?? document).querySelector<HTMLElement>(`[data-doc-block-id="${escaped}"]`);
     };
 
-    const entries: Array<{ id: string; ratio: number; top_delta: number }> = [];
+    const entries: Array<{
+      id: string;
+      ratio: number;
+      top_delta: number;
+      visible_start_pct: number;
+      visible_end_pct: number;
+      hidden_top_pct: number;
+      hidden_bottom_pct: number;
+      anchor_pct: number;
+    }> = [];
     const elements = Array.from(
       (scrollRoot ?? document).querySelectorAll<HTMLElement>("[data-doc-block-id]")
     );
@@ -1648,23 +1809,43 @@ export default function PathNodePage() {
         if (!id) continue;
         const rect = el.getBoundingClientRect();
         const height = rect.height || 1;
-        const intersectTop = Math.max(rect.top, rootTop);
-        const intersectBottom = Math.min(rect.bottom, rootBottom);
-        const visibleHeight = Math.max(0, intersectBottom - intersectTop);
+        const visibleStart = Math.max(rect.top, rootTop);
+        const visibleEnd = Math.min(rect.bottom, rootBottom);
+        const visibleHeight = Math.max(0, visibleEnd - visibleStart);
         const ratio = Math.max(0, Math.min(1, visibleHeight / height));
+        const visibleStartPct = clamp((visibleStart - rect.top) / height, 0, 1);
+        const visibleEndPct = clamp((visibleEnd - rect.top) / height, 0, 1);
+        const hiddenTopPct = clamp((rootTop - rect.top) / height, 0, 1);
+        const hiddenBottomPct = clamp((rect.bottom - rootBottom) / height, 0, 1);
+        const anchorPct = clamp((visibleStartPct + visibleEndPct) * 0.5, 0, 1);
         if (ratio >= VISIBLE_RATIO_MIN) {
           const rounded = Math.round(ratio * 1000) / 1000;
-          entries.push({ id, ratio: rounded, top_delta: rect.top - rootTop });
+          entries.push({
+            id,
+            ratio: rounded,
+            top_delta: rect.top - rootTop,
+            visible_start_pct: Math.round(visibleStartPct * 1000) / 1000,
+            visible_end_pct: Math.round(visibleEndPct * 1000) / 1000,
+            hidden_top_pct: Math.round(hiddenTopPct * 1000) / 1000,
+            hidden_bottom_pct: Math.round(hiddenBottomPct * 1000) / 1000,
+            anchor_pct: Math.round(anchorPct * 1000) / 1000,
+          });
           visibleBlocksRef.current.set(id, ratio);
           blockMetricsRef.current.set(id, {
             ratio,
             topDelta: rect.top - rootTop,
             height,
+            visibleHeight,
             rootHeight,
             top: rect.top,
             bottom: rect.bottom,
             left: rect.left,
             right: rect.right,
+            visibleStartPct,
+            visibleEndPct,
+            hiddenTopPct,
+            hiddenBottomPct,
+            anchorPct,
             seenAt: Date.now(),
           });
           blockBoundsRef.current.set(id, {
@@ -1680,7 +1861,16 @@ export default function PathNodePage() {
       visibleBlocksRef.current.forEach((ratio, id) => {
         if (ratio < VISIBLE_RATIO_MIN) return;
         const rounded = Math.round(ratio * 1000) / 1000;
-        entries.push({ id, ratio: rounded, top_delta: 0 });
+        entries.push({
+          id,
+          ratio: rounded,
+          top_delta: 0,
+          visible_start_pct: 0,
+          visible_end_pct: 1,
+          hidden_top_pct: 0,
+          hidden_bottom_pct: 0,
+          anchor_pct: 0.5,
+        });
       });
     }
 
@@ -1688,10 +1878,12 @@ export default function PathNodePage() {
     const visible = entries.slice(0, MAX_VISIBLE_BLOCKS);
     if (visible.length === 0) {
       currentBlockIdRef.current = "";
+      currentBlockConfidenceRef.current = 0;
       return { visible, current: null };
     }
 
     const now = Date.now();
+    const direction = scrollDirRef.current;
     const candidates: Array<{
       id: string;
       ratio: number;
@@ -1700,12 +1892,18 @@ export default function PathNodePage() {
       centerY: number;
       bottomY: number;
       score: number;
+      anchor: number;
+      visibleStartPct: number;
+      visibleEndPct: number;
     }> = [];
 
     for (const entry of visible) {
       const metric = blockMetricsRef.current.get(entry.id);
       let topDelta = metric?.topDelta ?? 0;
       let height = metric?.height ?? 0;
+      let visibleStartPct = metric?.visibleStartPct ?? 0;
+      let visibleEndPct = metric?.visibleEndPct ?? 1;
+      let anchorPct = metric?.anchorPct ?? 0.5;
       let rootH = metric?.rootHeight ?? rootHeight;
       if (!metric) {
         const el = getElementForId(entry.id);
@@ -1714,6 +1912,11 @@ export default function PathNodePage() {
           topDelta = rect.top - rootTop;
           height = rect.height;
           rootH = rootHeight;
+          const visibleStart = Math.max(rect.top, rootTop);
+          const visibleEnd = Math.min(rect.bottom, rootTop + rootHeight);
+          visibleStartPct = clamp((visibleStart - rect.top) / Math.max(height, 1), 0, 1);
+          visibleEndPct = clamp((visibleEnd - rect.top) / Math.max(height, 1), 0, 1);
+          anchorPct = clamp((visibleStartPct + visibleEndPct) * 0.5, 0, 1);
         }
       }
       if (!height || height < 1) height = rootHeight * 0.1;
@@ -1723,12 +1926,21 @@ export default function PathNodePage() {
 
       const topProx = 1 - Math.min(Math.abs(topDelta) / Math.max(rootH, 1), 1);
       const readingProx = 1 - Math.min(Math.abs(centerY - focusLine) / Math.max(rootH, 1), 1);
+      const dirTarget = direction === "down" ? 0.35 : direction === "up" ? 0.65 : 0.5;
+      const dirProx = 1 - Math.min(Math.abs(anchorPct - dirTarget) / 0.65, 1);
+      const edgeBias =
+        direction === "down" && visibleStartPct > 0.6
+          ? -0.06
+          : direction === "up" && visibleEndPct < 0.4
+            ? -0.06
+            : 0;
 
       const lastCurrent = lastCurrentAtRef.current.get(entry.id) ?? 0;
       const dwellBonus =
         entry.id === currentBlockIdRef.current ? 0.15 : now - lastCurrent < 2500 ? 0.08 : 0;
 
-      const rawScore = 0.45 * entry.ratio + 0.3 * readingProx + 0.2 * topProx + dwellBonus;
+      const rawScore =
+        0.4 * entry.ratio + 0.28 * readingProx + 0.17 * topProx + 0.08 * dirProx + edgeBias + dwellBonus;
       const prev = scoreEMARef.current.get(entry.id);
       const ema = prev == null ? rawScore : 0.65 * prev + 0.35 * rawScore;
       scoreEMARef.current.set(entry.id, ema);
@@ -1741,11 +1953,15 @@ export default function PathNodePage() {
         centerY,
         bottomY,
         score: ema,
+        anchor: Math.round(anchorPct * 1000) / 1000,
+        visibleStartPct,
+        visibleEndPct,
       });
     }
 
     if (candidates.length === 0) {
       currentBlockIdRef.current = "";
+      currentBlockConfidenceRef.current = 0;
       return { visible, current: null };
     }
 
@@ -1756,6 +1972,7 @@ export default function PathNodePage() {
       ratio: Math.round(c.ratio * 1000) / 1000,
       topDelta: Math.round(c.topDelta),
       centerY: Math.round(c.centerY),
+      anchor: c.anchor,
     }));
     const best = candidates[0];
     const currentId = currentBlockIdRef.current;
@@ -1763,13 +1980,12 @@ export default function PathNodePage() {
 
     if (!best || best.ratio < CURRENT_RATIO_MIN) {
       currentBlockIdRef.current = "";
+      currentBlockConfidenceRef.current = 0;
       return { visible, current: null };
     }
 
     let selected = best;
     const nowSwitchWindow = now - lastSwitchAtRef.current;
-    const direction = scrollDirRef.current;
-
     if (current && current.id !== best.id && current.ratio >= CURRENT_RATIO_MIN) {
       const delta = best.score - current.score;
       const enoughGap = delta > 0.06;
@@ -1796,6 +2012,7 @@ export default function PathNodePage() {
       1 - Math.min(Math.abs(selected.centerY - focusLine) / Math.max(rootHeight, 1), 1)
     );
     const confidence = Math.min(1, Math.max(0, 0.55 * selected.ratio + 0.45 * proximity));
+    currentBlockConfidenceRef.current = confidence;
 
     return {
       visible,
@@ -1842,6 +2059,59 @@ export default function PathNodePage() {
     };
   }, [eyeTrackingEnabled, eyeTrackingStatus, eyeQuality]);
 
+  const computeEngageMinMs = useCallback((blockId: string) => {
+    const id = String(blockId || "").trim();
+    const target = id ? readTargetSecondsRef.current.get(id) ?? 4 : 4;
+    const dynamic = target * PROGRESS_ENGAGE_PER_SEC_MS;
+    return clamp(PROGRESS_ENGAGE_BASE_MS + dynamic, PROGRESS_ENGAGE_MIN_MS, PROGRESS_ENGAGE_MAX_MS);
+  }, []);
+
+  const buildProgressSnapshot = useCallback(() => {
+    const progress = progressRef.current;
+    if (!progress) return null;
+    const engaged = progress.engaged
+      ? {
+          id: progress.engaged.id,
+          index: progress.engaged.index,
+          confidence: Math.round(progress.engaged.confidence * 1000) / 1000,
+          ratio: Math.round(progress.engaged.ratio * 1000) / 1000,
+          source: progress.engaged.source,
+          engaged_ms: progress.engaged.engagedMs ?? 0,
+          engaged_at: new Date(progress.engaged.at).toISOString(),
+        }
+      : null;
+    const engagedSeq = progress.engagedSeq.slice(-12).map((entry) => ({
+      id: entry.id,
+      index: entry.index,
+      confidence: Math.round(entry.confidence * 1000) / 1000,
+      ratio: Math.round(entry.ratio * 1000) / 1000,
+      source: entry.source,
+      engaged_ms: entry.engagedMs ?? 0,
+      engaged_at: new Date(entry.at).toISOString(),
+    }));
+    const completedSeq = progress.completedSeq.slice(-12).map((entry) => ({
+      id: entry.id,
+      index: entry.index,
+      confidence: Math.round(entry.confidence * 1000) / 1000,
+      ratio: Math.round(entry.ratio * 1000) / 1000,
+      source: entry.source,
+      direction: entry.direction,
+      jump: entry.jump ?? 0,
+      completed_at: new Date(entry.at).toISOString(),
+    }));
+    return {
+      state: progress.state,
+      confidence: Math.round(progress.confidence * 1000) / 1000,
+      engaged_block: engaged,
+      engaged_seq: engagedSeq,
+      completed_seq: completedSeq,
+      forward_count: progress.forwardCount,
+      regression_count: progress.regressionCount,
+      last_progress_at:
+        progress.lastProgressAt > 0 ? new Date(progress.lastProgressAt).toISOString() : undefined,
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "`" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
@@ -1852,6 +2122,76 @@ export default function PathNodePage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  const showDebugOverlay = LESSON_DEBUG_OVERLAY || debugOverlay;
+
+  useEffect(() => {
+    if (!showDebugOverlay) return;
+    let timer: number | null = null;
+    const tick = () => {
+      const activeId = currentBlockIdRef.current || null;
+      const activeMetric = activeId ? blockMetricsRef.current.get(activeId) : null;
+      const visible = Array.from(visibleBlocksRef.current.entries())
+        .map(([id, ratio]) => {
+          const metric = blockMetricsRef.current.get(id);
+          return {
+            id,
+            ratio: Math.round((ratio ?? 0) * 1000) / 1000,
+            topDelta: Math.round(metric?.topDelta ?? 0),
+            visibleStartPct: Math.round((metric?.visibleStartPct ?? 0) * 1000) / 1000,
+            visibleEndPct: Math.round((metric?.visibleEndPct ?? 1) * 1000) / 1000,
+            hiddenTopPct: Math.round((metric?.hiddenTopPct ?? 0) * 1000) / 1000,
+            hiddenBottomPct: Math.round((metric?.hiddenBottomPct ?? 0) * 1000) / 1000,
+            anchorPct: Math.round((metric?.anchorPct ?? 0.5) * 1000) / 1000,
+          };
+        })
+        .sort((a, b) => b.ratio - a.ratio)
+        .slice(0, 16);
+      const progress = progressRef.current;
+      const engagedId = progress.engaged?.id ?? null;
+      const completedId = progress.completedSeq.length
+        ? progress.completedSeq[progress.completedSeq.length - 1]?.id ?? null
+        : null;
+      const progressingSinceSec = progress.progressingSince
+        ? Math.round((Date.now() - progress.progressingSince) / 100) / 10
+        : 0;
+
+      setDebugOverlayData({
+        activeId,
+        activeMetric: activeMetric
+          ? {
+              ratio: Math.round((activeMetric.ratio ?? 0) * 1000) / 1000,
+              topDelta: Math.round(activeMetric.topDelta ?? 0),
+              height: Math.round(activeMetric.height ?? 0),
+              rootHeight: Math.round(activeMetric.rootHeight ?? 0),
+              visibleStartPct: Math.round((activeMetric.visibleStartPct ?? 0) * 1000) / 1000,
+              visibleEndPct: Math.round((activeMetric.visibleEndPct ?? 1) * 1000) / 1000,
+              hiddenTopPct: Math.round((activeMetric.hiddenTopPct ?? 0) * 1000) / 1000,
+              hiddenBottomPct: Math.round((activeMetric.hiddenBottomPct ?? 0) * 1000) / 1000,
+              anchorPct: Math.round((activeMetric.anchorPct ?? 0.5) * 1000) / 1000,
+            }
+          : null,
+        visible,
+        scrollPercent: Math.round((currentScrollPercentRef.current ?? 0) * 10) / 10,
+        progress: {
+          state: progress.state,
+          confidence: Math.round(progress.confidence * 1000) / 1000,
+          engagedId,
+          completedId,
+          forwardCount: progress.forwardCount,
+          regressionCount: progress.regressionCount,
+          engagedSeq: progress.engagedSeq.slice(-6).map((entry) => entry.id),
+          completedSeq: progress.completedSeq.slice(-6).map((entry) => entry.id),
+          progressingSinceSec,
+        },
+      });
+    };
+    tick();
+    timer = window.setInterval(tick, 200);
+    return () => {
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [showDebugOverlay]);
 
   const flushSessionSync = useCallback(
     (opts?: { clear?: boolean; immediate?: boolean }) => {
@@ -1877,6 +2217,7 @@ export default function PathNodePage() {
         current_block: snapshot.current,
         visible_block_count: snapshot.visible.length,
         reading: clear ? null : buildReadingSnapshot(),
+        progress: clear ? null : buildProgressSnapshot(),
         viewport: {
           w: typeof window !== "undefined" ? window.innerWidth : 0,
           h: typeof window !== "undefined" ? window.innerHeight : 0,
@@ -1903,7 +2244,7 @@ export default function PathNodePage() {
         { immediate: Boolean(opts?.immediate) }
       );
     },
-    [buildReadingSnapshot, buildVisibleSnapshot, user?.id]
+    [buildProgressSnapshot, buildReadingSnapshot, buildVisibleSnapshot, user?.id]
   );
 
   const scheduleSessionSync = useCallback(
@@ -1949,6 +2290,11 @@ export default function PathNodePage() {
       if (!id || readBlocksRef.current.has(id)) return;
       readBlocksRef.current.add(id);
       readCreditsRef.current.set(id, Math.max(credit, 1));
+      const progress = progressRef.current;
+      const progressState = progress?.state ?? "";
+      const progressConfidence = progress
+        ? Math.round(progress.confidence * 1000) / 1000
+        : undefined;
       queueEvent({
         type: "block_read",
         pathId: pathIdRef.current || "",
@@ -1957,6 +2303,8 @@ export default function PathNodePage() {
           block_id: id,
           read_credit: Math.min(1, Math.max(credit, 0)),
           source,
+          progress_state: progressState,
+          progress_confidence: progressConfidence,
         },
       });
       scheduleSessionSync({ immediate: true });
@@ -2192,6 +2540,210 @@ export default function PathNodePage() {
   ]);
 
   useEffect(() => {
+    if (!nodeId || docBlocks.length === 0) return;
+    let timer: number | null = null;
+
+    const tick = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      const progress = progressRef.current;
+      const activeId = String(currentBlockIdRef.current || "").trim();
+      const activeConfidence = currentBlockConfidenceRef.current || 0;
+      const metric = activeId ? blockMetricsRef.current.get(activeId) : null;
+      const ratio = metric?.ratio ?? 0;
+      const rootHeight = Math.max(metric?.rootHeight ?? window.innerHeight, 1);
+      const speedScreens = rootHeight > 0 ? scrollVelocityRef.current / rootHeight : 0;
+
+      if (activeId && activeId !== progress.lastActiveId) {
+        progress.lastActiveId = activeId;
+        progress.activeChanges.push(now);
+      }
+      if (activeId) {
+        progress.lastActiveAt = now;
+      }
+      progress.activeChanges = progress.activeChanges.filter(
+        (ts) => now - ts <= PROGRESS_ACTIVE_CHANGE_WINDOW_MS
+      );
+
+      const activeDuration = activeId ? now - lastSwitchAtRef.current : 0;
+      const minEngageMs = activeId ? computeEngageMinMs(activeId) : PROGRESS_ENGAGE_MIN_MS;
+      const engagedOk =
+        Boolean(activeId) &&
+        activeDuration >= minEngageMs &&
+        activeConfidence >= PROGRESS_ENGAGE_CONF_MIN &&
+        ratio >= PROGRESS_ENGAGE_RATIO_MIN &&
+        speedScreens <= PROGRESS_MAX_SCREENS_PER_SEC;
+
+      let scanBoost = false;
+      let pendingViewed:
+        | {
+            id: string;
+            dwellMs: number;
+            ratio: number;
+            activeConfidence: number;
+          }
+        | null = null;
+
+      if (engagedOk && activeId) {
+        const prevEngaged = progress.engaged;
+        if (!prevEngaged || prevEngaged.id !== activeId) {
+          const index = blockOrder.get(activeId) ?? -1;
+          const source: "behavioral" | "gaze" | "unknown" =
+            eyeTrackingEnabled && gazeLastBlockRef.current === activeId ? "gaze" : "behavioral";
+          const entry: ProgressEntry = {
+            id: activeId,
+            index,
+            at: now,
+            confidence: activeConfidence,
+            ratio,
+            source,
+            engagedMs: activeDuration,
+          };
+          progress.engaged = entry;
+          progress.engagedSeq.push(entry);
+          if (progress.engagedSeq.length > 40) {
+            progress.engagedSeq = progress.engagedSeq.slice(-40);
+          }
+          progress.lastEngageAt = now;
+
+          if (!engagedBlocksRef.current.has(activeId)) {
+            pendingViewed = {
+              id: activeId,
+              dwellMs: activeDuration,
+              ratio,
+              activeConfidence,
+            };
+          }
+
+          if (prevEngaged && prevEngaged.id !== activeId) {
+            const prevIndex = prevEngaged.index;
+            const currIndex = index;
+            if (prevIndex >= 0 && currIndex >= 0 && prevIndex != currIndex) {
+              const jump = currIndex - prevIndex;
+              if (jump > 0) {
+                const largeJump = jump > PROGRESS_MAX_FORWARD_JUMP;
+                if (largeJump) scanBoost = true;
+                const completion: ProgressEntry = {
+                  ...prevEngaged,
+                  at: now,
+                  direction: "forward",
+                  jump,
+                  confidence: largeJump ? prevEngaged.confidence * 0.6 : prevEngaged.confidence,
+                };
+                progress.completedSeq.push(completion);
+                if (progress.completedSeq.length > 60) {
+                  progress.completedSeq = progress.completedSeq.slice(-60);
+                }
+                progress.lastCompleteAt = now;
+                progress.lastProgressAt = now;
+              } else {
+                const regression: ProgressEntry = {
+                  ...prevEngaged,
+                  at: now,
+                  direction: "back",
+                  jump,
+                };
+                progress.regressionSeq.push(regression);
+                if (progress.regressionSeq.length > 60) {
+                  progress.regressionSeq = progress.regressionSeq.slice(-60);
+                }
+                progress.lastProgressAt = now;
+              }
+            }
+          }
+        } else if (progress.engaged) {
+          progress.engaged.engagedMs = Math.max(progress.engaged.engagedMs ?? 0, activeDuration);
+        }
+      }
+
+      progress.completedSeq = progress.completedSeq.filter((entry) => now - entry.at <= PROGRESS_WINDOW_MS);
+      progress.regressionSeq = progress.regressionSeq.filter((entry) => now - entry.at <= PROGRESS_WINDOW_MS);
+
+      const forwardCount = progress.completedSeq.length;
+      const regressionCount = progress.regressionSeq.length;
+      progress.forwardCount = forwardCount;
+      progress.regressionCount = regressionCount;
+
+      const totalTransitions = forwardCount + regressionCount;
+      const forwardRatio = totalTransitions > 0 ? forwardCount / totalTransitions : 0;
+
+      const rapidChanges = progress.activeChanges.length >= PROGRESS_ACTIVE_CHANGE_MIN;
+      const scanning =
+        scanBoost || speedScreens >= PROGRESS_SCAN_SCREENS_PER_SEC || rapidChanges;
+
+      let state: ProgressState = "idle";
+      if (forwardCount >= PROGRESS_MIN_FORWARD && forwardRatio >= PROGRESS_MIN_FORWARD_RATIO) {
+        state = "progressing";
+      } else if (regressionCount >= PROGRESS_MIN_REGRESSION && forwardRatio < 0.5) {
+        state = "searching";
+      } else if (scanning) {
+        state = "scanning";
+      }
+
+      let confidence = clamp(
+        0.15 + 0.55 * forwardRatio + 0.3 * Math.min(forwardCount / 4, 1),
+        0,
+        1
+      );
+      if (engagedOk && activeConfidence > 0) {
+        confidence = clamp(confidence * (0.7 + 0.3 * activeConfidence), 0, 1);
+      }
+      if (state === "scanning") confidence = Math.min(confidence, 0.35);
+      if (state === "searching") confidence = Math.min(confidence, 0.4);
+      if (state === "idle") confidence = Math.min(confidence, 0.25);
+
+      progress.state = state;
+      progress.confidence = confidence;
+      if (state === "progressing") {
+        if (!progress.progressingSince) {
+          progress.progressingSince = now;
+        }
+      } else {
+        progress.progressingSince = 0;
+      }
+
+      if (pendingViewed && !engagedBlocksRef.current.has(pendingViewed.id)) {
+        const progressState = state;
+        const progressConfidence = Math.round(confidence * 1000) / 1000;
+        engagedBlocksRef.current.add(pendingViewed.id);
+        queueEvent({
+          type: "block_viewed",
+          pathId: pathIdRef.current || "",
+          pathNodeId: nodeId || "",
+          data: {
+            block_id: pendingViewed.id,
+            dwell_ms: pendingViewed.dwellMs,
+            confidence: Math.round(pendingViewed.activeConfidence * 1000) / 1000,
+            ratio: Math.round(pendingViewed.ratio * 1000) / 1000,
+            progress_state: progressState,
+            progress_confidence: progressConfidence,
+          },
+        });
+      }
+
+      const signature = JSON.stringify({
+        state,
+        conf: Math.round(confidence * 1000) / 1000,
+        engaged: progress.engaged?.id ?? "",
+        completed: progress.completedSeq.length
+          ? progress.completedSeq[progress.completedSeq.length - 1]?.id ?? ""
+          : "",
+        forward: forwardCount,
+        regression: regressionCount,
+      });
+      if (signature !== progressSignatureRef.current) {
+        progressSignatureRef.current = signature;
+        scheduleSessionSync();
+      }
+    };
+
+    timer = window.setInterval(tick, PROGRESS_TICK_MS);
+    return () => {
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [blockOrder, computeEngageMinMs, docBlocks.length, eyeTrackingEnabled, nodeId, scheduleSessionSync]);
+
+  useEffect(() => {
     if (!nodeId) return;
     let timer: number | null = null;
     const tick = () => {
@@ -2336,15 +2888,31 @@ export default function PathNodePage() {
             const rootRect = scrollContainer?.getBoundingClientRect();
             const rootTop = rootRect?.top ?? 0;
             const rootHeight = Math.max(rootRect?.height ?? window.innerHeight, 1);
+            const rootBottom = rootTop + rootHeight;
+            const visibleStart = Math.max(rect.top, rootTop);
+            const visibleEnd = Math.min(rect.bottom, rootBottom);
+            const visibleHeight = Math.max(0, visibleEnd - visibleStart);
+            const height = rect.height || 1;
+            const visibleStartPct = clamp((visibleStart - rect.top) / height, 0, 1);
+            const visibleEndPct = clamp((visibleEnd - rect.top) / height, 0, 1);
+            const hiddenTopPct = clamp((rootTop - rect.top) / height, 0, 1);
+            const hiddenBottomPct = clamp((rect.bottom - rootBottom) / height, 0, 1);
+            const anchorPct = clamp((visibleStartPct + visibleEndPct) * 0.5, 0, 1);
             blockMetricsRef.current.set(id, {
               ratio,
               topDelta: rect.top - rootTop,
-              height: rect.height,
+              height,
+              visibleHeight,
               rootHeight,
               top: rect.top,
               bottom: rect.bottom,
               left: rect.left,
               right: rect.right,
+              visibleStartPct,
+              visibleEndPct,
+              hiddenTopPct,
+              hiddenBottomPct,
+              anchorPct,
               seenAt: Date.now(),
             });
             blockBoundsRef.current.set(id, {
@@ -3341,7 +3909,7 @@ export default function PathNodePage() {
         </DialogContent>
       </Dialog>
 
-      {debugOverlay ? (
+      {showDebugOverlay ? (
         <div
           ref={debugOverlayRef}
           className="fixed bottom-6 end-6 z-50 w-[320px] rounded-2xl border border-border/60 bg-background/95 p-4 shadow-xl backdrop-blur"
@@ -3350,6 +3918,85 @@ export default function PathNodePage() {
             Current Block Debug
           </div>
           <div className="mt-2 space-y-2 text-xs text-foreground/80">
+            <div className="rounded-lg border border-border/50 px-2 py-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>active</span>
+                <span>{debugOverlayData.activeId || "none"}</span>
+              </div>
+              {debugOverlayData.activeMetric ? (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>ratio {debugOverlayData.activeMetric.ratio}</span>
+                    <span>top {debugOverlayData.activeMetric.topDelta}px</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>visible {debugOverlayData.activeMetric.visibleStartPct}→{debugOverlayData.activeMetric.visibleEndPct}</span>
+                    <span>anchor {debugOverlayData.activeMetric.anchorPct}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>hidden {debugOverlayData.activeMetric.hiddenTopPct}/{debugOverlayData.activeMetric.hiddenBottomPct}</span>
+                    <span>scroll {debugOverlayData.scrollPercent}%</span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-[11px] text-muted-foreground">no active metric</div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border/50 px-2 py-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>progress</span>
+                <span>
+                  {debugOverlayData.progress.state} {debugOverlayData.progress.confidence}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>engaged</span>
+                <span>{debugOverlayData.progress.engagedId || "none"}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>completed</span>
+                <span>{debugOverlayData.progress.completedId || "none"}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>forward/regress</span>
+                <span>
+                  {debugOverlayData.progress.forwardCount}/{debugOverlayData.progress.regressionCount}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>progressing for</span>
+                <span>{debugOverlayData.progress.progressingSinceSec}s</span>
+              </div>
+              {debugOverlayData.progress.engagedSeq.length > 0 ? (
+                <div className="text-[11px] text-muted-foreground">
+                  engaged seq: {debugOverlayData.progress.engagedSeq.join(", ")}
+                </div>
+              ) : null}
+              {debugOverlayData.progress.completedSeq.length > 0 ? (
+                <div className="text-[11px] text-muted-foreground">
+                  completed seq: {debugOverlayData.progress.completedSeq.join(", ")}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-lg border border-border/50 px-2 py-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>visible blocks</span>
+                <span>{debugOverlayData.visible.length}</span>
+              </div>
+              {debugOverlayData.visible.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground">none</div>
+              ) : (
+                debugOverlayData.visible.slice(0, 6).map((v) => (
+                  <div key={`vis-${v.id}`} className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span className="truncate">{v.id}</span>
+                    <span>{v.ratio} | {v.visibleStartPct}→{v.visibleEndPct}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
             {debugCandidatesRef.current.length === 0 ? (
               <div className="text-muted-foreground">No visible blocks detected.</div>
             ) : (
@@ -3366,12 +4013,17 @@ export default function PathNodePage() {
                     <span>ratio {c.ratio}</span>
                     <span>top {c.topDelta}px</span>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">center {c.centerY}px</div>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>center {c.centerY}px</span>
+                    <span>anchor {c.anchor}</span>
+                  </div>
                 </div>
               ))
             )}
           </div>
-          <div className="mt-3 text-[10px] text-muted-foreground">Toggle: Ctrl/Cmd + Shift + `</div>
+          {!LESSON_DEBUG_OVERLAY ? (
+            <div className="mt-3 text-[10px] text-muted-foreground">Toggle: Ctrl/Cmd + Shift + `</div>
+          ) : null}
         </div>
       ) : null}
 
