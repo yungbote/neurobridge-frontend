@@ -103,6 +103,10 @@ const MAX_VISIBLE_BLOCKS = 20;
 const SESSION_SYNC_MIN_INTERVAL_MS = 350;
 const SESSION_SYNC_IDLE_MS = 180;
 const SESSION_SYNC_MAX_LATENCY_MS = 1400;
+const SESSION_SYNC_HEAVY_MIN_INTERVAL_MS = 1400;
+const RUNTIME_PROMPT_PROBE_DELAY_MS = 1200;
+const RUNTIME_PROMPT_POLL_MS = 3500;
+const RUNTIME_PROMPT_IDLE_MS = 20_000;
 const READ_VISIBLE_RATIO_MIN = 0.45;
 const READ_CREDIT_THRESHOLD = 0.7;
 const READ_TICK_MS = 200;
@@ -114,6 +118,19 @@ const PROGRESS_ENGAGE_BASE_MS = 700;
 const PROGRESS_ENGAGE_PER_SEC_MS = 200;
 const PROGRESS_ENGAGE_MIN_MS = 800;
 const PROGRESS_ENGAGE_MAX_MS = 2400;
+
+const toStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+};
 const PROGRESS_ENGAGE_CONF_MIN = 0.6;
 const PROGRESS_ENGAGE_RATIO_MIN = 0.5;
 const PROGRESS_MAX_SCREENS_PER_SEC = 0.5;
@@ -698,7 +715,7 @@ export default function PathNodePage() {
   const { id: nodeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
-  const { messages, connected } = useSSEContext();
+  const { messages, lastMessage, connected } = useSSEContext();
   const { user } = useUser();
   const { activatePath } = usePaths();
   const { activateLesson } = useLessons();
@@ -729,6 +746,10 @@ export default function PathNodePage() {
   const pendingEditThreadIdRef = useRef<string | null>(null);
   const pendingEditSeqRef = useRef<number>(0);
   const pendingEditPollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    runtimePromptRef.current = runtimePrompt;
+  }, [runtimePrompt]);
 
   const [regenDialogOpen, setRegenDialogOpen] = useState(false);
   const [regenBlock, setRegenBlock] = useState<DocBlock | null>(null);
@@ -878,6 +899,24 @@ export default function PathNodePage() {
       completedSeq: string[];
       progressingSinceSec: number;
     };
+    interactive: {
+      totals: { quickChecks: number; flashcards: number; all: number };
+      completed: { quickChecks: number; flashcards: number; all: number };
+      shown: { quickChecks: number; flashcards: number; all: number };
+      pending: { type: string; blockId: string; reason: string; status: string } | null;
+      next: { quickCheckId: string; flashcardId: string };
+      items: Array<{
+        id: string;
+        type: string;
+        index: number;
+        ready: boolean;
+        shown: boolean;
+        completed: boolean;
+        triggerAfter: string[];
+        missing: string[];
+      }>;
+      lastPrompt: { reason: string; status: string; at: string } | null;
+    };
   }>({
     activeId: null,
     activeMetric: null,
@@ -894,8 +933,25 @@ export default function PathNodePage() {
       completedSeq: [],
       progressingSinceSec: 0,
     },
+    interactive: {
+      totals: { quickChecks: 0, flashcards: 0, all: 0 },
+      completed: { quickChecks: 0, flashcards: 0, all: 0 },
+      shown: { quickChecks: 0, flashcards: 0, all: 0 },
+      pending: null,
+      next: { quickCheckId: "", flashcardId: "" },
+      items: [],
+      lastPrompt: null,
+    },
   });
   const debugOverlayRef = useRef<HTMLDivElement | null>(null);
+  const [debugOverlayPos, setDebugOverlayPos] = useState<{ x: number; y: number } | null>(null);
+  const debugDragRef = useRef<{
+    active: boolean;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const sessionSyncTimerRef = useRef<number | null>(null);
   const sessionIdleTimerRef = useRef<number | null>(null);
   const sessionForceTimerRef = useRef<number | null>(null);
@@ -903,10 +959,30 @@ export default function PathNodePage() {
   const lastSessionSyncAtRef = useRef<number>(0);
   const lastSessionChangeAtRef = useRef<number>(0);
   const lastSessionPayloadRef = useRef<string>("");
+  const lastHeavySnapshotAtRef = useRef<number>(0);
+  const cachedReadingSnapshotRef = useRef<Record<string, unknown> | null>(null);
+  const cachedProgressSnapshotRef = useRef<Record<string, unknown> | null>(null);
+  const heavySnapshotSignatureRef = useRef<string>("");
   const nodeConceptIdsRef = useRef<string[]>([]);
   const nodeIdRef = useRef<string>("");
   const pathIdRef = useRef<string>("");
   const docContainerRef = useRef<HTMLDivElement | null>(null);
+  const lessonSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const [lessonOverlayRect, setLessonOverlayRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const scrollLockRef = useRef<{
+    el: HTMLElement;
+    overflowY: string;
+    touchAction: string;
+    overscrollBehaviorY: string;
+  } | null>(null);
+  const runtimePromptRef = useRef<RuntimePromptPayload | null>(null);
+  const runtimeProbeTimerRef = useRef<number | null>(null);
+  const runtimeProbeIntervalRef = useRef<number | null>(null);
   const gazeQueueRef = useRef<GazeQueue | null>(null);
   const gazeEnabledRef = useRef<boolean>(false);
   const gazeLastHitAtRef = useRef<number>(0);
@@ -1673,6 +1749,47 @@ export default function PathNodePage() {
     queryFn: () => getPathRuntime(pathId),
   });
 
+  const runtimeRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runtimeRefetchAtRef = useRef<number>(0);
+  const runtimeProbeAtRef = useRef<number>(0);
+  const runtimeQueryRef = useRef<{
+    refetch: () => Promise<unknown>;
+    isFetching: boolean;
+    hasData: boolean;
+  }>({
+    refetch: async () => undefined,
+    isFetching: false,
+    hasData: false,
+  });
+  const scheduleRuntimeRefetch = useCallback(() => {
+    const now = Date.now();
+    if (now - runtimeRefetchAtRef.current < 1500) return;
+    if (runtimeRefetchTimerRef.current) return;
+    runtimeRefetchTimerRef.current = setTimeout(() => {
+      runtimeRefetchTimerRef.current = null;
+      runtimeRefetchAtRef.current = Date.now();
+      runtimeQueryRef.current.refetch().catch(() => undefined);
+    }, 250);
+  }, []);
+
+  const scheduleRuntimeProbe = useCallback(
+    (delay = RUNTIME_PROMPT_PROBE_DELAY_MS) => {
+      if (!runtimeQueryRef.current.hasData) return;
+      if (runtimePromptRef.current) return;
+      if (runtimeProbeTimerRef.current != null) return;
+      const now = Date.now();
+      if (now - runtimeProbeAtRef.current < 1500) return;
+      runtimeProbeAtRef.current = now;
+      runtimeProbeTimerRef.current = window.setTimeout(() => {
+        runtimeProbeTimerRef.current = null;
+        if (document.hidden) return;
+        if (runtimePromptRef.current) return;
+        runtimeQueryRef.current.refetch().catch(() => undefined);
+      }, delay);
+    },
+    []
+  );
+
   const runtimePromptBlock = useMemo(() => {
     const id = String(runtimePrompt?.block_id ?? "").trim();
     if (!id) return null;
@@ -1744,6 +1861,47 @@ export default function PathNodePage() {
     });
     setCompletedInteractiveBlocks(map);
   }, [pathId, runtimeStateQuery.data]);
+
+  useEffect(() => {
+    runtimeQueryRef.current = {
+      refetch: runtimeStateQuery.refetch,
+      isFetching: runtimeStateQuery.isFetching,
+      hasData: Boolean(runtimeStateQuery.data),
+    };
+  }, [runtimeStateQuery.refetch, runtimeStateQuery.isFetching, runtimeStateQuery.data]);
+
+  useEffect(() => {
+    if (runtimeProbeTimerRef.current != null) {
+      window.clearTimeout(runtimeProbeTimerRef.current);
+      runtimeProbeTimerRef.current = null;
+    }
+    if (runtimeProbeIntervalRef.current != null) {
+      window.clearInterval(runtimeProbeIntervalRef.current);
+      runtimeProbeIntervalRef.current = null;
+    }
+    if (!runtimeQueryRef.current.hasData) return;
+    if (runtimePrompt) return;
+    const tick = () => {
+      if (document.hidden) return;
+      if (runtimePromptRef.current) return;
+      const lastActivity = Math.max(
+        lastSessionChangeAtRef.current,
+        lastSessionSyncAtRef.current,
+        progressRef.current?.lastProgressAt ?? 0
+      );
+      if (Date.now() - lastActivity > RUNTIME_PROMPT_IDLE_MS) return;
+      if (runtimeQueryRef.current.isFetching) return;
+      runtimeQueryRef.current.refetch().catch(() => undefined);
+    };
+    tick();
+    runtimeProbeIntervalRef.current = window.setInterval(tick, RUNTIME_PROMPT_POLL_MS);
+    return () => {
+      if (runtimeProbeIntervalRef.current != null) {
+        window.clearInterval(runtimeProbeIntervalRef.current);
+        runtimeProbeIntervalRef.current = null;
+      }
+    };
+  }, [runtimePrompt, pathId]);
 
   const nodeConceptIds = useMemo(() => {
     const ids = conceptKeys
@@ -2125,6 +2283,153 @@ export default function PathNodePage() {
 
   const showDebugOverlay = LESSON_DEBUG_OVERLAY || debugOverlay;
 
+  const startDebugDrag = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = debugOverlayRef.current;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    debugDragRef.current = {
+      active: true,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+    setDebugOverlayPos({ x: rect.left, y: rect.top });
+    event.preventDefault();
+  }, []);
+
+  const resetDebugOverlayPos = useCallback(() => {
+    debugDragRef.current = null;
+    setDebugOverlayPos(null);
+  }, []);
+
+  useEffect(() => {
+    if (!showDebugOverlay) return;
+    const onMove = (event: MouseEvent) => {
+      const drag = debugDragRef.current;
+      if (!drag?.active) return;
+      const maxX = Math.max(0, window.innerWidth - drag.width);
+      const maxY = Math.max(0, window.innerHeight - drag.height);
+      const x = Math.min(Math.max(0, event.clientX - drag.offsetX), maxX);
+      const y = Math.min(Math.max(0, event.clientY - drag.offsetY), maxY);
+      setDebugOverlayPos({ x, y });
+    };
+    const onUp = () => {
+      if (debugDragRef.current) {
+        debugDragRef.current.active = false;
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [
+    showDebugOverlay,
+    docBlocks,
+    blockOrder,
+    runtimeStateQuery.data,
+    runtimePrompt,
+    completedInteractiveBlocks,
+  ]);
+
+  const updateLessonOverlayRect = useCallback(() => {
+    const el = lessonSurfaceRef.current;
+    if (!el) {
+      setLessonOverlayRect(null);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const left = Math.max(0, rect.left);
+    const top = Math.max(0, rect.top);
+    const right = Math.min(window.innerWidth, rect.right);
+    const bottom = Math.min(window.innerHeight, rect.bottom);
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+    if (width === 0 || height === 0) {
+      setLessonOverlayRect(null);
+      return;
+    }
+    setLessonOverlayRect({
+      left: Math.round(left),
+      top: Math.round(top),
+      width: Math.round(width),
+      height: Math.round(height),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!runtimePrompt) {
+      setLessonOverlayRect(null);
+      return;
+    }
+    let raf = requestAnimationFrame(() => updateLessonOverlayRect());
+    const onResize = () => updateLessonOverlayRect();
+    const onScroll = () => updateLessonOverlayRect();
+    const resizeObserver = lessonSurfaceRef.current
+      ? new ResizeObserver(() => updateLessonOverlayRect())
+      : null;
+    if (lessonSurfaceRef.current && resizeObserver) {
+      resizeObserver.observe(lessonSurfaceRef.current);
+    }
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [runtimePrompt, updateLessonOverlayRect]);
+
+  useEffect(() => {
+    if (!runtimePrompt) {
+      if (scrollLockRef.current) {
+        const { el, overflowY, touchAction, overscrollBehaviorY } = scrollLockRef.current;
+        el.style.overflowY = overflowY;
+        el.style.touchAction = touchAction;
+        el.style.overscrollBehaviorY = overscrollBehaviorY;
+        scrollLockRef.current = null;
+      }
+      return;
+    }
+    const scrollRoot = resolveScrollContainer();
+    const target = scrollRoot ?? lessonSurfaceRef.current;
+    if (!target) return;
+    const prevOverflowY = target.style.overflowY;
+    const prevTouchAction = target.style.touchAction;
+    const prevOverscroll = target.style.overscrollBehaviorY;
+    scrollLockRef.current = {
+      el: target,
+      overflowY: prevOverflowY,
+      touchAction: prevTouchAction,
+      overscrollBehaviorY: prevOverscroll,
+    };
+    if (scrollRoot) {
+      target.style.overflowY = "hidden";
+    }
+    target.style.touchAction = "none";
+    target.style.overscrollBehaviorY = "contain";
+    const prevent = (event: Event) => {
+      event.preventDefault();
+    };
+    target.addEventListener("wheel", prevent, { passive: false });
+    target.addEventListener("touchmove", prevent, { passive: false });
+    updateLessonOverlayRect();
+    return () => {
+      target.removeEventListener("wheel", prevent as EventListener);
+      target.removeEventListener("touchmove", prevent as EventListener);
+      if (!scrollLockRef.current) return;
+      const { el, overflowY, touchAction, overscrollBehaviorY } = scrollLockRef.current;
+      el.style.overflowY = overflowY;
+      el.style.touchAction = touchAction;
+      el.style.overscrollBehaviorY = overscrollBehaviorY;
+      scrollLockRef.current = null;
+    };
+  }, [runtimePrompt, resolveScrollContainer, updateLessonOverlayRect]);
+
   useEffect(() => {
     if (!showDebugOverlay) return;
     let timer: number | null = null;
@@ -2155,6 +2460,114 @@ export default function PathNodePage() {
       const progressingSinceSec = progress.progressingSince
         ? Math.round((Date.now() - progress.progressingSince) / 100) / 10
         : 0;
+      const runtimeData = runtimeStateQuery.data as Record<string, unknown> | undefined;
+      const pathRun = runtimeData?.path_run as Record<string, unknown> | null | undefined;
+      const nodeRun = runtimeData?.node_run as Record<string, unknown> | null | undefined;
+      const prRuntime = asRecord(asRecord(pathRun?.metadata)?.runtime);
+      const nrRuntime = asRecord(asRecord(nodeRun?.metadata)?.runtime);
+      const shownSet = new Set(toStringArray(nrRuntime?.shown_blocks));
+      const completedSet = new Set(
+        Object.keys(completedInteractiveBlocks || {}).filter((id) => completedInteractiveBlocks?.[id])
+      );
+      let lastReadIndex = -1;
+      readBlocksRef.current.forEach((id) => {
+        const idx = blockOrder.get(id);
+        if (typeof idx === "number" && idx > lastReadIndex) {
+          lastReadIndex = idx;
+        }
+      });
+
+      let quickChecks = 0;
+      let flashcards = 0;
+      let quickChecksShown = 0;
+      let flashcardsShown = 0;
+      let quickChecksCompleted = 0;
+      let flashcardsCompleted = 0;
+      let nextQuickCheckId = "";
+      let nextFlashcardId = "";
+      const interactiveItems: Array<{
+        id: string;
+        type: string;
+        index: number;
+        ready: boolean;
+        shown: boolean;
+        completed: boolean;
+        triggerAfter: string[];
+        missing: string[];
+      }> = [];
+
+      docBlocks.forEach((block, idx) => {
+        const id = String(block?.id ?? "").trim();
+        if (!id) return;
+        const type = String(block?.type ?? "").trim().toLowerCase();
+        if (type !== "quick_check" && type !== "flashcard") return;
+        const blockIndex = blockOrder.get(id) ?? idx;
+        const blockRecord = block as Record<string, unknown>;
+        const triggerAfter = toStringArray(
+          blockRecord.trigger_after_block_ids ?? blockRecord.triggerAfterBlockIds ?? []
+        );
+        const missing = triggerAfter.filter((dep) => !readBlocksRef.current.has(dep));
+        const ready =
+          triggerAfter.length > 0
+            ? missing.length === 0
+            : lastReadIndex >= 0 && blockIndex <= lastReadIndex;
+        const shown = shownSet.has(id);
+        const completed = completedSet.has(id);
+
+        if (type === "quick_check") {
+          quickChecks += 1;
+          if (shown) quickChecksShown += 1;
+          if (completed) quickChecksCompleted += 1;
+          if (!nextQuickCheckId && ready && !shown && !completed) nextQuickCheckId = id;
+        } else {
+          flashcards += 1;
+          if (shown) flashcardsShown += 1;
+          if (completed) flashcardsCompleted += 1;
+          if (!nextFlashcardId && ready && !shown && !completed) nextFlashcardId = id;
+        }
+
+        interactiveItems.push({
+          id,
+          type,
+          index: blockIndex,
+          ready,
+          shown,
+          completed,
+          triggerAfter,
+          missing,
+        });
+      });
+
+      const pendingPrompt = runtimePrompt
+        ? {
+            type: String(runtimePrompt.type ?? ""),
+            blockId: String(runtimePrompt.block_id ?? ""),
+            reason: String(runtimePrompt.reason ?? ""),
+            status: "pending",
+          }
+        : (() => {
+            const prompt = asRecord(prRuntime?.runtime_prompt);
+            const status = String(prompt?.status ?? "").toLowerCase();
+            const id = String(prompt?.id ?? "").trim();
+            if (!id || status !== "pending") return null;
+            return {
+              type: String(prompt?.type ?? ""),
+              blockId: String(prompt?.block_id ?? ""),
+              reason: String(prompt?.reason ?? ""),
+              status,
+            };
+          })();
+
+      const lastPromptAt = String(prRuntime?.last_prompt_at ?? "");
+      const lastPromptStatus = String(prRuntime?.last_prompt_status ?? "");
+      const lastPrompt =
+        lastPromptAt || lastPromptStatus
+          ? {
+              reason: "",
+              status: lastPromptStatus,
+              at: lastPromptAt,
+            }
+          : null;
 
       setDebugOverlayData({
         activeId,
@@ -2184,6 +2597,30 @@ export default function PathNodePage() {
           completedSeq: progress.completedSeq.slice(-6).map((entry) => entry.id),
           progressingSinceSec,
         },
+        interactive: {
+          totals: {
+            quickChecks,
+            flashcards,
+            all: quickChecks + flashcards,
+          },
+          completed: {
+            quickChecks: quickChecksCompleted,
+            flashcards: flashcardsCompleted,
+            all: quickChecksCompleted + flashcardsCompleted,
+          },
+          shown: {
+            quickChecks: quickChecksShown,
+            flashcards: flashcardsShown,
+            all: quickChecksShown + flashcardsShown,
+          },
+          pending: pendingPrompt,
+          next: {
+            quickCheckId: nextQuickCheckId,
+            flashcardId: nextFlashcardId,
+          },
+          items: interactiveItems.slice(0, 8),
+          lastPrompt,
+        },
       });
     };
     tick();
@@ -2210,14 +2647,47 @@ export default function PathNodePage() {
       }
 
       const clear = Boolean(opts?.clear);
+      if (clear) {
+        cachedReadingSnapshotRef.current = null;
+        cachedProgressSnapshotRef.current = null;
+        heavySnapshotSignatureRef.current = "";
+        lastHeavySnapshotAtRef.current = 0;
+      }
       const snapshot = clear ? { visible: [], current: null } : buildVisibleSnapshot();
       const scroll = clear ? null : currentScrollPercentRef.current;
+      let readingSnapshot: Record<string, unknown> | null = null;
+      let progressSnapshot: Record<string, unknown> | null = null;
+      if (!clear) {
+        const now = Date.now();
+        const progressState = progressRef.current;
+        const lastCompleted =
+          progressState.completedSeq.length > 0
+            ? progressState.completedSeq[progressState.completedSeq.length - 1]?.id ?? ""
+            : "";
+        const heavySig = `${progressState.state}|${progressState.engaged?.id ?? ""}|${lastCompleted}|${progressState.forwardCount}|${progressState.regressionCount}`;
+        const shouldRefreshHeavy =
+          !cachedReadingSnapshotRef.current ||
+          !cachedProgressSnapshotRef.current ||
+          now - lastHeavySnapshotAtRef.current >= SESSION_SYNC_HEAVY_MIN_INTERVAL_MS ||
+          (heavySig && heavySig !== heavySnapshotSignatureRef.current);
+        if (shouldRefreshHeavy) {
+          readingSnapshot = buildReadingSnapshot();
+          progressSnapshot = buildProgressSnapshot();
+          cachedReadingSnapshotRef.current = readingSnapshot;
+          cachedProgressSnapshotRef.current = progressSnapshot;
+          lastHeavySnapshotAtRef.current = now;
+          if (heavySig) heavySnapshotSignatureRef.current = heavySig;
+        } else {
+          readingSnapshot = cachedReadingSnapshotRef.current;
+          progressSnapshot = cachedProgressSnapshotRef.current;
+        }
+      }
       const metadata = {
         visible_blocks: snapshot.visible,
         current_block: snapshot.current,
         visible_block_count: snapshot.visible.length,
-        reading: clear ? null : buildReadingSnapshot(),
-        progress: clear ? null : buildProgressSnapshot(),
+        reading: clear ? null : readingSnapshot,
+        progress: clear ? null : progressSnapshot,
         viewport: {
           w: typeof window !== "undefined" ? window.innerWidth : 0,
           h: typeof window !== "undefined" ? window.innerHeight : 0,
@@ -2243,8 +2713,11 @@ export default function PathNodePage() {
         metadata,
         { immediate: Boolean(opts?.immediate) }
       );
+      if (!clear) {
+        scheduleRuntimeProbe();
+      }
     },
-    [buildProgressSnapshot, buildReadingSnapshot, buildVisibleSnapshot, user?.id]
+    [buildProgressSnapshot, buildReadingSnapshot, buildVisibleSnapshot, scheduleRuntimeProbe, user?.id]
   );
 
   const scheduleSessionSync = useCallback(
@@ -2867,13 +3340,31 @@ export default function PathNodePage() {
     if (!nodeId || !doc) return;
     let observer: IntersectionObserver | null = null;
     let raf = 0;
+    let retryTimer: number | null = null;
+    let attempts = 0;
+    const MAX_INIT_ATTEMPTS = 12;
+    const RETRY_DELAY_MS = 120;
     visibleBlocksRef.current.clear();
     lastSessionPayloadRef.current = "";
+
+    const scheduleInit = () => {
+      if (retryTimer != null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      raf = window.requestAnimationFrame(init);
+    };
 
     const init = () => {
       const container = docContainerRef.current ?? document;
       const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-doc-block-id]"));
-      if (elements.length === 0) return;
+      if (elements.length === 0) {
+        attempts += 1;
+        if (attempts <= MAX_INIT_ATTEMPTS) {
+          retryTimer = window.setTimeout(scheduleInit, RETRY_DELAY_MS);
+        }
+        return;
+      }
       const scrollContainer = resolveScrollContainer();
       const thresholds = [0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1];
       observer = new IntersectionObserver(
@@ -2941,10 +3432,14 @@ export default function PathNodePage() {
       scheduleSessionSync();
     };
 
-    raf = window.requestAnimationFrame(init);
+    scheduleInit();
 
     return () => {
       if (raf) window.cancelAnimationFrame(raf);
+      if (retryTimer != null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       if (observer) observer.disconnect();
       if (sessionSyncTimerRef.current != null) {
         clearTimeout(sessionSyncTimerRef.current);
@@ -3164,8 +3659,10 @@ export default function PathNodePage() {
     const payload = data as RuntimePromptPayload;
     const payloadPathId = String(payload.path_id ?? "").trim();
     const payloadNodeId = String(payload.node_id ?? "").trim();
-    if (payloadPathId && payloadPathId !== String(pathIdRef.current || "")) return;
-    if (payloadNodeId && payloadNodeId !== String(nodeIdRef.current || "")) return;
+    const currentPathId = String(pathIdRef.current || "").trim();
+    const currentNodeId = String(nodeIdRef.current || "").trim();
+    if (payloadPathId && currentPathId && payloadPathId !== currentPathId) return;
+    if (payloadNodeId && currentNodeId && payloadNodeId !== currentNodeId) return;
     setRuntimePrompt(payload);
   }, []);
 
@@ -3175,6 +3672,12 @@ export default function PathNodePage() {
       const payload = data as JobEventPayload;
       const job = payload.job as BackendJob | undefined;
       const jobType = String(payload.job_type ?? job?.job_type ?? "").toLowerCase();
+      if (jobType === "runtime_update") {
+        if (event === "jobdone" || event === "jobfailed" || event === "jobcanceled") {
+          scheduleRuntimeRefetch();
+        }
+        return;
+      }
       if (jobType === "node_doc_edit_apply") {
         if (event === "jobdone") {
           loadDoc().then((d) => {
@@ -3230,10 +3733,31 @@ export default function PathNodePage() {
         console.warn("[PathNodePage] doc patch failed:", payload.error || job?.error || "unknown");
       }
     },
-    [clearPendingEdit, loadDoc, nodeId, resolveBlockId]
+    [clearPendingEdit, loadDoc, nodeId, resolveBlockId, scheduleRuntimeRefetch]
   );
 
   const lastSseIndexRef = useRef<number>(0);
+  const lastSseKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!user?.id || !lastMessage) return;
+    if (lastMessage.channel !== user.id) return;
+    const key = JSON.stringify(lastMessage);
+    if (lastSseKeyRef.current === key) return;
+    lastSseKeyRef.current = key;
+    const event = String(lastMessage.event || "").toLowerCase();
+    if (event.startsWith("job")) {
+      handleJobUpdate(event, lastMessage.data);
+      return;
+    }
+    if (event.startsWith("chatmessage")) {
+      handleChatMessageEvent(event, lastMessage.data);
+      return;
+    }
+    if (event === "runtimeprompt") {
+      handleRuntimePromptEvent(lastMessage.data);
+    }
+  }, [handleChatMessageEvent, handleJobUpdate, handleRuntimePromptEvent, lastMessage, user?.id]);
   useEffect(() => {
     if (!user?.id) return;
     if (!Array.isArray(messages) || messages.length === 0) return;
@@ -3790,7 +4314,10 @@ export default function PathNodePage() {
           ) : null}
 
           {/* Main content container - responsive */}
-          <div className="relative rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 shadow-sm">
+          <div
+            ref={lessonSurfaceRef}
+            className="relative rounded-xl sm:rounded-2xl border border-border/60 bg-card/70 shadow-sm"
+          >
             <div className="pointer-events-none absolute inset-0 rounded-xl sm:rounded-2xl overflow-hidden z-0">
               <div className="absolute -top-28 right-0 h-56 w-56 rounded-full bg-primary/6 blur-2xl" />
               <div className="absolute -bottom-32 left-0 h-64 w-64 rounded-full bg-accent/6 blur-2xl" />
@@ -3824,6 +4351,96 @@ export default function PathNodePage() {
                 <NodeContentRenderer contentJson={node?.contentJson} />
               )}
             </div>
+
+            {runtimePrompt && lessonOverlayRect ? (
+              <div
+                className="fixed z-40 overflow-hidden rounded-xl sm:rounded-2xl"
+                style={
+                  {
+                    left: lessonOverlayRect.left,
+                    top: lessonOverlayRect.top,
+                    width: lessonOverlayRect.width,
+                    height: lessonOverlayRect.height,
+                  }
+                }
+                onWheel={(event) => event.preventDefault()}
+                onTouchMove={(event) => event.preventDefault()}
+              >
+                <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" />
+                <div className="relative z-10 flex h-full w-full items-center justify-center p-4 sm:p-6">
+                  <div className="w-full max-w-2xl rounded-2xl border border-border/60 bg-card/95 p-5 shadow-2xl sm:p-6">
+                    <div className="space-y-1">
+                      <div className="text-base font-semibold text-foreground">
+                        {runtimePrompt?.type === "break"
+                          ? "Take a short break"
+                          : runtimePrompt?.type === "flashcard"
+                            ? "Flashcard"
+                            : "Quick check"}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {runtimePrompt?.type === "break"
+                          ? "A short pause can improve retention and accuracy."
+                          : "Respond and then confirm when you are ready to continue."}
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      {runtimePrompt?.type === "break" ? (
+                        <div className="space-y-2 rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-foreground/90">
+                          <div>
+                            Suggested break:{" "}
+                            <span className="font-medium">
+                              {runtimePrompt.break_min ?? 3}–{runtimePrompt.break_max ?? 8} minutes
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            You can keep going if you prefer; this just helps pacing.
+                          </div>
+                        </div>
+                      ) : runtimePrompt?.type === "quick_check" ? (
+                        runtimePromptBlock ? (
+                          <QuickCheck
+                            pathNodeId={runtimePrompt.node_id || nodeId || undefined}
+                            blockId={runtimePrompt.block_id}
+                            promptMd={runtimePromptBlock?.prompt_md as string}
+                            answerMd={runtimePromptBlock?.answer_md as string}
+                            kind={runtimePromptBlock?.kind}
+                            options={runtimePromptBlock?.options}
+                          />
+                        ) : (
+                          <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+                            Loading the quick check…
+                          </div>
+                        )
+                      ) : runtimePrompt?.type === "flashcard" ? (
+                        runtimePromptBlock ? (
+                          <Flashcard
+                            frontMd={runtimePromptBlock?.front_md as string}
+                            backMd={runtimePromptBlock?.back_md as string}
+                          />
+                        ) : (
+                          <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+                            Loading the flashcard…
+                          </div>
+                        )
+                      ) : null}
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => void submitRuntimePromptDecision("dismissed")}
+                      >
+                        Dismiss
+                      </Button>
+                      <Button onClick={() => void submitRuntimePromptDecision("completed")}>
+                        Done
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Footer separator and helper - responsive */}
@@ -3835,87 +4452,29 @@ export default function PathNodePage() {
         </div>
       </Container>
 
-      <Dialog
-        open={Boolean(runtimePrompt)}
-        onOpenChange={(open) => {
-          if (!open) void submitRuntimePromptDecision("dismissed");
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              {runtimePrompt?.type === "break"
-                ? "Take a short break"
-                : runtimePrompt?.type === "flashcard"
-                  ? "Flashcard"
-                  : "Quick check"}
-            </DialogTitle>
-            <DialogDescription>
-              {runtimePrompt?.type === "break"
-                ? "A short pause can improve retention and accuracy."
-                : "Respond and then confirm when you are ready to continue."}
-            </DialogDescription>
-          </DialogHeader>
-
-          {runtimePrompt?.type === "break" ? (
-            <div className="space-y-2 rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-foreground/90">
-              <div>
-                Suggested break:{" "}
-                <span className="font-medium">
-                  {runtimePrompt.break_min ?? 3}–{runtimePrompt.break_max ?? 8} minutes
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                You can keep going if you prefer; this just helps pacing.
-              </div>
-            </div>
-          ) : runtimePrompt?.type === "quick_check" ? (
-            runtimePromptBlock ? (
-              <QuickCheck
-                pathNodeId={runtimePrompt.node_id || nodeId || undefined}
-                blockId={runtimePrompt.block_id}
-                promptMd={runtimePromptBlock?.prompt_md as string}
-                answerMd={runtimePromptBlock?.answer_md as string}
-                kind={runtimePromptBlock?.kind}
-                options={runtimePromptBlock?.options}
-              />
-            ) : (
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
-                Loading the quick check…
-              </div>
-            )
-          ) : runtimePrompt?.type === "flashcard" ? (
-            runtimePromptBlock ? (
-              <Flashcard
-                frontMd={runtimePromptBlock?.front_md as string}
-                backMd={runtimePromptBlock?.back_md as string}
-              />
-            ) : (
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
-                Loading the flashcard…
-              </div>
-            )
-          ) : null}
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => void submitRuntimePromptDecision("dismissed")}
-            >
-              Dismiss
-            </Button>
-            <Button onClick={() => void submitRuntimePromptDecision("completed")}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {showDebugOverlay ? (
         <div
           ref={debugOverlayRef}
           className="fixed bottom-6 end-6 z-50 w-[320px] rounded-2xl border border-border/60 bg-background/95 p-4 shadow-xl backdrop-blur"
+          style={
+            debugOverlayPos
+              ? {
+                  left: debugOverlayPos.x,
+                  top: debugOverlayPos.y,
+                  right: "auto",
+                  bottom: "auto",
+                }
+              : undefined
+          }
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Current Block Debug
+          <div
+            className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground cursor-move select-none"
+            onMouseDown={startDebugDrag}
+            onDoubleClick={resetDebugOverlayPos}
+            title="Drag to move • double-click to reset"
+          >
+            <span>Current Block Debug</span>
+            <span className="text-[10px] font-medium text-muted-foreground/70">drag</span>
           </div>
           <div className="mt-2 space-y-2 text-xs text-foreground/80">
             <div className="rounded-lg border border-border/50 px-2 py-1">
@@ -3978,6 +4537,73 @@ export default function PathNodePage() {
                   completed seq: {debugOverlayData.progress.completedSeq.join(", ")}
                 </div>
               ) : null}
+            </div>
+
+            <div className="rounded-lg border border-border/50 px-2 py-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>interactive</span>
+                <span>
+                  {debugOverlayData.interactive.completed.all}/{debugOverlayData.interactive.totals.all} done
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>quick checks</span>
+                <span>
+                  {debugOverlayData.interactive.shown.quickChecks}/{debugOverlayData.interactive.totals.quickChecks} shown
+                  · {debugOverlayData.interactive.completed.quickChecks} done
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>flashcards</span>
+                <span>
+                  {debugOverlayData.interactive.shown.flashcards}/{debugOverlayData.interactive.totals.flashcards} shown
+                  · {debugOverlayData.interactive.completed.flashcards} done
+                </span>
+              </div>
+              {debugOverlayData.interactive.pending ? (
+                <div className="text-[11px] text-muted-foreground">
+                  pending: {debugOverlayData.interactive.pending.type} {debugOverlayData.interactive.pending.blockId}
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground">pending: none</div>
+              )}
+              <div className="text-[11px] text-muted-foreground">
+                next qc: {debugOverlayData.interactive.next.quickCheckId || "none"} · next fc:{" "}
+                {debugOverlayData.interactive.next.flashcardId || "none"}
+              </div>
+              {debugOverlayData.interactive.lastPrompt ? (
+                <div className="text-[11px] text-muted-foreground">
+                  last prompt: {debugOverlayData.interactive.lastPrompt.status || "unknown"}{" "}
+                  {debugOverlayData.interactive.lastPrompt.at || ""}
+                </div>
+              ) : null}
+              {debugOverlayData.interactive.items.length > 0 ? (
+                <div className="mt-1 space-y-1">
+                  {debugOverlayData.interactive.items.map((item) => (
+                    <div key={`interactive-${item.id}`} className="text-[11px] text-muted-foreground">
+                      <div className="flex items-center justify-between">
+                        <span className="truncate">
+                          {item.type}:{item.id}
+                        </span>
+                        <span>
+                          {item.ready ? "ready" : "wait"} {item.shown ? "shown" : ""}{" "}
+                          {item.completed ? "done" : ""}
+                        </span>
+                      </div>
+                      {item.triggerAfter.length > 0 ? (
+                        <div className="truncate">
+                          after: {item.triggerAfter.join(", ")}
+                          {item.missing.length > 0 ? ` · missing: ${item.missing.join(", ")}` : ""}
+                        </div>
+                      ) : (
+                        <div className="truncate">after: progress</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground">no interactive blocks</div>
+              )}
             </div>
 
             <div className="rounded-lg border border-border/50 px-2 py-1">
