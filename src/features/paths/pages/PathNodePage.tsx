@@ -355,6 +355,24 @@ function extractConceptKeys(node: PathNode | null | undefined) {
   return out;
 }
 
+function extractBlockConceptKeys(block: DocBlock | null | undefined) {
+  const raw = (block as { concept_keys?: unknown; conceptKeys?: unknown } | null | undefined);
+  const keys = (raw?.concept_keys ?? raw?.conceptKeys ?? []) as unknown[];
+  if (!Array.isArray(keys)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  keys
+    .map((k) => String(k || "").trim())
+    .filter(Boolean)
+    .forEach((k) => {
+      const norm = k.toLowerCase();
+      if (seen.has(norm)) return;
+      seen.add(norm);
+      out.push(k);
+    });
+  return out;
+}
+
 function humanizeConceptKey(key: string) {
   const s = String(key || "").trim().replace(/_/g, " ");
   return s || key;
@@ -917,6 +935,27 @@ export default function PathNodePage() {
       }>;
       lastPrompt: { reason: string; status: string; at: string } | null;
     };
+    knowledge: {
+      totalConcepts: number;
+      weakKeys: string[];
+      unseenKeys: string[];
+      dueKeys: string[];
+      topFrames: string[];
+      misconceptions: string[];
+      uncertainty: string[];
+      lastEvidenceAt: string;
+      probeTargets: string[];
+      calibration: {
+        count: number;
+        totals: { expected: number; observed: number; gap: number; brier: number; absErr: number } | null;
+      };
+      alerts: {
+        total: number;
+        critical: number;
+        warning: number;
+        items: Array<{ conceptId: string; kind: string; severity: string; score: number }>;
+      };
+    };
   }>({
     activeId: null,
     activeMetric: null,
@@ -941,6 +980,27 @@ export default function PathNodePage() {
       next: { quickCheckId: "", flashcardId: "" },
       items: [],
       lastPrompt: null,
+    },
+    knowledge: {
+      totalConcepts: 0,
+      weakKeys: [],
+      unseenKeys: [],
+      dueKeys: [],
+      topFrames: [],
+      misconceptions: [],
+      uncertainty: [],
+      lastEvidenceAt: "",
+      probeTargets: [],
+      calibration: {
+        count: 0,
+        totals: null,
+      },
+      alerts: {
+        total: 0,
+        critical: 0,
+        warning: 0,
+        items: [],
+      },
     },
   });
   const debugOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -1748,6 +1808,10 @@ export default function PathNodePage() {
     staleTime: 10_000,
     queryFn: () => getPathRuntime(pathId),
   });
+  const runtimeDataRef = useRef<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    runtimeDataRef.current = (runtimeStateQuery.data as Record<string, unknown> | null) ?? null;
+  }, [runtimeStateQuery.data]);
 
   const runtimeRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runtimeRefetchAtRef = useRef<number>(0);
@@ -1913,6 +1977,36 @@ export default function PathNodePage() {
   useEffect(() => {
     nodeConceptIdsRef.current = nodeConceptIds;
   }, [nodeConceptIds]);
+
+  const mapConceptIds = useCallback(
+    (keys: string[]) => {
+      const ids = (Array.isArray(keys) ? keys : [])
+        .map((k) => conceptIdByKey.get(String(k || "").trim().toLowerCase()) || "")
+        .filter((v): v is string => Boolean(v));
+      return Array.from(new Set(ids));
+    },
+    [conceptIdByKey]
+  );
+
+  const blockConceptIdsRef = useRef<Map<string, string[]>>(new Map());
+  const blockConceptIdsById = useMemo(() => {
+    const map = new Map<string, string[]>();
+    docBlocks.forEach((block) => {
+      const id = String(block?.id ?? "").trim();
+      if (!id) return;
+      const keys = extractBlockConceptKeys(block);
+      if (keys.length === 0) return;
+      const ids = mapConceptIds(keys);
+      if (ids.length > 0) {
+        map.set(id, ids);
+      }
+    });
+    return map;
+  }, [docBlocks, mapConceptIds]);
+
+  useEffect(() => {
+    blockConceptIdsRef.current = blockConceptIdsById;
+  }, [blockConceptIdsById]);
 
   const buildVisibleSnapshot = useCallback(() => {
     const scrollRoot = resolveScrollContainer();
@@ -2460,7 +2554,8 @@ export default function PathNodePage() {
       const progressingSinceSec = progress.progressingSince
         ? Math.round((Date.now() - progress.progressingSince) / 100) / 10
         : 0;
-      const runtimeData = runtimeStateQuery.data as Record<string, unknown> | undefined;
+      const runtimeData =
+        runtimeDataRef.current ?? (runtimeStateQuery.data as Record<string, unknown> | undefined);
       const pathRun = runtimeData?.path_run as Record<string, unknown> | null | undefined;
       const nodeRun = runtimeData?.node_run as Record<string, unknown> | null | undefined;
       const prRuntime = asRecord(asRecord(pathRun?.metadata)?.runtime);
@@ -2569,6 +2664,64 @@ export default function PathNodePage() {
             }
           : null;
 
+      const knowledgeCtx = asRecord(runtimeData?.knowledge_context);
+      const knowledgeCalib = asRecord(runtimeData?.knowledge_calibration);
+      const knowledgeAlertsRaw = Array.isArray(runtimeData?.knowledge_alerts)
+        ? (runtimeData?.knowledge_alerts as Array<Record<string, unknown>>)
+        : [];
+      const knowledgeConcepts = Array.isArray(knowledgeCtx?.concepts)
+        ? (knowledgeCtx?.concepts as Array<Record<string, unknown>>)
+        : [];
+      const weakKeys = toStringArray(
+        knowledgeCtx?.weak_concept_keys ?? knowledgeCtx?.weakConceptKeys ?? []
+      );
+      const unseenKeys = toStringArray(
+        knowledgeCtx?.unseen_concept_keys ?? knowledgeCtx?.unseenConceptKeys ?? []
+      );
+      const dueKeys = toStringArray(
+        knowledgeCtx?.due_review_concept_keys ?? knowledgeCtx?.dueReviewConceptKeys ?? []
+      );
+      const topFrames = toStringArray(knowledgeCtx?.top_frames ?? knowledgeCtx?.topFrames ?? []);
+      const misconceptions = toStringArray(
+        knowledgeCtx?.active_misconceptions ?? knowledgeCtx?.activeMisconceptions ?? []
+      );
+      const uncertainty = toStringArray(
+        knowledgeCtx?.uncertainty_regions ?? knowledgeCtx?.uncertaintyRegions ?? []
+      );
+      const probeTargets = toStringArray(
+        knowledgeCtx?.probe_targets ?? knowledgeCtx?.probeTargets ?? []
+      );
+      const lastEvidenceAt = String(
+        knowledgeCtx?.last_strong_evidence_at ?? knowledgeCtx?.lastStrongEvidenceAt ?? ""
+      );
+      const calibTotals = asRecord(knowledgeCalib?.totals);
+      const calibConcepts = Array.isArray(knowledgeCalib?.concepts)
+        ? (knowledgeCalib?.concepts as Array<Record<string, unknown>>)
+        : [];
+      const calibTotalsPayload =
+        calibTotals && Object.keys(calibTotals).length
+          ? {
+              expected: Number(calibTotals.expected ?? 0),
+              observed: Number(calibTotals.observed ?? 0),
+              gap: Number(calibTotals.gap ?? 0),
+              brier: Number(calibTotals.brier ?? 0),
+              absErr: Number(calibTotals.abs_err ?? calibTotals.absErr ?? 0),
+            }
+          : null;
+      let alertCritical = 0;
+      let alertWarning = 0;
+      const alertItems = knowledgeAlertsRaw.slice(0, 6).map((alert) => {
+        const severity = String(alert?.severity ?? "").toLowerCase();
+        if (severity === "critical") alertCritical += 1;
+        if (severity === "warning") alertWarning += 1;
+        return {
+          conceptId: String(alert?.concept_id ?? alert?.conceptId ?? ""),
+          kind: String(alert?.kind ?? ""),
+          severity,
+          score: Number(alert?.score ?? 0),
+        };
+      });
+
       setDebugOverlayData({
         activeId,
         activeMetric: activeMetric
@@ -2620,6 +2773,27 @@ export default function PathNodePage() {
           },
           items: interactiveItems.slice(0, 8),
           lastPrompt,
+        },
+        knowledge: {
+          totalConcepts: knowledgeConcepts.length,
+          weakKeys: weakKeys.slice(0, 6),
+          unseenKeys: unseenKeys.slice(0, 6),
+          dueKeys: dueKeys.slice(0, 6),
+          topFrames: topFrames.slice(0, 6),
+          misconceptions: misconceptions.slice(0, 6),
+          uncertainty: uncertainty.slice(0, 6),
+          lastEvidenceAt,
+          probeTargets: probeTargets.slice(0, 6),
+          calibration: {
+            count: calibConcepts.length,
+            totals: calibTotalsPayload,
+          },
+          alerts: {
+            total: knowledgeAlertsRaw.length,
+            critical: alertCritical,
+            warning: alertWarning,
+            items: alertItems,
+          },
         },
       });
     };
@@ -2768,10 +2942,16 @@ export default function PathNodePage() {
       const progressConfidence = progress
         ? Math.round(progress.confidence * 1000) / 1000
         : undefined;
+      const blockConceptIds = blockConceptIdsRef.current.get(id);
+      const conceptIds =
+        blockConceptIds && blockConceptIds.length > 0
+          ? blockConceptIds
+          : nodeConceptIdsRef.current;
       queueEvent({
         type: "block_read",
         pathId: pathIdRef.current || "",
         pathNodeId: nodeId || "",
+        conceptIds,
         data: {
           block_id: id,
           read_credit: Math.min(1, Math.max(credit, 0)),
@@ -3179,10 +3359,16 @@ export default function PathNodePage() {
         const progressState = state;
         const progressConfidence = Math.round(confidence * 1000) / 1000;
         engagedBlocksRef.current.add(pendingViewed.id);
+        const blockConceptIds = blockConceptIdsRef.current.get(pendingViewed.id);
+        const conceptIds =
+          blockConceptIds && blockConceptIds.length > 0
+            ? blockConceptIds
+            : nodeConceptIdsRef.current;
         queueEvent({
           type: "block_viewed",
           pathId: pathIdRef.current || "",
           pathNodeId: nodeId || "",
+          conceptIds,
           data: {
             block_id: pendingViewed.id,
             dwell_ms: pendingViewed.dwellMs,
@@ -4604,6 +4790,65 @@ export default function PathNodePage() {
               ) : (
                 <div className="text-[11px] text-muted-foreground">no interactive blocks</div>
               )}
+            </div>
+
+            <div className="rounded-lg border border-border/50 px-2 py-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>knowledge</span>
+                <span>{debugOverlayData.knowledge.totalConcepts} concepts</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                weak: {debugOverlayData.knowledge.weakKeys.join(", ") || "none"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                unseen: {debugOverlayData.knowledge.unseenKeys.join(", ") || "none"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                due: {debugOverlayData.knowledge.dueKeys.join(", ") || "none"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                frames: {debugOverlayData.knowledge.topFrames.join(", ") || "none"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                misconceptions: {debugOverlayData.knowledge.misconceptions.join(", ") || "none"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                uncertainty: {debugOverlayData.knowledge.uncertainty.join(", ") || "none"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                probe targets: {debugOverlayData.knowledge.probeTargets.join(", ") || "none"}
+              </div>
+              {debugOverlayData.knowledge.lastEvidenceAt ? (
+                <div className="text-[11px] text-muted-foreground">
+                  last evidence: {debugOverlayData.knowledge.lastEvidenceAt}
+                </div>
+              ) : null}
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                calibration: {debugOverlayData.knowledge.calibration.count} concepts{" "}
+                {debugOverlayData.knowledge.calibration.totals ? (
+                  <>
+                    · gap {debugOverlayData.knowledge.calibration.totals.gap.toFixed(2)} · brier{" "}
+                    {debugOverlayData.knowledge.calibration.totals.brier.toFixed(2)} · abs{" "}
+                    {debugOverlayData.knowledge.calibration.totals.absErr.toFixed(2)}
+                  </>
+                ) : (
+                  "· none"
+                )}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                alerts: {debugOverlayData.knowledge.alerts.total} total ·{" "}
+                {debugOverlayData.knowledge.alerts.critical} critical ·{" "}
+                {debugOverlayData.knowledge.alerts.warning} warning
+              </div>
+              {debugOverlayData.knowledge.alerts.items.length > 0 ? (
+                <div className="mt-1 space-y-1">
+                  {debugOverlayData.knowledge.alerts.items.map((item, idx) => (
+                    <div key={`alert-${item.conceptId}-${idx}`} className="text-[11px] text-muted-foreground">
+                      {item.kind}:{item.severity} {item.conceptId} (score {item.score.toFixed(2)})
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-lg border border-border/50 px-2 py-1">
