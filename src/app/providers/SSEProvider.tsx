@@ -11,6 +11,7 @@ import { getAccessToken } from "@/shared/services/StorageService";
 import SSEService from "@/shared/api/SSEService";
 import { useAuth } from "@/app/providers/AuthProvider";
 import type { SseMessage } from "@/shared/types/models";
+import { recordSse } from "@/shared/observability/rum";
 
 // TODO: Harden sse beyond a single last message variable. This is fragile.
 
@@ -42,6 +43,9 @@ export function SSEProvider({ children }: SSEProviderProps) {
   const initRef = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
+  const connectAttemptAtRef = useRef<number | null>(null);
+  const lastMessageAtRef = useRef<number | null>(null);
+  const lastOpenAtRef = useRef<number | null>(null);
 
   const resetState = useCallback(() => {
     setConnected(false);
@@ -62,6 +66,7 @@ export function SSEProvider({ children }: SSEProviderProps) {
     retryTimer.current = setTimeout(() => {
       connectRef.current?.();
     }, delay);
+    recordSse("retry", { delay_ms: delay });
   }, []);
 
   const connect = useCallback(() => {
@@ -72,6 +77,8 @@ export function SSEProvider({ children }: SSEProviderProps) {
       scheduleRetry(2000);
       return;
     }
+    connectAttemptAtRef.current = performance.now();
+    recordSse("connect_attempt", {});
     SSEService.connect();
     SSEService.onOpen(() => {
       console.log("[SSEProvider] onopen => connected!");
@@ -80,15 +87,33 @@ export function SSEProvider({ children }: SSEProviderProps) {
         retryTimer.current = null;
       }
       setConnected(true);
+      const now = performance.now();
+      const connectMs =
+        connectAttemptAtRef.current !== null
+          ? Math.max(0, now - connectAttemptAtRef.current)
+          : undefined;
+      lastOpenAtRef.current = now;
+      lastMessageAtRef.current = now;
+      recordSse("open", connectMs !== undefined ? { connect_ms: Math.round(connectMs) } : {});
     });
     SSEService.onError((err) => {
       console.error("[SSEProvider] onerror =>", err);
       setConnected(false);
+      const now = performance.now();
+      const sinceOpen =
+        lastOpenAtRef.current !== null ? Math.max(0, now - lastOpenAtRef.current) : undefined;
+      const sinceMessage =
+        lastMessageAtRef.current !== null ? Math.max(0, now - lastMessageAtRef.current) : undefined;
+      recordSse("error", {
+        since_open_ms: sinceOpen !== undefined ? Math.round(sinceOpen) : undefined,
+        since_message_ms: sinceMessage !== undefined ? Math.round(sinceMessage) : undefined,
+      });
       SSEService.close();
       scheduleRetry(1000);
     });
     SSEService.onMessage((evt) => {
       try {
+        lastMessageAtRef.current = performance.now();
         const parsed = JSON.parse(evt.data) as Partial<SseMessage>;
         console.log("[SSEProvider] message:", evt.data);
         const msg: SseMessage = {
@@ -126,6 +151,12 @@ export function SSEProvider({ children }: SSEProviderProps) {
       console.log("[SSEProvider] unmounting, closing SSE");
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
+      }
+      if (lastOpenAtRef.current !== null) {
+        const sinceOpen = Math.max(0, performance.now() - lastOpenAtRef.current);
+        recordSse("close", { since_open_ms: Math.round(sinceOpen) });
+      } else {
+        recordSse("close", {});
       }
       resetState();
     };
@@ -197,7 +228,6 @@ export function SSEGate({ children }: SSEGateProps) {
   }
   return <SSEProvider>{children}</SSEProvider>;
 }
-
 
 
 

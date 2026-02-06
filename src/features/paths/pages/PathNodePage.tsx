@@ -15,6 +15,11 @@ import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 import { createChatThread, getChatThread, listChatMessages, sendChatMessage } from "@/shared/api/ChatService";
 import { queueEvent } from "@/shared/services/EventQueue";
 import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
+import {
+  trackEngagementFunnelStep,
+  trackExperimentExposure,
+  trackExperimentGuardrailBreach,
+} from "@/shared/observability/productEvents";
 import { getConceptGraph } from "@/shared/api/PathService";
 import {
   enqueuePathNodeDocPatch,
@@ -836,6 +841,11 @@ export default function PathNodePage() {
   const readCreditsRef = useRef<Map<string, number>>(new Map());
   const readBlocksRef = useRef<Set<string>>(new Set());
   const engagedBlocksRef = useRef<Set<string>>(new Set());
+  const engagementFunnelSeenRef = useRef<Set<string>>(new Set());
+  const engagementFunnelCompletedRef = useRef<Set<string>>(new Set());
+  const lessonFunnelOpenRef = useRef(false);
+  const lastPromptExposureRef = useRef<string>("");
+  const lastProgressStateRef = useRef<ProgressState>("idle");
   const readTargetSecondsRef = useRef<Map<string, number>>(new Map());
   const lastReadTickRef = useRef<number>(0);
   const progressRef = useRef<{
@@ -1647,6 +1657,11 @@ export default function PathNodePage() {
       activeChanges: [],
     };
     progressSignatureRef.current = "";
+    lastProgressStateRef.current = "idle";
+    engagementFunnelSeenRef.current.clear();
+    engagementFunnelCompletedRef.current.clear();
+    lastPromptExposureRef.current = "";
+    lessonFunnelOpenRef.current = false;
     for (const block of docBlocks) {
       const id = String(block?.id ?? "").trim();
       if (!id) continue;
@@ -1689,10 +1704,36 @@ export default function PathNodePage() {
     return map;
   }, [docBlocks]);
 
+  const getPromptMissingDeps = useCallback(
+    (blockId: string): string[] => {
+      const id = String(blockId || "").trim();
+      if (!id) return [];
+      const block = blockById.get(id) as Record<string, unknown> | undefined;
+      if (!block) return [];
+      const triggerAfter = toStringArray(
+        block.trigger_after_block_ids ?? block.triggerAfterBlockIds ?? []
+      );
+      if (triggerAfter.length === 0) return [];
+      return triggerAfter.filter((dep) => !readBlocksRef.current.has(dep));
+    },
+    [blockById]
+  );
+
   const pathId = node?.pathId || path?.id || "";
   useEffect(() => {
     pathIdRef.current = pathId;
   }, [pathId]);
+
+  useEffect(() => {
+    if (!pathId || !nodeId) return;
+    if (lessonFunnelOpenRef.current) return;
+    lessonFunnelOpenRef.current = true;
+    trackEngagementFunnelStep("lesson", "open", {
+      pathId,
+      pathNodeId: nodeId,
+      data: { source: "lesson_page" },
+    });
+  }, [nodeId, pathId]);
 
   useEffect(() => {
     nodeIdRef.current = nodeId ? String(nodeId) : "";
@@ -1925,6 +1966,51 @@ export default function PathNodePage() {
     });
     setCompletedInteractiveBlocks(map);
   }, [pathId, runtimeStateQuery.data]);
+
+  useEffect(() => {
+    if (!runtimePrompt?.prompt_id) return;
+    if (runtimePrompt.prompt_id === lastPromptExposureRef.current) return;
+    lastPromptExposureRef.current = runtimePrompt.prompt_id;
+
+    const promptType = String(runtimePrompt.type || "").trim() || "unknown";
+    const promptReason = String(runtimePrompt.reason || "").trim() || "runtime";
+    const blockId = String(runtimePrompt.block_id || "").trim();
+    const nodeRef = runtimePrompt.node_id || nodeId || "";
+    const pathRef = pathIdRef.current || pathId || "";
+
+    trackExperimentExposure("lesson_runtime_prompt", promptType, promptReason, {
+      pathId: pathRef,
+      pathNodeId: nodeRef,
+      data: {
+        prompt_id: runtimePrompt.prompt_id,
+        block_id: blockId,
+        reason: promptReason,
+      },
+    });
+
+    trackEngagementFunnelStep("lesson", "prompt_shown", {
+      pathId: pathRef,
+      pathNodeId: nodeRef,
+      data: {
+        prompt_id: runtimePrompt.prompt_id,
+        prompt_type: promptType,
+        block_id: blockId,
+      },
+    });
+
+    const missing = getPromptMissingDeps(blockId);
+    if (missing.length > 0) {
+      trackExperimentGuardrailBreach("lesson_runtime_prompt", "trigger_after_not_met", {
+        pathId: pathRef,
+        pathNodeId: nodeRef,
+        data: {
+          prompt_id: runtimePrompt.prompt_id,
+          block_id: blockId,
+          missing,
+        },
+      });
+    }
+  }, [getPromptMissingDeps, nodeId, pathId, runtimePrompt]);
 
   useEffect(() => {
     runtimeQueryRef.current = {
@@ -3289,6 +3375,18 @@ export default function PathNodePage() {
                 }
                 progress.lastCompleteAt = now;
                 progress.lastProgressAt = now;
+                if (!engagementFunnelCompletedRef.current.has(prevEngaged.id)) {
+                  engagementFunnelCompletedRef.current.add(prevEngaged.id);
+                  trackEngagementFunnelStep("lesson", "block_completed", {
+                    pathId: pathIdRef.current || "",
+                    pathNodeId: nodeId || "",
+                    data: {
+                      block_id: prevEngaged.id,
+                      jump,
+                      confidence: Math.round(completion.confidence * 1000) / 1000,
+                    },
+                  });
+                }
               } else {
                 const regression: ProgressEntry = {
                   ...prevEngaged,
@@ -3347,6 +3445,20 @@ export default function PathNodePage() {
 
       progress.state = state;
       progress.confidence = confidence;
+      if (state !== lastProgressStateRef.current) {
+        if (state === "progressing") {
+          trackEngagementFunnelStep("lesson", "progressing", {
+            pathId: pathIdRef.current || "",
+            pathNodeId: nodeId || "",
+            data: {
+              confidence: Math.round(confidence * 1000) / 1000,
+              forward_count: forwardCount,
+              regression_count: regressionCount,
+            },
+          });
+        }
+        lastProgressStateRef.current = state;
+      }
       if (state === "progressing") {
         if (!progress.progressingSince) {
           progress.progressingSince = now;
@@ -3358,6 +3470,19 @@ export default function PathNodePage() {
       if (pendingViewed && !engagedBlocksRef.current.has(pendingViewed.id)) {
         const progressState = state;
         const progressConfidence = Math.round(confidence * 1000) / 1000;
+        if (!engagementFunnelSeenRef.current.has(pendingViewed.id)) {
+          engagementFunnelSeenRef.current.add(pendingViewed.id);
+          trackEngagementFunnelStep("lesson", "block_engaged", {
+            pathId: pathIdRef.current || "",
+            pathNodeId: nodeId || "",
+            data: {
+              block_id: pendingViewed.id,
+              dwell_ms: pendingViewed.dwellMs,
+              confidence: Math.round(pendingViewed.activeConfidence * 1000) / 1000,
+              ratio: Math.round(pendingViewed.ratio * 1000) / 1000,
+            },
+          });
+        }
         engagedBlocksRef.current.add(pendingViewed.id);
         const blockConceptIds = blockConceptIdsRef.current.get(pendingViewed.id);
         const conceptIds =
@@ -4349,6 +4474,15 @@ export default function PathNodePage() {
       const type = decision === "completed" ? "runtime_prompt_completed" : "runtime_prompt_dismissed";
       queueEvent({
         type,
+        pathId: pathIdRef.current || undefined,
+        pathNodeId: runtimePrompt.node_id || nodeId || undefined,
+        data: {
+          prompt_id: runtimePrompt.prompt_id,
+          prompt_type: runtimePrompt.type,
+          block_id: runtimePrompt.block_id,
+        },
+      });
+      trackEngagementFunnelStep("lesson", decision === "completed" ? "prompt_completed" : "prompt_dismissed", {
         pathId: pathIdRef.current || undefined,
         pathNodeId: runtimePrompt.node_id || nodeId || undefined,
         data: {

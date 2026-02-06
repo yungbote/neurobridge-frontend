@@ -15,8 +15,11 @@ import { MaterialProvider } from "@/app/providers/MaterialProvider";
 import { LessonProvider } from "@/app/providers/LessonProvider";
 import { nbMotion } from "@/shared/motion/neurobridgeMotion";
 import { ToastProvider } from "@/shared/ui/toast";
+import { initRUM } from "@/shared/observability/rum";
 import App from "./App";
 import "@/styles/index.css";
+
+initRUM();
 
 const queryClient = new QueryClient({
   defaultOptions: {
