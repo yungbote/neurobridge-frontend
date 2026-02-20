@@ -6,6 +6,9 @@ export interface SseMessage<T = JsonInput> {
   event: string;
   channel: string;
   data: T;
+  trace_id?: string;
+  request_id?: string;
+  received_at?: string;
 }
 
 export interface JobEventPayload {

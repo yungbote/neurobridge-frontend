@@ -762,6 +762,9 @@ export default function PathNodePage() {
 
   const [pendingBlocks, setPendingBlocks] = useState<Record<string, string | true>>({});
   const pendingJobsRef = useRef<Record<string, string>>({});
+  const docPollTimerRef = useRef<number | null>(null);
+  const docPollAttemptsRef = useRef<number>(0);
+  const lastJitDocRefreshAtRef = useRef<number>(0);
   const [blockFeedback, setBlockFeedback] = useState<Record<string, BlockFeedback>>({});
   const [undoableBlocks, setUndoableBlocks] = useState<Record<string, boolean>>({});
   const [pendingEdit, setPendingEdit] = useState<NodeDocEditProposal | null>(null);
@@ -1062,6 +1065,7 @@ export default function PathNodePage() {
   const gazeVelocityRef = useRef<number>(0);
   const gazeBiasRef = useRef<{ x: number; y: number } | null>(null);
   const gazeDebugRef = useRef<HTMLDivElement | null>(null);
+  const nodeOpenEventKeyRef = useRef<string>("");
 
   const resolveScrollContainer = useCallback(() => {
     let el = docContainerRef.current;
@@ -1588,6 +1592,62 @@ export default function PathNodePage() {
     }
   }, [nodeId]);
 
+  const clearDocPoll = useCallback(() => {
+    if (docPollTimerRef.current != null) {
+      window.clearTimeout(docPollTimerRef.current);
+      docPollTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearDocPoll();
+    };
+  }, [clearDocPoll]);
+
+  useEffect(() => {
+    docPollAttemptsRef.current = 0;
+    clearDocPoll();
+  }, [nodeId, clearDocPoll]);
+
+  useEffect(() => {
+    if (doc) {
+      docPollAttemptsRef.current = 0;
+      clearDocPoll();
+    }
+  }, [doc, clearDocPoll]);
+
+  useEffect(() => {
+    if (!nodeId || doc) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      const d = await loadDoc();
+      if (cancelled) return;
+      if (d !== null && d !== undefined) {
+        setDoc(d);
+        docPollAttemptsRef.current = 0;
+        clearDocPoll();
+        return;
+      }
+      docPollAttemptsRef.current += 1;
+      if (docPollAttemptsRef.current > 180) {
+        // Stop after a long recovery window; page interactions/SSE will retrigger attempts.
+        return;
+      }
+      const attempt = docPollAttemptsRef.current;
+      const delayMs = attempt <= 8 ? 1000 : attempt <= 40 ? 2000 : 5000;
+      docPollTimerRef.current = window.setTimeout(poll, delayMs);
+    };
+
+    docPollTimerRef.current = window.setTimeout(poll, 750);
+    return () => {
+      cancelled = true;
+      clearDocPoll();
+    };
+  }, [clearDocPoll, doc, loadDoc, nodeId]);
+
   useEffect(() => {
     if (!nodeId) return;
     let cancelled = false;
@@ -1740,6 +1800,24 @@ export default function PathNodePage() {
   }, [nodeId]);
 
   useEffect(() => {
+    if (!nodeId) return;
+    const nodeKey = String(nodeId).trim();
+    if (!nodeKey) return;
+    if (nodeOpenEventKeyRef.current === nodeKey) return;
+    const resolvedPathID = String(pathIdRef.current || pathId || "").trim();
+    nodeOpenEventKeyRef.current = nodeKey;
+    queueEvent({
+      type: "path_node_opened",
+      pathId: resolvedPathID || undefined,
+      pathNodeId: nodeKey,
+      conceptIds: nodeConceptIdsRef.current,
+      data: {
+        source: "lesson_page",
+      },
+    });
+  }, [nodeId, pathId]);
+
+  useEffect(() => {
     gazeLastHitAtRef.current = 0;
     gazeLastBlockRef.current = "";
     gazeSmoothRef.current = null;
@@ -1860,11 +1938,11 @@ export default function PathNodePage() {
   const runtimeQueryRef = useRef<{
     refetch: () => Promise<unknown>;
     isFetching: boolean;
-    hasData: boolean;
+    canRefetch: boolean;
   }>({
     refetch: async () => undefined,
     isFetching: false,
-    hasData: false,
+    canRefetch: false,
   });
   const scheduleRuntimeRefetch = useCallback(() => {
     const now = Date.now();
@@ -1879,7 +1957,7 @@ export default function PathNodePage() {
 
   const scheduleRuntimeProbe = useCallback(
     (delay = RUNTIME_PROMPT_PROBE_DELAY_MS) => {
-      if (!runtimeQueryRef.current.hasData) return;
+      if (!runtimeQueryRef.current.canRefetch) return;
       if (runtimePromptRef.current) return;
       if (runtimeProbeTimerRef.current != null) return;
       const now = Date.now();
@@ -1900,7 +1978,15 @@ export default function PathNodePage() {
     if (!id) return null;
     return blockById.get(id) ?? null;
   }, [blockById, runtimePrompt?.block_id]);
-  const interactiveMode = runtimeStateQuery.data ? "runtime" : "inline";
+  const hasRuntimeInteractives = useMemo(
+    () => docBlocks.some((b) => {
+      const typ = String((b as Record<string, unknown>)?.type ?? "").trim().toLowerCase();
+      return typ === "quick_check" || typ === "flashcard";
+    }),
+    [docBlocks]
+  );
+  const runtimeUnavailable = runtimeStateQuery.isError && !runtimeStateQuery.isFetching;
+  const interactiveMode = hasRuntimeInteractives && !runtimeUnavailable ? "runtime" : "inline";
 
   const conceptNameByKey = useMemo(() => {
     const map = new Map<string, string>();
@@ -2016,9 +2102,9 @@ export default function PathNodePage() {
     runtimeQueryRef.current = {
       refetch: runtimeStateQuery.refetch,
       isFetching: runtimeStateQuery.isFetching,
-      hasData: Boolean(runtimeStateQuery.data),
+      canRefetch: Boolean(pathId),
     };
-  }, [runtimeStateQuery.refetch, runtimeStateQuery.isFetching, runtimeStateQuery.data]);
+  }, [pathId, runtimeStateQuery.refetch, runtimeStateQuery.isFetching]);
 
   useEffect(() => {
     if (runtimeProbeTimerRef.current != null) {
@@ -2029,7 +2115,7 @@ export default function PathNodePage() {
       window.clearInterval(runtimeProbeIntervalRef.current);
       runtimeProbeIntervalRef.current = null;
     }
-    if (!runtimeQueryRef.current.hasData) return;
+    if (!runtimeQueryRef.current.canRefetch) return;
     if (runtimePrompt) return;
     const tick = () => {
       if (document.hidden) return;
@@ -3028,6 +3114,10 @@ export default function PathNodePage() {
       const progressConfidence = progress
         ? Math.round(progress.confidence * 1000) / 1000
         : undefined;
+      const includeProgressSignal =
+        progressState === "progressing" &&
+        typeof progressConfidence === "number" &&
+        progressConfidence > 0;
       const blockConceptIds = blockConceptIdsRef.current.get(id);
       const conceptIds =
         blockConceptIds && blockConceptIds.length > 0
@@ -3042,8 +3132,12 @@ export default function PathNodePage() {
           block_id: id,
           read_credit: Math.min(1, Math.max(credit, 0)),
           source,
-          progress_state: progressState,
-          progress_confidence: progressConfidence,
+          ...(includeProgressSignal
+            ? {
+                progress_state: progressState,
+                progress_confidence: progressConfidence,
+              }
+            : {}),
         },
       });
       scheduleSessionSync({ immediate: true });
@@ -3470,6 +3564,8 @@ export default function PathNodePage() {
       if (pendingViewed && !engagedBlocksRef.current.has(pendingViewed.id)) {
         const progressState = state;
         const progressConfidence = Math.round(confidence * 1000) / 1000;
+        const includeProgressSignal =
+          progressState === "progressing" && progressConfidence > 0;
         if (!engagementFunnelSeenRef.current.has(pendingViewed.id)) {
           engagementFunnelSeenRef.current.add(pendingViewed.id);
           trackEngagementFunnelStep("lesson", "block_engaged", {
@@ -3499,8 +3595,12 @@ export default function PathNodePage() {
             dwell_ms: pendingViewed.dwellMs,
             confidence: Math.round(pendingViewed.activeConfidence * 1000) / 1000,
             ratio: Math.round(pendingViewed.ratio * 1000) / 1000,
-            progress_state: progressState,
-            progress_confidence: progressConfidence,
+            ...(includeProgressSignal
+              ? {
+                  progress_state: progressState,
+                  progress_confidence: progressConfidence,
+                }
+              : {}),
           },
         });
       }
@@ -3998,6 +4098,35 @@ export default function PathNodePage() {
         }
         if (event === "jobfailed" || event === "jobcanceled") {
           clearPendingEdit();
+        }
+        return;
+      }
+      if (
+        jobType === "node_doc_prefetch" ||
+        jobType === "node_doc_progressive_build" ||
+        jobType === "doc_probe_select"
+      ) {
+        const jobPayload = resolvePayload(job?.payload);
+        const payloadPathID = String(payload.path_id ?? jobPayload?.path_id ?? "").trim();
+        const currentPathID = String(pathIdRef.current || "").trim();
+        if (payloadPathID && currentPathID && payloadPathID !== currentPathID) return;
+
+        if (
+          event === "jobcreated" ||
+          event === "jobdone" ||
+          event === "jobfailed" ||
+          event === "jobcanceled" ||
+          event === "jobrestarted"
+        ) {
+          const now = Date.now();
+          if (now - lastJitDocRefreshAtRef.current < 1000) {
+            return;
+          }
+          lastJitDocRefreshAtRef.current = now;
+          docPollAttemptsRef.current = 0;
+          loadDoc().then((d) => {
+            if (d !== undefined) setDoc(d);
+          });
         }
         return;
       }

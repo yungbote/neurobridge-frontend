@@ -11,6 +11,7 @@ import { getAccessToken } from "@/shared/services/StorageService";
 import SSEService from "@/shared/api/SSEService";
 import { useAuth } from "@/app/providers/AuthProvider";
 import type { SseMessage } from "@/shared/types/models";
+import type { JsonInput } from "@/shared/types/models";
 import { recordSse } from "@/shared/observability/rum";
 
 // TODO: Harden sse beyond a single last message variable. This is fragile.
@@ -114,12 +115,16 @@ export function SSEProvider({ children }: SSEProviderProps) {
     SSEService.onMessage((evt) => {
       try {
         lastMessageAtRef.current = performance.now();
-        const parsed = JSON.parse(evt.data) as Partial<SseMessage>;
+        const parsed = JSON.parse(evt.data) as Record<string, unknown>;
         console.log("[SSEProvider] message:", evt.data);
+        const payload = (parsed.data ?? null) as JsonInput;
         const msg: SseMessage = {
           event: String(parsed.event ?? ""),
           channel: String(parsed.channel ?? ""),
-          data: parsed.data ?? null,
+          data: payload,
+          trace_id: typeof parsed.trace_id === "string" ? parsed.trace_id : undefined,
+          request_id: typeof parsed.request_id === "string" ? parsed.request_id : undefined,
+          received_at: new Date().toISOString(),
         };
         setLastMessage(msg);
         setMessages((prev) => {
@@ -228,8 +233,6 @@ export function SSEGate({ children }: SSEGateProps) {
   }
   return <SSEProvider>{children}</SSEProvider>;
 }
-
-
 
 
 
