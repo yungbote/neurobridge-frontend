@@ -35,6 +35,56 @@ function parseEnvBool(value: unknown, def: boolean) {
 
 const NODE_AVATAR_RENDER_ENABLED = parseEnvBool(import.meta.env.VITE_NODE_AVATAR_RENDER_ENABLED, true);
 
+type NodeAvailabilityStatus =
+  | "available"
+  | "soft_remediate"
+  | "blocked"
+  | "building"
+  | "listed_not_ready"
+  | "locked";
+
+function normalizeNodeAvailabilityStatus(node: PathNode | null | undefined): NodeAvailabilityStatus {
+  const raw = String(node?.availabilityStatus || "").trim().toLowerCase();
+  switch (raw) {
+    case "available":
+    case "soft_remediate":
+    case "blocked":
+    case "building":
+    case "listed_not_ready":
+    case "locked":
+      return raw;
+    default:
+      break;
+  }
+  const docState = String(node?.docStatus?.state || "").trim().toLowerCase();
+  if (docState === "ready") return "available";
+  if (docState === "building" || docState === "pending") return "building";
+  return node?.contentJson ? "available" : "listed_not_ready";
+}
+
+function canNavigateNode(node: PathNode | null | undefined): boolean {
+  const status = normalizeNodeAvailabilityStatus(node);
+  return status === "available" || status === "soft_remediate";
+}
+
+function availabilityHint(status: NodeAvailabilityStatus): string {
+  switch (status) {
+    case "available":
+      return "Ready";
+    case "soft_remediate":
+      return "Remediation suggested";
+    case "blocked":
+      return "Blocked by prerequisites";
+    case "building":
+      return "Preparing content";
+    case "locked":
+      return "Locked";
+    case "listed_not_ready":
+    default:
+      return "Not ready yet";
+  }
+}
+
 function PathOutlineSkeleton() {
   const depths = [0, 0, 1, 1, 2, 0, 1, 2];
   return (
@@ -249,6 +299,15 @@ export default function PathPage() {
     queryKey: queryKeys.pathNodes(String(pathId || "")),
     enabled: Boolean(pathId),
     staleTime: 60_000,
+    refetchInterval: (q) => {
+      const rows = (q.state.data as PathNode[] | undefined) ?? [];
+      if (!Array.isArray(rows) || rows.length === 0) return 6000;
+      const hasPending = rows.some((n) => {
+        const s = normalizeNodeAvailabilityStatus(n);
+        return s === "building" || s === "listed_not_ready" || s === "locked";
+      });
+      return hasPending ? 4000 : false;
+    },
     queryFn: () => listNodesForPath(String(pathId)),
   });
 
@@ -293,7 +352,10 @@ export default function PathPage() {
     };
     roots.forEach((r) => walk(r, 0));
 
-    const firstLeaf = rows.find((r) => !r.hasChildren)?.node ?? rows[0]?.node ?? null;
+    const firstLeaf =
+      rows.find((r) => !r.hasChildren && canNavigateNode(r.node))?.node ??
+      rows.find((r) => canNavigateNode(r.node))?.node ??
+      null;
     return { rows, firstLeaf };
   }, [nodes]);
 
@@ -461,6 +523,9 @@ export default function PathPage() {
                 <div className="space-y-2">
                   {outline.rows.map(({ node, depth, hasChildren }) => {
                       const hasContent = Boolean(node?.contentJson);
+                      const availabilityStatus = normalizeNodeAvailabilityStatus(node);
+                      const canOpen = canNavigateNode(node);
+                      const hint = availabilityHint(availabilityStatus);
                       const avatarUrl =
                         NODE_AVATAR_RENDER_ENABLED &&
                         typeof node?.avatarUrl === "string" &&
@@ -476,7 +541,12 @@ export default function PathPage() {
                         <button
                           key={node.id}
                           type="button"
-                          onClick={() => navigate(`/path-nodes/${node.id}`)}
+                          onClick={() => {
+                            if (!canOpen) return;
+                            navigate(`/path-nodes/${node.id}`);
+                          }}
+                          disabled={!canOpen}
+                          aria-disabled={!canOpen}
                           className={cn(
                             "w-full rounded-xl border border-border bg-background text-start",
                             // Touch-friendly sizing (min 48px height on mobile)
@@ -484,7 +554,7 @@ export default function PathPage() {
                             // Transitions
                             "nb-motion-fast motion-reduce:transition-none",
                             // Hover/active states
-                            "hover:bg-muted/30 active:bg-muted/50 active:scale-[0.995]",
+                            canOpen ? "hover:bg-muted/30 active:bg-muted/50 active:scale-[0.995]" : "opacity-70 cursor-not-allowed",
                             // Touch optimizations
                             "touch-manipulation -webkit-tap-highlight-color-transparent"
                           )}
@@ -524,12 +594,13 @@ export default function PathPage() {
                                 <ChevronRight className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4 shrink-0 text-muted-foreground" />
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {hasChildren
-                                  ? t("paths.outline")
-                                  : hasContent
-                                    ? t("paths.lessons.ready")
-                                    : t("paths.lessons.writing")}
+                                {hasChildren ? t("paths.outline") : hint}
                               </p>
+                              {availabilityStatus !== "available" ? (
+                                <p className="mt-1 text-[11px] text-muted-foreground/90">
+                                  {String(node?.availabilityReason || "").trim() || (hasContent ? "" : t("paths.lessons.writing"))}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                         </button>

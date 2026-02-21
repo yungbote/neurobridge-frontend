@@ -40,6 +40,14 @@ export interface BackendPathNode {
   avatar_asset_id?: UUID | string | null;
   metadata?: JsonValue | string | null;
   content_json?: JsonValue | string | null;
+  availability_status?: string | null;
+  availability_reason?: string | null;
+  doc_status?: JsonValue | string | null;
+  unlock_estimate?: JsonValue | string | null;
+  unlock_requirements?: JsonValue | string | null;
+  unlock_source?: string | null;
+  unlock_policy?: string | null;
+  last_eval_at?: ISODateTimeString | null;
   created_at?: ISODateTimeString | null;
   updated_at?: ISODateTimeString | null;
 }

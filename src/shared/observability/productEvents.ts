@@ -1,4 +1,5 @@
 import { queueEvent } from "@/shared/services/EventQueue";
+import type { JsonInput } from "@/shared/types/models";
 
 type EventContext = {
   pathId?: string;
@@ -30,7 +31,7 @@ function emitEvent(type: string, payload: Record<string, unknown>, ctx?: EventCo
     activityVariant: ctx?.activityVariant,
     modality: ctx?.modality,
     conceptIds: ctx?.conceptIds,
-    data: { ...(ctx?.data ?? {}), ...payload },
+    data: ({ ...(ctx?.data ?? {}), ...payload } as JsonInput),
   });
 }
 

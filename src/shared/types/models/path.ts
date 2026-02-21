@@ -1,5 +1,21 @@
 import type { JsonInput } from "./common";
 
+export interface NodeDocStatus {
+  state: string;
+  ready: boolean;
+  fallback?: boolean;
+  reason?: string;
+  failureCodes?: string[];
+}
+
+export interface NodeUnlockEstimate {
+  state: string;
+  availableAt?: string;
+  etaSeconds?: number;
+  confidence?: string;
+  reason?: string;
+}
+
 export interface Path {
   id: string;
   userId: string | null;
@@ -41,6 +57,14 @@ export interface PathNode {
   avatarAssetId?: string | null;
   metadata: JsonInput;
   contentJson: JsonInput;
+  availabilityStatus?: string | null;
+  availabilityReason?: string | null;
+  docStatus?: NodeDocStatus | null;
+  unlockEstimate?: NodeUnlockEstimate | null;
+  unlockRequirements?: JsonInput;
+  unlockSource?: string | null;
+  unlockPolicy?: string | null;
+  lastEvalAt?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }

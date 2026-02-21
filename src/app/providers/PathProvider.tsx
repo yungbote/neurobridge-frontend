@@ -322,6 +322,26 @@ export function PathProvider({ children }: PathProviderProps) {
       return;
     }
 
+    if (
+      jobType === "node_doc_prefetch" ||
+      jobType === "node_doc_progressive_build" ||
+      jobType === "doc_probe_select"
+    ) {
+      const pid = pathIdFromEvent ?? extractPathIdFromJob(job);
+      if (!pid) return;
+      if (
+        event === "jobcreated" ||
+        event === "jobprogress" ||
+        event === "jobdone" ||
+        event === "jobfailed" ||
+        event === "jobcanceled" ||
+        event === "jobrestarted"
+      ) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.pathNodes(String(pid)), exact: true });
+      }
+      return;
+    }
+
     if (jobType !== "learning_build") return;
 
     if (event === "jobcreated") {

@@ -1,4 +1,5 @@
 import axiosClient from "./AxiosClient";
+import axios from "axios";
 import type {
   BackendNodeActivity,
   BackendNodeDocRevision,
@@ -49,6 +50,9 @@ function safeParseJSON(v: unknown): JsonValue | string | null {
 export function mapPathNode(raw: BackendPathNode | PathNode | null | undefined): PathNode | null {
   if (!raw) return null;
   const row = raw as PathNodeRecord;
+  const docStatusRaw = safeParseJSON((row as { doc_status?: unknown; docStatus?: unknown }).doc_status ?? row.docStatus);
+  const unlockEstimateRaw = safeParseJSON((row as { unlock_estimate?: unknown; unlockEstimate?: unknown }).unlock_estimate ?? row.unlockEstimate);
+  const unlockRequirementsRaw = safeParseJSON((row as { unlock_requirements?: unknown; unlockRequirements?: unknown }).unlock_requirements ?? row.unlockRequirements);
   return {
     id: String(row.id),
     pathId: (row.path_id ?? row.pathId ?? null) as string | null,
@@ -60,6 +64,26 @@ export function mapPathNode(raw: BackendPathNode | PathNode | null | undefined):
     contentJson:
       (safeParseJSON(row.content_json ?? row.contentJson) ?? row.content_json ?? row.contentJson ?? null) as
         PathNode["contentJson"],
+    availabilityStatus:
+      ((row as { availability_status?: string; availabilityStatus?: string }).availability_status ??
+        row.availabilityStatus ??
+        null) as string | null,
+    availabilityReason:
+      ((row as { availability_reason?: string; availabilityReason?: string }).availability_reason ??
+        row.availabilityReason ??
+        null) as string | null,
+    docStatus: (docStatusRaw ?? null) as PathNode["docStatus"],
+    unlockEstimate: (unlockEstimateRaw ?? null) as PathNode["unlockEstimate"],
+    unlockRequirements: (unlockRequirementsRaw ?? null) as PathNode["unlockRequirements"],
+    unlockSource:
+      ((row as { unlock_source?: string; unlockSource?: string }).unlock_source ?? row.unlockSource ?? null) as
+        string | null,
+    unlockPolicy:
+      ((row as { unlock_policy?: string; unlockPolicy?: string }).unlock_policy ?? row.unlockPolicy ?? null) as
+        string | null,
+    lastEvalAt:
+      ((row as { last_eval_at?: string; lastEvalAt?: string }).last_eval_at ?? row.lastEvalAt ?? null) as
+        string | null,
     createdAt: (row.created_at ?? row.createdAt ?? null) as string | null,
     updatedAt: (row.updated_at ?? row.updatedAt ?? null) as string | null,
   };
@@ -118,9 +142,55 @@ export async function getPathNodeContent(pathNodeId: string): Promise<PathNode |
 }
 
 export async function getPathNodeDoc(pathNodeId: string): Promise<JsonValue | string | null> {
+  const payload = await getPathNodeDocEnvelope(pathNodeId);
+  return payload.doc ?? null;
+}
+
+export interface PathNodeDocEnvelope {
+  doc: JsonValue | string | null;
+  doc_status?: JsonValue | string | null;
+  prereq_gate?: JsonValue | string | null;
+  evidence?: JsonValue | string | null;
+  availability_status?: string | null;
+  availability_reason?: string | null;
+  unlock_estimate?: JsonValue | string | null;
+  error_code?: string | null;
+  http_status: number;
+}
+
+export async function getPathNodeDocEnvelope(pathNodeId: string): Promise<PathNodeDocEnvelope> {
   if (!pathNodeId) throw new Error("getPathNodeDoc: missing pathNodeId");
-  const resp = await axiosClient.get<{ doc?: JsonValue | string | null }>(`/path-nodes/${pathNodeId}/doc`);
-  return resp.data?.doc ?? null;
+  try {
+    const resp = await axiosClient.get<Record<string, unknown>>(`/path-nodes/${pathNodeId}/doc`);
+    return {
+      doc: (resp.data?.doc ?? null) as JsonValue | string | null,
+      doc_status: (resp.data?.doc_status ?? null) as JsonValue | string | null,
+      prereq_gate: (resp.data?.prereq_gate ?? null) as JsonValue | string | null,
+      evidence: (resp.data?.evidence ?? null) as JsonValue | string | null,
+      availability_status: (resp.data?.availability_status ?? null) as string | null,
+      availability_reason: (resp.data?.availability_reason ?? null) as string | null,
+      unlock_estimate: (resp.data?.unlock_estimate ?? null) as JsonValue | string | null,
+      error_code: null,
+      http_status: resp.status,
+    };
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      const data = (err.response.data ?? {}) as Record<string, unknown>;
+      const apiErr = (data.error ?? null) as Record<string, unknown> | null;
+      return {
+        doc: (data.doc ?? null) as JsonValue | string | null,
+        doc_status: (data.doc_status ?? null) as JsonValue | string | null,
+        prereq_gate: (data.prereq_gate ?? null) as JsonValue | string | null,
+        evidence: (data.evidence ?? null) as JsonValue | string | null,
+        availability_status: (data.availability_status ?? null) as string | null,
+        availability_reason: (data.availability_reason ?? null) as string | null,
+        unlock_estimate: (data.unlock_estimate ?? null) as JsonValue | string | null,
+        error_code: (apiErr?.code ?? String(err.response.status)) as string,
+        http_status: err.response.status,
+      };
+    }
+    throw err;
+  }
 }
 
 export interface PathNodeDocPatchPayload {
@@ -199,6 +269,9 @@ export interface QuickCheckAttemptPayload {
   occurred_at?: string;
   latency_ms?: number;
   confidence?: number;
+  correlation_id?: string;
+  prompt_id?: string;
+  prompt_instance_id?: string;
 }
 
 export interface QuickCheckAttemptResult {

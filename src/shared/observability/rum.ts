@@ -2,6 +2,7 @@ import { ingestEvents } from "@/shared/api/EventService";
 import axiosClient from "@/shared/api/AxiosClient";
 import { getAccessToken } from "@/shared/services/StorageService";
 import type { ClientEvent } from "@/shared/types/models";
+import type { JsonInput } from "@/shared/types/models";
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from "@/shared/observability/webVitals";
 import { trackSecurityEvent } from "@/shared/observability/productEvents";
 
@@ -77,7 +78,7 @@ function enqueueEvent(type: string, data: Record<string, unknown>) {
     type,
     clientEventId: safeId(),
     occurredAt: new Date().toISOString(),
-    data: { ...baseContext(), ...data },
+    data: ({ ...baseContext(), ...data } as JsonInput),
   };
   queue.push(evt);
   if (queue.length >= RUM_MAX_QUEUE) {

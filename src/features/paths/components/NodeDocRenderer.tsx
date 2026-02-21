@@ -27,6 +27,7 @@ import {
   type QuickCheckAttemptAction,
   type QuickCheckAttemptResult,
 } from "@/shared/api/PathNodeService";
+import { flushEvents, queueEvent } from "@/shared/services/EventQueue";
 import type { JsonInput } from "@/shared/types/models";
 
 interface DocBlock {
@@ -78,6 +79,8 @@ interface NodeDocRendererProps {
   undoableBlocks?: Record<string, boolean>;
   interactiveMode?: "inline" | "runtime";
   completedInteractiveBlocks?: Record<string, boolean>;
+  runtimeFallbackInteractiveBlocks?: Record<string, boolean>;
+  conceptIdByKey?: Record<string, string>;
   onLike?: (block: DocBlock, index: number) => void;
   onDislike?: (block: DocBlock, index: number) => void;
   onRegenerate?: (block: DocBlock, index: number) => void;
@@ -115,6 +118,41 @@ function asUnknownArray(v: unknown): unknown[] {
 
 function safeString(v: unknown) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
+}
+
+function asStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of v) {
+    const value = safeString(item).trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function extractBlockConceptIds(block: DocBlock | null | undefined, conceptIdByKey?: Record<string, string>): string[] {
+  if (!block) return [];
+  const ids = new Set<string>();
+  for (const id of asStringArray(block.concept_ids ?? block.conceptIds)) {
+    ids.add(id);
+  }
+  const keyMap = conceptIdByKey ?? {};
+  for (const keyRaw of asStringArray(block.concept_keys ?? block.conceptKeys)) {
+    const key = keyRaw.toLowerCase().trim();
+    const resolved = safeString(keyMap[key]).trim();
+    if (resolved) ids.add(resolved);
+  }
+  if (Array.isArray(block.concepts)) {
+    for (const concept of block.concepts) {
+      if (!concept || typeof concept !== "object" || Array.isArray(concept)) continue;
+      const maybeID = safeString((concept as { id?: unknown; concept_id?: unknown }).id ?? (concept as { concept_id?: unknown }).concept_id).trim();
+      if (maybeID) ids.add(maybeID);
+    }
+  }
+  return Array.from(ids);
 }
 
 function getErrorMessage(err: unknown, fallback: string) {
@@ -502,6 +540,9 @@ export function QuickCheck({
   answerMd,
   kind,
   options,
+  promptId,
+  promptInstanceId,
+  correlationId,
 }: {
   pathNodeId?: string;
   blockId?: string;
@@ -509,6 +550,9 @@ export function QuickCheck({
   answerMd?: string;
   kind?: unknown;
   options?: unknown;
+  promptId?: string;
+  promptInstanceId?: string;
+  correlationId?: string;
 }) {
   const [answer, setAnswer] = useState("");
   const [result, setResult] = useState<QuickCheckAttemptResult | null>(null);
@@ -569,12 +613,17 @@ export function QuickCheck({
       setLoadingAction(action);
       const t0 =
         typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+      const clientEventID = generateIdempotencyKey();
+      const resolvedPromptID = safeString(promptId).trim();
+      const resolvedPromptInstanceID = safeString(promptInstanceId).trim() || resolvedPromptID;
+      const resolvedCorrelationID =
+        safeString(correlationId).trim() || (resolvedPromptID ? `prompt:${resolvedPromptID}` : `evt:${clientEventID}`);
 
       try {
         const res = await attemptQuickCheck(String(pathNodeId), String(blockId), {
           action,
           answer,
-          client_event_id: generateIdempotencyKey(),
+          client_event_id: clientEventID,
           occurred_at: new Date().toISOString(),
           latency_ms: Math.max(
             0,
@@ -584,6 +633,9 @@ export function QuickCheck({
                 : Date.now()) - t0
             )
           ),
+          correlation_id: resolvedCorrelationID,
+          prompt_id: resolvedPromptID || undefined,
+          prompt_instance_id: resolvedPromptInstanceID || undefined,
         });
         if (!res) throw new Error("Empty response");
         setResult(res);
@@ -593,7 +645,7 @@ export function QuickCheck({
         setLoadingAction(null);
       }
     },
-    [answer, blockId, canUseBackend, choiceOptions, isChoiceMode, pathNodeId]
+    [answer, blockId, canUseBackend, choiceOptions, correlationId, isChoiceMode, pathNodeId, promptId, promptInstanceId]
   );
 
   return (
@@ -708,11 +760,64 @@ export function QuickCheck({
   );
 }
 
-export function Flashcard({ frontMd, backMd }: { frontMd?: string; backMd?: string }) {
+type FlashcardIntent = "knew" | "unsure" | "did_not_know";
+
+export function Flashcard({
+  frontMd,
+  backMd,
+  pathNodeId,
+  blockId,
+  conceptIds,
+  promptId,
+  promptInstanceId,
+  correlationId,
+  onIntentSubmitted,
+}: {
+  frontMd?: string;
+  backMd?: string;
+  pathNodeId?: string;
+  blockId?: string;
+  conceptIds?: string[];
+  promptId?: string;
+  promptInstanceId?: string;
+  correlationId?: string;
+  onIntentSubmitted?: (intent: FlashcardIntent) => void;
+}) {
   const [showBack, setShowBack] = useState(false);
+  const [submittedIntent, setSubmittedIntent] = useState<FlashcardIntent | "">("");
   const front = safeString(frontMd).trim();
   const back = safeString(backMd).trim();
   const body = showBack ? back : front;
+  const submitIntent = useCallback(
+    (intent: FlashcardIntent) => {
+      if (!showBack || submittedIntent) return;
+      const normalizedBlockID = safeString(blockId).trim();
+      const normalizedPromptID = safeString(promptId).trim();
+      const normalizedPromptInstanceID = safeString(promptInstanceId).trim() || normalizedPromptID;
+      const normalizedCorrelationID =
+        safeString(correlationId).trim() ||
+        (normalizedPromptID ? `prompt:${normalizedPromptID}` : `flashcard:${generateIdempotencyKey()}`);
+      const normalizedConceptIDs = Array.isArray(conceptIds) ? conceptIds.filter(Boolean) : [];
+      queueEvent({
+        type: "flashcard_reviewed",
+        pathNodeId: safeString(pathNodeId).trim() || undefined,
+        conceptIds: normalizedConceptIDs.length > 0 ? normalizedConceptIDs : undefined,
+        data: {
+          block_id: normalizedBlockID,
+          intent,
+          revealed: true,
+          source: normalizedPromptID ? "runtime_prompt_flashcard" : "flashcard_inline",
+          ...(normalizedPromptID ? { prompt_id: normalizedPromptID } : {}),
+          ...(normalizedPromptInstanceID ? { prompt_instance_id: normalizedPromptInstanceID } : {}),
+          correlation_id: normalizedCorrelationID,
+        },
+      });
+      void flushEvents().catch(() => undefined);
+      setSubmittedIntent(intent);
+      onIntentSubmitted?.(intent);
+    },
+    [blockId, conceptIds, correlationId, onIntentSubmitted, pathNodeId, promptId, promptInstanceId, showBack, submittedIntent]
+  );
   return (
     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -736,6 +841,53 @@ export function Flashcard({ frontMd, backMd }: { frontMd?: string; backMd?: stri
         >
           {showBack ? "Show front" : "Show answer"}
         </Button>
+        {showBack ? (
+          <>
+            <Button
+              type="button"
+              variant={submittedIntent === "knew" ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => submitIntent("knew")}
+              disabled={Boolean(submittedIntent)}
+            >
+              I knew it
+            </Button>
+            <Button
+              type="button"
+              variant={submittedIntent === "unsure" ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => submitIntent("unsure")}
+              disabled={Boolean(submittedIntent)}
+            >
+              Not sure
+            </Button>
+            <Button
+              type="button"
+              variant={submittedIntent === "did_not_know" ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => submitIntent("did_not_know")}
+              disabled={Boolean(submittedIntent)}
+            >
+              Didn&apos;t know
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {submittedIntent ? (
+        <div className="mt-2 text-xs text-muted-foreground">
+          Saved: {submittedIntent === "knew" ? "I knew it" : submittedIntent === "unsure" ? "Not sure" : "Didn't know"}
+        </div>
+      ) : null}
+      {!submittedIntent && showBack ? (
+        <div className="mt-2 text-xs text-muted-foreground">Choose your recall level to continue.</div>
+      ) : null}
+      {showBack && !safeString(pathNodeId).trim() ? (
+        <div className="mt-2 text-xs text-muted-foreground">
+          Flashcard feedback is local because lesson context is missing.
+        </div>
+      ) : null}
+      <div className="sr-only" aria-live="polite">
+        {submittedIntent ? `flashcard intent submitted: ${submittedIntent}` : ""}
       </div>
     </div>
   );
@@ -868,6 +1020,8 @@ export function NodeDocRenderer({
   undoableBlocks = {},
   interactiveMode = "inline",
   completedInteractiveBlocks = {},
+  runtimeFallbackInteractiveBlocks = {},
+  conceptIdByKey = {},
   onLike,
   onDislike,
   onRegenerate,
@@ -908,7 +1062,8 @@ export function NodeDocRenderer({
       const blockId = safeString(b?.id) || String(i);
       const isInteractive = type === "quick_check" || type === "flashcard";
       const isCompleted = Boolean(blockId && completedInteractiveBlocks[blockId]);
-      if (interactiveMode === "runtime" && isInteractive && !isCompleted) {
+      const runtimeFallbackVisible = Boolean(blockId && runtimeFallbackInteractiveBlocks[blockId]);
+      if (interactiveMode === "runtime" && isInteractive && !isCompleted && !runtimeFallbackVisible) {
         return null;
       }
       const isPending = Boolean(pendingBlocks?.[blockId]);
@@ -1414,7 +1569,16 @@ export function NodeDocRenderer({
             </CompletedInteractive>
           );
         }
-        return wrap(<Flashcard frontMd={b?.front_md} backMd={b?.back_md} />);
+        const conceptIds = extractBlockConceptIds(b, conceptIdByKey);
+        return wrap(
+          <Flashcard
+            pathNodeId={pathNodeId}
+            blockId={blockId}
+            conceptIds={conceptIds}
+            frontMd={b?.front_md}
+            backMd={b?.back_md}
+          />
+        );
       }
 
       return null;
@@ -1422,6 +1586,7 @@ export function NodeDocRenderer({
     [
       blockFeedback,
       completedInteractiveBlocks,
+      conceptIdByKey,
       editBusy,
       interactiveMode,
       onChat,
@@ -1435,6 +1600,7 @@ export function NodeDocRenderer({
       pathNodeId,
       pendingBlocks,
       pendingEdit,
+      runtimeFallbackInteractiveBlocks,
       undoableBlocks,
     ]
   );

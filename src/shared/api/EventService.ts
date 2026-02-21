@@ -5,6 +5,9 @@ import type { ClientEvent, EventIngestResult } from "@/shared/types/models";
 function normalizeEvent(e: ClientEvent): Record<string, unknown> {
   const out: Record<string, unknown> = { type: e.type };
   if (e.clientEventId) out.client_event_id = e.clientEventId;
+  if (typeof e.eventVersion === "number" && Number.isFinite(e.eventVersion)) {
+    out.event_version = Math.max(1, Math.trunc(e.eventVersion));
+  }
   if (e.occurredAt) out.occurred_at = e.occurredAt;
   if (e.pathId) out.path_id = e.pathId;
   if (e.pathNodeId) out.path_node_id = e.pathNodeId;

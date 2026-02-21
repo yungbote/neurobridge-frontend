@@ -49,6 +49,7 @@ export interface RuntimePromptPayload {
   reason?: string;
   prompt_id?: string;
   created_at?: string;
+  payload_version?: number;
   break_min?: number;
   break_max?: number;
 }

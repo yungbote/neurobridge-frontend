@@ -16,6 +16,19 @@ type PathNodeRecord = BackendPathNode & Partial<PathNode>;
 type ConceptRecord = BackendConcept & Partial<Concept>;
 type ConceptEdgeRecord = BackendConceptEdge & Partial<ConceptEdge>;
 
+function safeParseJSON(v: unknown): unknown {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function mapPath(raw: BackendPath | Path | null | undefined): Path | null {
   if (!raw) return null;
   const row = raw as PathRecord;
@@ -69,6 +82,9 @@ export function mapPath(raw: BackendPath | Path | null | undefined): Path | null
 export function mapPathNode(raw: BackendPathNode | PathNode | null | undefined): PathNode | null {
   if (!raw) return null;
   const row = raw as PathNodeRecord;
+  const docStatusRaw = safeParseJSON(row.doc_status ?? row.docStatus);
+  const unlockEstimateRaw = safeParseJSON(row.unlock_estimate ?? row.unlockEstimate);
+  const unlockRequirementsRaw = safeParseJSON(row.unlock_requirements ?? row.unlockRequirements);
   return {
     id: String(row.id),
     pathId: (row.path_id ?? row.pathId ?? null) as string | null,
@@ -81,6 +97,14 @@ export function mapPathNode(raw: BackendPathNode | PathNode | null | undefined):
     avatarAssetId: (row.avatar_asset_id ?? row.avatarAssetId ?? null) as string | null,
     metadata: (row.metadata ?? null) as PathNode["metadata"],
     contentJson: (row.content_json ?? row.contentJson ?? null) as PathNode["contentJson"],
+    availabilityStatus: (row.availability_status ?? row.availabilityStatus ?? null) as string | null,
+    availabilityReason: (row.availability_reason ?? row.availabilityReason ?? null) as string | null,
+    docStatus: (docStatusRaw ?? null) as PathNode["docStatus"],
+    unlockEstimate: (unlockEstimateRaw ?? null) as PathNode["unlockEstimate"],
+    unlockRequirements: (unlockRequirementsRaw ?? null) as PathNode["unlockRequirements"],
+    unlockSource: (row.unlock_source ?? row.unlockSource ?? null) as string | null,
+    unlockPolicy: (row.unlock_policy ?? row.unlockPolicy ?? null) as string | null,
+    lastEvalAt: (row.last_eval_at ?? row.lastEvalAt ?? null) as string | null,
     createdAt: (row.created_at ?? row.createdAt ?? null) as string | null,
     updatedAt: (row.updated_at ?? row.updatedAt ?? null) as string | null,
   };

@@ -13,7 +13,7 @@ import { cn } from "@/shared/lib/utils";
 import { Skeleton, SkeletonText } from "@/shared/ui/skeleton";
 
 import { createChatThread, getChatThread, listChatMessages, sendChatMessage } from "@/shared/api/ChatService";
-import { queueEvent } from "@/shared/services/EventQueue";
+import { flushEvents, queueEvent } from "@/shared/services/EventQueue";
 import { queueSessionPatch } from "@/shared/services/SessionStateTracker";
 import {
   trackEngagementFunnelStep,
@@ -24,7 +24,7 @@ import { getConceptGraph } from "@/shared/api/PathService";
 import {
   enqueuePathNodeDocPatch,
   generateDrillForNode,
-  getPathNodeDoc,
+  getPathNodeDocEnvelope,
   listDrillsForNode,
   listPathNodeDocRevisions,
 } from "@/shared/api/PathNodeService";
@@ -84,6 +84,11 @@ type LineRect = {
 type LineState = LineRect & {
   blockId: string;
   centerY: number;
+};
+
+type GazeLineMatch = LineRect & {
+  dist: number;
+  inside: boolean;
 };
 
 type ProgressState = "idle" | "progressing" | "scanning" | "searching";
@@ -147,6 +152,9 @@ const PROGRESS_MIN_FORWARD_RATIO = 0.7;
 const PROGRESS_MIN_REGRESSION = 2;
 const PROGRESS_ACTIVE_CHANGE_WINDOW_MS = 5000;
 const PROGRESS_ACTIVE_CHANGE_MIN = 4;
+const PASSIVE_EVENT_VERSION = 2;
+const RUNTIME_PROMPT_EVENT_VERSION = 1;
+const RUNTIME_PROMPT_PAYLOAD_VERSION = 1;
 const rawGazeTickMs = Number(import.meta.env.VITE_EYE_TRACKING_TICK_MS);
 const GAZE_TICK_MS = Number.isFinite(rawGazeTickMs) && rawGazeTickMs > 0 ? rawGazeTickMs : 120;
 const rawGazeConfidence = Number(import.meta.env.VITE_EYE_TRACKING_MIN_CONFIDENCE);
@@ -200,6 +208,26 @@ const rawLineSnapStrict = String(import.meta.env.VITE_EYE_TRACKING_LINE_SNAP_STR
 const LINE_SNAP_STRICT = !["false", "0", "no"].includes(rawLineSnapStrict);
 const GAZE_BIAS_MAX = 80;
 const GAZE_BIAS_ALPHA = 0.12;
+
+function normalizePassiveBlockKind(raw: unknown): string {
+  const value = String(raw ?? "").trim().toLowerCase();
+  switch (value) {
+    case "paragraph":
+    case "callout":
+    case "example":
+    case "diagram":
+    case "table":
+    case "code":
+    case "list":
+    case "heading":
+    case "quote":
+    case "quick_check":
+    case "flashcard":
+      return value;
+    default:
+      return "unknown";
+  }
+}
 
 export function PathNodePageSkeleton({ embedded = false }: { embedded?: boolean } = {}) {
   const body = (
@@ -747,11 +775,18 @@ export default function PathNodePage() {
   const [loading, setLoading] = useState(false);
   const [node, setNode] = useState<PathNode | null>(null);
   const [doc, setDoc] = useState<JsonInput>(null);
+  const [docStatus, setDocStatus] = useState<Record<string, unknown> | null>(null);
+  const [docAvailability, setDocAvailability] = useState<{
+    status: string;
+    reason: string;
+    blocked: boolean;
+  } | null>(null);
   const [path, setPath] = useState<Path | null>(null);
   const [drills, setDrills] = useState<DrillSpec[]>([]);
   const [err, setErr] = useState<unknown | null>(null);
   const [runtimePrompt, setRuntimePrompt] = useState<RuntimePromptPayload | null>(null);
   const [completedInteractiveBlocks, setCompletedInteractiveBlocks] = useState<Record<string, boolean>>({});
+  const [shownInteractiveBlocks, setShownInteractiveBlocks] = useState<Record<string, boolean>>({});
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState("");
@@ -843,7 +878,12 @@ export default function PathNodePage() {
   const scrollVelocityRef = useRef<number>(0);
   const readCreditsRef = useRef<Map<string, number>>(new Map());
   const readBlocksRef = useRef<Set<string>>(new Set());
+  const viewedBlocksRef = useRef<Set<string>>(new Set());
   const engagedBlocksRef = useRef<Set<string>>(new Set());
+  const emittedPassiveLogicalIDsRef = useRef<Set<string>>(new Set());
+  const passiveSessionTokenRef = useRef<string>("");
+  const lastScrollEventSignatureRef = useRef<string>("");
+  const blockKindByIDRef = useRef<Map<string, string>>(new Map());
   const engagementFunnelSeenRef = useRef<Set<string>>(new Set());
   const engagementFunnelCompletedRef = useRef<Set<string>>(new Set());
   const lessonFunnelOpenRef = useRef(false);
@@ -860,6 +900,7 @@ export default function PathNodePage() {
     regressionSeq: ProgressEntry[];
     forwardCount: number;
     regressionCount: number;
+    progressingSince: number;
     lastProgressAt: number;
     lastEngageAt: number;
     lastCompleteAt: number;
@@ -1068,7 +1109,7 @@ export default function PathNodePage() {
   const nodeOpenEventKeyRef = useRef<string>("");
 
   const resolveScrollContainer = useCallback(() => {
-    let el = docContainerRef.current;
+    let el: HTMLElement | null = docContainerRef.current;
     while (el && el !== document.body) {
       const style = window.getComputedStyle(el);
       const overflowY = style.overflowY;
@@ -1170,16 +1211,16 @@ export default function PathNodePage() {
     }
     let bestInside: { id: string; ratio: number } | null = null;
     let bestNear: { id: string; distance: number } | null = null;
-    blockBoundsRef.current.forEach((bounds, id) => {
-      if (!id) return;
-      if (GAZE_BLOCK_TTL_MS > 0 && now - (bounds.seenAt || 0) > GAZE_BLOCK_TTL_MS) return;
+    for (const [id, bounds] of blockBoundsRef.current.entries()) {
+      if (!id) continue;
+      if (GAZE_BLOCK_TTL_MS > 0 && now - (bounds.seenAt || 0) > GAZE_BLOCK_TTL_MS) continue;
       const inside = x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
       const ratio = blockMetricsRef.current.get(id)?.ratio ?? 0;
       if (inside) {
         if (!bestInside || ratio > bestInside.ratio) {
           bestInside = { id, ratio };
         }
-        return;
+        continue;
       }
       const centerX = (bounds.left + bounds.right) * 0.5;
       const centerY = (bounds.top + bounds.bottom) * 0.5;
@@ -1187,7 +1228,7 @@ export default function PathNodePage() {
       if (!bestNear || dist < bestNear.distance) {
         bestNear = { id, distance: dist };
       }
-    });
+    }
     return bestInside?.id || bestNear?.id || "";
   }, []);
 
@@ -1208,7 +1249,7 @@ export default function PathNodePage() {
   );
 
   const findGazeLine = useCallback(
-    (blockId: string, x: number, y: number) => {
+    (blockId: string, x: number, y: number): GazeLineMatch | null => {
       const lines = getBlockLines(blockId);
       if (!lines || lines.length === 0) return null;
       let best: { line: LineRect; dist: number; inside: boolean } | null = null;
@@ -1238,10 +1279,10 @@ export default function PathNodePage() {
     (x: number, y: number, options?: { force?: boolean }) => {
       const force = Boolean(options?.force);
       if (!GAZE_SNAP_ENABLED) {
-        return { x, y, snap: "none" as const, blockId: "", line: null as LineRect | null };
+        return { x, y, snap: "none" as const, blockId: "", line: null as GazeLineMatch | null };
       }
       const blockId = findGazeBlock(x, y);
-      if (!blockId) return { x, y, snap: "none" as const, blockId: "", line: null as LineRect | null };
+      if (!blockId) return { x, y, snap: "none" as const, blockId: "", line: null as GazeLineMatch | null };
       const line = findGazeLine(blockId, x, y);
       if (line && (force || line.inside || line.dist <= GAZE_SNAP_LINE_MAX_DIST)) {
         const lineCenterX = (line.left + line.right) * 0.5;
@@ -1258,7 +1299,7 @@ export default function PathNodePage() {
           return { x: centerX, y: centerY, snap: "block" as const, blockId, line: null };
         }
       }
-      return { x, y, snap: "none" as const, blockId, line: null as LineRect | null };
+      return { x, y, snap: "none" as const, blockId, line: null as GazeLineMatch | null };
     },
     [findGazeBlock, findGazeLine]
   );
@@ -1557,7 +1598,7 @@ export default function PathNodePage() {
       const el = (scrollRoot ?? document).querySelector<HTMLElement>(`[data-doc-block-id="${escaped}"]`);
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      if (scrollRoot && scrollRoot !== window) {
+      if (scrollRoot) {
         const rootRect = scrollRoot.getBoundingClientRect();
         const top = rect.top - rootRect.top + (scrollRoot.scrollTop || 0) - 80;
         scrollRoot.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
@@ -1586,8 +1627,23 @@ export default function PathNodePage() {
   const loadDoc = useCallback(async (): Promise<JsonInput | null> => {
     if (!nodeId) return null;
     try {
-      return await getPathNodeDoc(nodeId);
-    } catch {
+      const payload = await getPathNodeDocEnvelope(nodeId);
+      const status = String(payload.availability_status || "").trim().toLowerCase();
+      const reason = String(payload.availability_reason || "").trim().toLowerCase();
+      setDocStatus((safeParseJSON(payload.doc_status) as Record<string, unknown> | null) ?? null);
+      setDocAvailability({
+        status,
+        reason,
+        blocked: payload.http_status === 409 || status === "blocked" || payload.error_code === "prereq_gate_blocked",
+      });
+      if (payload.http_status === 409 || status === "blocked" || payload.error_code === "prereq_gate_blocked") {
+        return null;
+      }
+      return (payload.doc ?? null) as JsonInput | null;
+    } catch (e) {
+      setDocAvailability(null);
+      setDocStatus(null);
+      console.warn("[PathNodePage] load doc failed:", e);
       return null;
     }
   }, [nodeId]);
@@ -1608,6 +1664,8 @@ export default function PathNodePage() {
   useEffect(() => {
     docPollAttemptsRef.current = 0;
     clearDocPoll();
+    setDocStatus(null);
+    setDocAvailability(null);
   }, [nodeId, clearDocPoll]);
 
   useEffect(() => {
@@ -1618,7 +1676,7 @@ export default function PathNodePage() {
   }, [doc, clearDocPoll]);
 
   useEffect(() => {
-    if (!nodeId || doc) return;
+    if (!nodeId || doc || docAvailability?.blocked) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -1646,7 +1704,7 @@ export default function PathNodePage() {
       cancelled = true;
       clearDocPoll();
     };
-  }, [clearDocPoll, doc, loadDoc, nodeId]);
+  }, [clearDocPoll, doc, docAvailability?.blocked, loadDoc, nodeId]);
 
   useEffect(() => {
     if (!nodeId) return;
@@ -1691,10 +1749,19 @@ export default function PathNodePage() {
   }, [doc]);
 
   useEffect(() => {
+    passiveSessionTokenRef.current = `${String(nodeId || "").trim() || "node"}:${Date.now()}`;
+    emittedPassiveLogicalIDsRef.current.clear();
+    lastScrollEventSignatureRef.current = "";
+  }, [nodeId]);
+
+  useEffect(() => {
     readTargetSecondsRef.current = new Map();
     readCreditsRef.current.clear();
     readBlocksRef.current.clear();
+    viewedBlocksRef.current.clear();
     engagedBlocksRef.current.clear();
+    emittedPassiveLogicalIDsRef.current.clear();
+    lastScrollEventSignatureRef.current = "";
     lineDwellRef.current.clear();
     lineCreditsRef.current.clear();
     blockLineCreditsRef.current.clear();
@@ -1709,6 +1776,7 @@ export default function PathNodePage() {
       regressionSeq: [],
       forwardCount: 0,
       regressionCount: 0,
+      progressingSince: 0,
       lastProgressAt: 0,
       lastEngageAt: 0,
       lastCompleteAt: 0,
@@ -1764,6 +1832,16 @@ export default function PathNodePage() {
     return map;
   }, [docBlocks]);
 
+  useEffect(() => {
+    const map = new Map<string, string>();
+    docBlocks.forEach((b) => {
+      const id = String(b?.id ?? "").trim();
+      if (!id) return;
+      map.set(id, normalizePassiveBlockKind((b as Record<string, unknown>)?.type));
+    });
+    blockKindByIDRef.current = map;
+  }, [docBlocks]);
+
   const getPromptMissingDeps = useCallback(
     (blockId: string): string[] => {
       const id = String(blockId || "").trim();
@@ -1774,7 +1852,9 @@ export default function PathNodePage() {
         block.trigger_after_block_ids ?? block.triggerAfterBlockIds ?? []
       );
       if (triggerAfter.length === 0) return [];
-      return triggerAfter.filter((dep) => !readBlocksRef.current.has(dep));
+      return triggerAfter.filter(
+        (dep) => !readBlocksRef.current.has(dep) && !viewedBlocksRef.current.has(dep)
+      );
     },
     [blockById]
   );
@@ -1978,6 +2058,15 @@ export default function PathNodePage() {
     if (!id) return null;
     return blockById.get(id) ?? null;
   }, [blockById, runtimePrompt?.block_id]);
+  const runtimePromptRenderable = useMemo(() => {
+    if (!runtimePrompt?.prompt_id) return true;
+    const promptType = String(runtimePrompt.type ?? "").trim().toLowerCase();
+    if (promptType === "break") return true;
+    if (promptType === "quick_check" || promptType === "flashcard") {
+      return Boolean(runtimePromptBlock);
+    }
+    return true;
+  }, [runtimePrompt?.prompt_id, runtimePrompt?.type, runtimePromptBlock]);
   const hasRuntimeInteractives = useMemo(
     () => docBlocks.some((b) => {
       const typ = String((b as Record<string, unknown>)?.type ?? "").trim().toLowerCase();
@@ -1986,7 +2075,36 @@ export default function PathNodePage() {
     [docBlocks]
   );
   const runtimeUnavailable = runtimeStateQuery.isError && !runtimeStateQuery.isFetching;
-  const interactiveMode = hasRuntimeInteractives && !runtimeUnavailable ? "runtime" : "inline";
+  const runtimeStateResolved = runtimeStateQuery.isSuccess && Boolean(runtimeStateQuery.data);
+  const runtimeFallbackInteractiveBlocks = useMemo(() => {
+    if (!hasRuntimeInteractives) return {};
+    if (runtimeUnavailable) return {};
+    if (!runtimeStateResolved) return {};
+    if (runtimePrompt?.prompt_id) {
+      if (!runtimePromptRenderable) {
+        const strandedID = String(runtimePrompt.block_id ?? "").trim();
+        return strandedID ? { [strandedID]: true } : {};
+      }
+      return {};
+    }
+    const out: Record<string, boolean> = {};
+    Object.keys(shownInteractiveBlocks).forEach((id) => {
+      if (!completedInteractiveBlocks[id]) {
+        out[id] = true;
+      }
+    });
+    return out;
+  }, [
+    completedInteractiveBlocks,
+    hasRuntimeInteractives,
+    runtimePrompt?.block_id,
+    runtimePrompt?.prompt_id,
+    runtimePromptRenderable,
+    runtimeStateResolved,
+    runtimeUnavailable,
+    shownInteractiveBlocks,
+  ]);
+  const interactiveMode = hasRuntimeInteractives && !runtimeUnavailable && runtimeStateResolved ? "runtime" : "inline";
 
   const conceptNameByKey = useMemo(() => {
     const map = new Map<string, string>();
@@ -2009,6 +2127,29 @@ export default function PathNodePage() {
     });
     return map;
   }, [conceptGraphQuery.data]);
+  const conceptIdByKeyRecord = useMemo(() => {
+    const out: Record<string, string> = {};
+    conceptIdByKey.forEach((id, key) => {
+      if (key && id) out[key] = id;
+    });
+    return out;
+  }, [conceptIdByKey]);
+  const runtimePromptBlockConceptIds = useMemo(() => {
+    if (!runtimePromptBlock || typeof runtimePromptBlock !== "object") return [];
+    const block = runtimePromptBlock as Record<string, unknown>;
+    const ids = new Set<string>();
+    toStringArray(block.concept_ids ?? block.conceptIds ?? []).forEach((id) => {
+      const trimmed = String(id || "").trim();
+      if (trimmed) ids.add(trimmed);
+    });
+    toStringArray(block.concept_keys ?? block.conceptKeys ?? []).forEach((keyRaw) => {
+      const key = String(keyRaw || "").trim().toLowerCase();
+      if (!key) return;
+      const id = conceptIdByKey.get(key);
+      if (id) ids.add(id);
+    });
+    return Array.from(ids);
+  }, [conceptIdByKey, runtimePromptBlock]);
 
   useEffect(() => {
     const data = runtimeStateQuery.data as Record<string, unknown> | undefined;
@@ -2020,20 +2161,43 @@ export default function PathNodePage() {
     const prompt = asRecord(prRuntime?.runtime_prompt);
     const status = String(prompt?.status ?? "").toLowerCase();
     if (prompt && String(prompt?.id ?? "").trim() && status === "pending") {
+      const nextPrompt = {
+        path_id: String((prompt?.path_id ?? pathId) || ""),
+        node_id: String(prompt?.node_id ?? ""),
+        block_id: String(prompt?.block_id ?? ""),
+        type: String(prompt?.type ?? ""),
+        reason: String(prompt?.reason ?? ""),
+        prompt_id: String(prompt?.id ?? ""),
+        created_at: String(prompt?.created_at ?? ""),
+        payload_version:
+          Number.isFinite(Number(prompt?.payload_version)) && Number(prompt?.payload_version) > 0
+            ? Math.trunc(Number(prompt?.payload_version))
+            : RUNTIME_PROMPT_PAYLOAD_VERSION,
+      };
+      const nextPromptID = String(nextPrompt.prompt_id || "").trim();
+      const currentPromptID = String(runtimePromptRef.current?.prompt_id || "").trim();
+      if (nextPromptID && nextPromptID !== currentPromptID) {
+        queueEvent({
+          type: "runtime_prompt_restored",
+          eventVersion: RUNTIME_PROMPT_EVENT_VERSION,
+          pathId: pathIdRef.current || pathId || undefined,
+          pathNodeId: nextPrompt.node_id || nodeId || undefined,
+          data: {
+            source: "runtime_state_sync",
+            prompt_id: nextPromptID,
+            prompt_instance_id: nextPromptID,
+            prompt_payload_version: nextPrompt.payload_version,
+            prompt_type: nextPrompt.type,
+            block_id: nextPrompt.block_id,
+            correlation_id: `prompt:${nextPromptID}`,
+          },
+        });
+      }
       setRuntimePrompt((prev) => {
-        const next = {
-          path_id: String((prompt?.path_id ?? pathId) || ""),
-          node_id: String(prompt?.node_id ?? ""),
-          block_id: String(prompt?.block_id ?? ""),
-          type: String(prompt?.type ?? ""),
-          reason: String(prompt?.reason ?? ""),
-          prompt_id: String(prompt?.id ?? ""),
-          created_at: String(prompt?.created_at ?? ""),
-        };
-        if (prev?.prompt_id && prev.prompt_id === next.prompt_id) {
+        if (prev?.prompt_id && prev.prompt_id === nextPrompt.prompt_id) {
           return prev;
         }
-        return next;
+        return nextPrompt;
       });
     } else {
       setRuntimePrompt((prev) => {
@@ -2044,14 +2208,33 @@ export default function PathNodePage() {
 
     const nrMeta = asRecord(nodeRun?.metadata);
     const nrRuntime = asRecord(nrMeta?.runtime);
+    toStringArray(nrRuntime?.read_blocks).forEach((id) => {
+      if (id) readBlocksRef.current.add(id);
+    });
+    toStringArray(nrRuntime?.viewed_blocks).forEach((id) => {
+      if (id) viewedBlocksRef.current.add(id);
+    });
     const completed = Array.isArray(nrRuntime?.completed_blocks) ? nrRuntime?.completed_blocks : [];
+    const shown = Array.isArray(nrRuntime?.shown_blocks) ? nrRuntime?.shown_blocks : [];
     const map: Record<string, boolean> = {};
+    const shownMap: Record<string, boolean> = {};
     completed.forEach((id: unknown) => {
       const s = String(id || "").trim();
       if (s) map[s] = true;
     });
+    shown.forEach((id: unknown) => {
+      const s = String(id || "").trim();
+      if (s) shownMap[s] = true;
+    });
     setCompletedInteractiveBlocks(map);
-  }, [pathId, runtimeStateQuery.data]);
+    setShownInteractiveBlocks(shownMap);
+  }, [nodeId, pathId, runtimeStateQuery.data]);
+
+  useEffect(() => {
+    setRuntimePrompt(null);
+    setCompletedInteractiveBlocks({});
+    setShownInteractiveBlocks({});
+  }, [nodeId]);
 
   useEffect(() => {
     if (!runtimePrompt?.prompt_id) return;
@@ -2468,9 +2651,13 @@ export default function PathNodePage() {
     }
     const allRead = Array.from(readBlocksRef.current);
     const trimmedRead = allRead.length > 80 ? allRead.slice(-80) : allRead;
+    const allViewed = Array.from(viewedBlocksRef.current);
+    const trimmedViewed = allViewed.length > 80 ? allViewed.slice(-80) : allViewed;
     return {
       read_blocks: trimmedRead,
       read_block_count: readBlocksRef.current.size,
+      viewed_blocks: trimmedViewed,
+      viewed_block_count: viewedBlocksRef.current.size,
       read_credit_top: topCredits,
       line_read_count: lineCreditsRef.current.size,
       line_credit_top: topLineCredits,
@@ -2743,6 +2930,13 @@ export default function PathNodePage() {
           lastReadIndex = idx;
         }
       });
+      let lastEngagedIndex = lastReadIndex;
+      viewedBlocksRef.current.forEach((id) => {
+        const idx = blockOrder.get(id);
+        if (typeof idx === "number" && idx > lastEngagedIndex) {
+          lastEngagedIndex = idx;
+        }
+      });
 
       let quickChecks = 0;
       let flashcards = 0;
@@ -2773,11 +2967,13 @@ export default function PathNodePage() {
         const triggerAfter = toStringArray(
           blockRecord.trigger_after_block_ids ?? blockRecord.triggerAfterBlockIds ?? []
         );
-        const missing = triggerAfter.filter((dep) => !readBlocksRef.current.has(dep));
+        const missing = triggerAfter.filter(
+          (dep) => !readBlocksRef.current.has(dep) && !viewedBlocksRef.current.has(dep)
+        );
         const ready =
           triggerAfter.length > 0
             ? missing.length === 0
-            : lastReadIndex >= 0 && blockIndex <= lastReadIndex;
+            : lastEngagedIndex >= 0 && blockIndex <= lastEngagedIndex;
         const shown = shownSet.has(id);
         const completed = completedSet.has(id);
 
@@ -3103,46 +3299,137 @@ export default function PathNodePage() {
     [flushSessionSync]
   );
 
+  const passiveProgressSnapshot = useCallback(() => {
+    const progress = progressRef.current;
+    const stateRaw = String(progress?.state ?? "").trim().toLowerCase();
+    const progressState: ProgressState | "unknown" =
+      stateRaw === "idle" || stateRaw === "progressing" || stateRaw === "scanning" || stateRaw === "searching"
+        ? (stateRaw as ProgressState)
+        : "unknown";
+    const progressConfidence = Math.min(1, Math.max(0, Math.round((progress?.confidence ?? 0) * 1000) / 1000));
+    return {
+      progress_state: progressState,
+      progress_confidence: progressConfidence,
+    };
+  }, []);
+
+  const passiveBlockContext = useCallback(
+    (blockID: string) => {
+      const id = String(blockID || "").trim();
+      const index = blockOrder.get(id);
+      return {
+        block_id: id,
+        block_kind: blockKindByIDRef.current.get(id) ?? "unknown",
+        block_index: typeof index === "number" ? index : null,
+      };
+    },
+    [blockOrder]
+  );
+
+  const passiveLogicalID = useCallback(
+    (eventType: "block_read" | "block_viewed", blockID: string) => {
+      const id = String(blockID || "").trim();
+      if (!id) return "";
+      const pathID = String(pathIdRef.current || "").trim();
+      const nodeID = String(nodeIdRef.current || nodeId || "").trim();
+      const sessionToken = passiveSessionTokenRef.current || "session";
+      return `${eventType}:v2:${pathID}:${nodeID}:${sessionToken}:${id}`;
+    },
+    [nodeId]
+  );
+
+  const emitScrollDepth = useCallback(
+    (reason: "unmount" | "pagehide" | "visibility_hidden" | "window_blur") => {
+      const currentNodeID = String(nodeIdRef.current || nodeId || "").trim();
+      if (!currentNodeID) return;
+      const dwellMs = Math.max(0, Date.now() - (openedAtRef.current || Date.now()));
+      const maxPercent = Math.max(0, Math.min(100, Math.round(maxScrollPercentRef.current || 0)));
+      const activeBlockID = String(currentBlockIdRef.current || "").trim();
+      const activeBlockKind = activeBlockID
+        ? blockKindByIDRef.current.get(activeBlockID) ?? "unknown"
+        : "unknown";
+      const progressMeta = passiveProgressSnapshot();
+      const signature = JSON.stringify({
+        node_id: currentNodeID,
+        max_percent: maxPercent,
+        dwell_bucket: Math.floor(dwellMs / 3000),
+        active_block_id: activeBlockID || "none",
+        progress_state: progressMeta.progress_state,
+        progress_confidence: progressMeta.progress_confidence,
+        reason,
+      });
+      if (signature === lastScrollEventSignatureRef.current) {
+        return;
+      }
+      lastScrollEventSignatureRef.current = signature;
+      queueEvent({
+        type: "scroll_depth",
+        pathId: pathIdRef.current || "",
+        pathNodeId: currentNodeID,
+        conceptIds: nodeConceptIdsRef.current,
+        data: {
+          source: "node_doc",
+          source_reason: reason,
+          percent: maxPercent,
+          max_percent: maxPercent,
+          dwell_ms: dwellMs,
+          active_block_id: activeBlockID || "none",
+          active_block_kind: normalizePassiveBlockKind(activeBlockKind),
+          block_id: activeBlockID || "none",
+          block_kind: normalizePassiveBlockKind(activeBlockKind),
+          read_credit: activeBlockID ? readCreditsRef.current.get(activeBlockID) ?? 0 : 0,
+          engagement_confidence: Math.min(1, Math.max(0, Math.round((currentBlockConfidenceRef.current || 0) * 1000) / 1000)),
+          scroll_velocity_px_s: Math.round((scrollVelocityRef.current || 0) * 10) / 10,
+          observed_at: new Date().toISOString(),
+          event_version: PASSIVE_EVENT_VERSION,
+          ...progressMeta,
+        },
+      });
+    },
+    [nodeId, passiveProgressSnapshot]
+  );
+
   const markBlockRead = useCallback(
     (blockId: string, source: "behavioral" | "gaze", credit: number) => {
       const id = String(blockId || "").trim();
       if (!id || readBlocksRef.current.has(id)) return;
+      const logicalEventID = passiveLogicalID("block_read", id);
+      if (logicalEventID && emittedPassiveLogicalIDsRef.current.has(logicalEventID)) {
+        return;
+      }
       readBlocksRef.current.add(id);
-      readCreditsRef.current.set(id, Math.max(credit, 1));
-      const progress = progressRef.current;
-      const progressState = progress?.state ?? "";
-      const progressConfidence = progress
-        ? Math.round(progress.confidence * 1000) / 1000
-        : undefined;
-      const includeProgressSignal =
-        progressState === "progressing" &&
-        typeof progressConfidence === "number" &&
-        progressConfidence > 0;
+      readCreditsRef.current.set(id, Math.min(1, Math.max(credit, 0)));
+      if (logicalEventID) {
+        emittedPassiveLogicalIDsRef.current.add(logicalEventID);
+      }
       const blockConceptIds = blockConceptIdsRef.current.get(id);
-      const conceptIds =
+      const conceptIDs =
         blockConceptIds && blockConceptIds.length > 0
           ? blockConceptIds
           : nodeConceptIdsRef.current;
+      const blockContext = passiveBlockContext(id);
       queueEvent({
         type: "block_read",
         pathId: pathIdRef.current || "",
         pathNodeId: nodeId || "",
-        conceptIds,
+        conceptIds: conceptIDs,
         data: {
-          block_id: id,
+          ...blockContext,
           read_credit: Math.min(1, Math.max(credit, 0)),
           source,
-          ...(includeProgressSignal
-            ? {
-                progress_state: progressState,
-                progress_confidence: progressConfidence,
-              }
-            : {}),
+          engagement_confidence: Math.min(
+            1,
+            Math.max(0, Math.round((currentBlockConfidenceRef.current || 0) * 1000) / 1000)
+          ),
+          observed_at: new Date().toISOString(),
+          event_version: PASSIVE_EVENT_VERSION,
+          ...(logicalEventID ? { logical_event_id: logicalEventID } : {}),
+          ...passiveProgressSnapshot(),
         },
       });
       scheduleSessionSync({ immediate: true });
     },
-    [nodeId, scheduleSessionSync]
+    [nodeId, passiveBlockContext, passiveLogicalID, passiveProgressSnapshot, scheduleSessionSync]
   );
 
   // Record exposure as aggregated scroll depth + dwell time (production-safe: one event per node view).
@@ -3151,6 +3438,7 @@ export default function PathNodePage() {
     openedAtRef.current = Date.now();
     maxScrollPercentRef.current = 0;
     currentScrollPercentRef.current = 0;
+    lastScrollEventSignatureRef.current = "";
 
     const scrollContainer = resolveScrollContainer();
     const onScroll = () => {
@@ -3181,11 +3469,28 @@ export default function PathNodePage() {
       scheduleSessionSync();
     };
 
+    const flushScrollSignal = (reason: "unmount" | "pagehide" | "visibility_hidden" | "window_blur") => {
+      emitScrollDepth(reason);
+      scheduleSessionSync({ immediate: true });
+      void flushEvents().catch(() => undefined);
+    };
+
+    const onPageHide = () => flushScrollSignal("pagehide");
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        flushScrollSignal("visibility_hidden");
+      }
+    };
+    const onBlur = () => flushScrollSignal("window_blur");
+
     if (scrollContainer) {
       scrollContainer.addEventListener("scroll", onScroll, { passive: true });
     } else {
       window.addEventListener("scroll", onScroll, { passive: true });
     }
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     onScroll();
 
     return () => {
@@ -3194,22 +3499,12 @@ export default function PathNodePage() {
       } else {
         window.removeEventListener("scroll", onScroll);
       }
-      const dwellMs = Math.max(0, Date.now() - (openedAtRef.current || Date.now()));
-      const maxPercent = Math.max(0, Math.min(100, Math.round(maxScrollPercentRef.current || 0)));
-      queueEvent({
-        type: "scroll_depth",
-        pathId: pathIdRef.current || "",
-        pathNodeId: nodeId,
-        conceptIds: nodeConceptIdsRef.current,
-        data: {
-          source: "node_doc",
-          percent: maxPercent,
-          max_percent: maxPercent,
-          dwell_ms: dwellMs,
-        },
-      });
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      flushScrollSignal("unmount");
     };
-  }, [nodeId, resolveScrollContainer, scheduleSessionSync]);
+  }, [emitScrollDepth, nodeId, resolveScrollContainer, scheduleSessionSync]);
 
   useEffect(() => {
     if (!nodeId || docBlocks.length === 0) return;
@@ -3306,7 +3601,7 @@ export default function PathNodePage() {
             0.2,
             1
           );
-          gazeBlockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
+          gazeBlockId = snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y) || "";
           const gazeLine = snapped.line ?? (gazeBlockId ? findGazeLine(gazeBlockId, snapPoint.x, snapPoint.y) : null);
           if (gazeLine && gazeLine.inside) {
             source = "gaze";
@@ -3562,10 +3857,6 @@ export default function PathNodePage() {
       }
 
       if (pendingViewed && !engagedBlocksRef.current.has(pendingViewed.id)) {
-        const progressState = state;
-        const progressConfidence = Math.round(confidence * 1000) / 1000;
-        const includeProgressSignal =
-          progressState === "progressing" && progressConfidence > 0;
         if (!engagementFunnelSeenRef.current.has(pendingViewed.id)) {
           engagementFunnelSeenRef.current.add(pendingViewed.id);
           trackEngagementFunnelStep("lesson", "block_engaged", {
@@ -3580,29 +3871,40 @@ export default function PathNodePage() {
           });
         }
         engagedBlocksRef.current.add(pendingViewed.id);
+        viewedBlocksRef.current.add(pendingViewed.id);
         const blockConceptIds = blockConceptIdsRef.current.get(pendingViewed.id);
         const conceptIds =
           blockConceptIds && blockConceptIds.length > 0
             ? blockConceptIds
             : nodeConceptIdsRef.current;
-        queueEvent({
-          type: "block_viewed",
-          pathId: pathIdRef.current || "",
-          pathNodeId: nodeId || "",
-          conceptIds,
-          data: {
-            block_id: pendingViewed.id,
-            dwell_ms: pendingViewed.dwellMs,
-            confidence: Math.round(pendingViewed.activeConfidence * 1000) / 1000,
-            ratio: Math.round(pendingViewed.ratio * 1000) / 1000,
-            ...(includeProgressSignal
-              ? {
-                  progress_state: progressState,
-                  progress_confidence: progressConfidence,
-                }
-              : {}),
-          },
-        });
+        const logicalEventID = passiveLogicalID("block_viewed", pendingViewed.id);
+        const alreadyEmitted = logicalEventID && emittedPassiveLogicalIDsRef.current.has(logicalEventID);
+        if (!alreadyEmitted) {
+          if (logicalEventID) {
+            emittedPassiveLogicalIDsRef.current.add(logicalEventID);
+          }
+          const blockContext = passiveBlockContext(pendingViewed.id);
+          queueEvent({
+            type: "block_viewed",
+            pathId: pathIdRef.current || "",
+            pathNodeId: nodeId || "",
+            conceptIds,
+            data: {
+              ...blockContext,
+              dwell_ms: pendingViewed.dwellMs,
+              confidence: Math.round(pendingViewed.activeConfidence * 1000) / 1000,
+              ratio: Math.round(pendingViewed.ratio * 1000) / 1000,
+              engagement_confidence: Math.min(
+                1,
+                Math.max(0, Math.round((pendingViewed.activeConfidence || 0) * 1000) / 1000)
+              ),
+              observed_at: new Date(now).toISOString(),
+              event_version: PASSIVE_EVENT_VERSION,
+              ...(logicalEventID ? { logical_event_id: logicalEventID } : {}),
+              ...passiveProgressSnapshot(),
+            },
+          });
+        }
       }
 
       const signature = JSON.stringify({
@@ -3625,7 +3927,17 @@ export default function PathNodePage() {
     return () => {
       if (timer != null) window.clearInterval(timer);
     };
-  }, [blockOrder, computeEngageMinMs, docBlocks.length, eyeTrackingEnabled, nodeId, scheduleSessionSync]);
+  }, [
+    blockOrder,
+    computeEngageMinMs,
+    docBlocks.length,
+    eyeTrackingEnabled,
+    nodeId,
+    passiveBlockContext,
+    passiveLogicalID,
+    passiveProgressSnapshot,
+    scheduleSessionSync,
+  ]);
 
   useEffect(() => {
     if (!nodeId) return;
@@ -3664,7 +3976,11 @@ export default function PathNodePage() {
       const snapped = getSnappedGaze(corrected.x, corrected.y);
       const snapPoint = snapped.snap !== "none" ? { x: snapped.x, y: snapped.y } : corrected;
       const line = (lineStateOk ? lineState?.line ?? null : null) ?? strictFallbackLine ?? snapped.line ?? null;
-      const blockId = line?.blockId || snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
+      const lineBlockID =
+        line && typeof line === "object" && "blockId" in line && typeof line.blockId === "string"
+          ? line.blockId
+          : "";
+      const blockId = lineBlockID || snapped.blockId || findGazeBlock(snapPoint.x, snapPoint.y);
       if (!blockId) return;
       const fallbackLine = line ?? findGazeLine(blockId, snapPoint.x, snapPoint.y);
       const lineCenterX = fallbackLine ? (fallbackLine.left + fallbackLine.right) * 0.5 : snapPoint.x;
@@ -4598,18 +4914,31 @@ export default function PathNodePage() {
   );
 
   const submitRuntimePromptDecision = useCallback(
-    async (decision: "completed" | "dismissed") => {
+    async (decision: "completed" | "dismissed", extras?: Record<string, string>) => {
       if (!runtimePrompt) return;
       const type = decision === "completed" ? "runtime_prompt_completed" : "runtime_prompt_dismissed";
+      const promptID = String(runtimePrompt.prompt_id || "").trim();
+      const eventData: Record<string, string> = {
+        prompt_id: promptID,
+        prompt_instance_id: promptID,
+        prompt_type: String(runtimePrompt.type || ""),
+        block_id: String(runtimePrompt.block_id || ""),
+        prompt_payload_version: String(
+          Number.isFinite(Number(runtimePrompt.payload_version)) && Number(runtimePrompt.payload_version) > 0
+            ? Math.trunc(Number(runtimePrompt.payload_version))
+            : RUNTIME_PROMPT_PAYLOAD_VERSION
+        ),
+        ...(extras ?? {}),
+      };
+      if (promptID) {
+        eventData.correlation_id = `prompt:${promptID}`;
+      }
       queueEvent({
         type,
+        eventVersion: RUNTIME_PROMPT_EVENT_VERSION,
         pathId: pathIdRef.current || undefined,
         pathNodeId: runtimePrompt.node_id || nodeId || undefined,
-        data: {
-          prompt_id: runtimePrompt.prompt_id,
-          prompt_type: runtimePrompt.type,
-          block_id: runtimePrompt.block_id,
-        },
+        data: eventData,
       });
       trackEngagementFunnelStep("lesson", decision === "completed" ? "prompt_completed" : "prompt_dismissed", {
         pathId: pathIdRef.current || undefined,
@@ -4631,6 +4960,17 @@ export default function PathNodePage() {
   if (loading && !node) {
     return <PathNodePageSkeleton />;
   }
+
+  const resolvedDocStatus = String((docStatus?.state ?? "") || "").trim().toLowerCase();
+  const docBlocked = Boolean(docAvailability?.blocked);
+  const docPending =
+    !doc &&
+    !docBlocked &&
+    (resolvedDocStatus === "building" ||
+      resolvedDocStatus === "pending" ||
+      resolvedDocStatus === "missing" ||
+      resolvedDocStatus === "stuck");
+  const docStatusReason = String((docStatus?.reason ?? docAvailability?.reason ?? "") || "").trim();
 
   return (
     <div className="page-surface">
@@ -4687,7 +5027,7 @@ export default function PathNodePage() {
               ) : null}
               {eyeTrackingEnabled && needsCalibration ? (
                 <Button
-                  size="xs"
+                  size="sm"
                   variant="outline"
                   className="h-6 rounded-full px-2 text-[10px] xs:text-[11px]"
                   onClick={() => setShowCalibration(true)}
@@ -4776,12 +5116,24 @@ export default function PathNodePage() {
               ref={docContainerRef}
               className="relative z-10 px-4 py-5 xs:px-5 xs:py-6 sm:px-6 sm:py-8 md:px-8 md:py-10"
             >
-              {doc ? (
+              {docBlocked ? (
+                <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-5 text-sm text-foreground">
+                  <div className="text-base font-semibold text-foreground">This lesson is currently blocked</div>
+                  <div className="mt-2 text-muted-foreground">
+                    Complete the prerequisite remediation to unlock this node.
+                  </div>
+                  {docStatusReason ? (
+                    <div className="mt-2 text-xs text-muted-foreground">Reason: {docStatusReason}</div>
+                  ) : null}
+                </div>
+              ) : doc ? (
                 <NodeDocRenderer
                   doc={doc}
                   pathNodeId={nodeId}
                   interactiveMode={interactiveMode}
                   completedInteractiveBlocks={completedInteractiveBlocks}
+                  runtimeFallbackInteractiveBlocks={runtimeFallbackInteractiveBlocks}
+                  conceptIdByKey={conceptIdByKeyRecord}
                   pendingBlocks={pendingBlocks}
                   pendingEdit={pendingEdit}
                   editBusy={pendingEditBusy}
@@ -4796,12 +5148,17 @@ export default function PathNodePage() {
                   onEditDeny={(_proposal) => void submitEditDecision("deny")}
                   onEditRefine={(_proposal, text) => void submitEditDecision("refine", text)}
                 />
+              ) : docPending ? (
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 text-sm text-muted-foreground">
+                  <div className="text-foreground">Lesson content is being prepared.</div>
+                  {docStatusReason ? <div className="mt-2 text-xs">Status: {docStatusReason}</div> : null}
+                </div>
               ) : (
                 <NodeContentRenderer contentJson={node?.contentJson} />
               )}
             </div>
 
-            {runtimePrompt && lessonOverlayRect ? (
+            {runtimePrompt && lessonOverlayRect && runtimePromptRenderable ? (
               <div
                 className="fixed z-40 overflow-hidden rounded-xl sm:rounded-2xl"
                 style={
@@ -4855,6 +5212,11 @@ export default function PathNodePage() {
                             answerMd={runtimePromptBlock?.answer_md as string}
                             kind={runtimePromptBlock?.kind}
                             options={runtimePromptBlock?.options}
+                            promptId={runtimePrompt.prompt_id}
+                            promptInstanceId={runtimePrompt.prompt_id}
+                            correlationId={
+                              runtimePrompt.prompt_id ? `prompt:${runtimePrompt.prompt_id}` : undefined
+                            }
                           />
                         ) : (
                           <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
@@ -4864,6 +5226,17 @@ export default function PathNodePage() {
                       ) : runtimePrompt?.type === "flashcard" ? (
                         runtimePromptBlock ? (
                           <Flashcard
+                            pathNodeId={runtimePrompt.node_id || nodeId || undefined}
+                            blockId={runtimePrompt.block_id}
+                            conceptIds={runtimePromptBlockConceptIds}
+                            promptId={runtimePrompt.prompt_id}
+                            promptInstanceId={runtimePrompt.prompt_id}
+                            correlationId={
+                              runtimePrompt.prompt_id ? `prompt:${runtimePrompt.prompt_id}` : undefined
+                            }
+                            onIntentSubmitted={(intent) =>
+                              void submitRuntimePromptDecision("completed", { intent })
+                            }
                             frontMd={runtimePromptBlock?.front_md as string}
                             backMd={runtimePromptBlock?.back_md as string}
                           />
@@ -4882,9 +5255,11 @@ export default function PathNodePage() {
                       >
                         Dismiss
                       </Button>
-                      <Button onClick={() => void submitRuntimePromptDecision("completed")}>
-                        Done
-                      </Button>
+                      {runtimePrompt?.type !== "flashcard" ? (
+                        <Button onClick={() => void submitRuntimePromptDecision("completed")}>
+                          Done
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </div>

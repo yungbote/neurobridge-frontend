@@ -3,6 +3,7 @@ import type { JsonInput } from "./common";
 export interface ClientEvent {
   clientEventId?: string;
   type: string;
+  eventVersion?: number;
   occurredAt?: string;
   pathId?: string;
   pathNodeId?: string;

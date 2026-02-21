@@ -92,6 +92,12 @@ function safeParseJSON(value: unknown): JsonRecord | null {
 
 function nodeContentState(node: PathNode | null | undefined): string {
   if (!node) return "";
+  const availability = String(node.availabilityStatus || "").trim().toLowerCase();
+  if (availability === "building" || availability === "listed_not_ready" || availability === "locked") {
+    return "pending";
+  }
+  if (availability === "blocked") return "blocked";
+  if (availability === "available" || availability === "soft_remediate") return "ready";
   const meta = safeParseJSON(node.metadata) ?? (node.metadata as JsonRecord | null) ?? null;
   if (!meta) return "";
   const raw = (meta["content_state"] ?? meta["contentState"] ?? "") as string;
@@ -819,8 +825,10 @@ export function AppSideBar() {
                             const isActive =
                               matchPath({ path: `/path-nodes/${n.id}`, end: false }, location.pathname) != null;
                             const contentState = nodeContentState(n);
+                            const availability = String(n?.availabilityStatus || "").trim().toLowerCase();
                             const isPending = contentState === "pending";
-                            const href = isPending ? null : `/path-nodes/${n.id}`;
+                            const isBlocked = contentState === "blocked" || availability === "locked";
+                            const href = isPending || isBlocked ? null : `/path-nodes/${n.id}`;
                             const indent = Math.min(depth, 4) * 14;
                             const showAvatarSkeleton = Boolean(activeBuild.showProgress && !hasChildren && !avatarUrl);
                             return (
@@ -829,10 +837,10 @@ export function AppSideBar() {
                                   <SidebarMenuSubButton
                                     asChild
                                     isActive={isActive}
-                                    aria-disabled={isPending || !href}
+                                    aria-disabled={isPending || isBlocked || !href}
                                     className={cn(
                                       "flex-1 pe-2 hover:bg-transparent hover:text-sidebar-foreground group-hover/menu-sub-item:text-sidebar-accent-foreground",
-                                      isPending && "opacity-50 cursor-default"
+                                      (isPending || isBlocked) && "opacity-50 cursor-default"
                                     )}
                                   >
                                     {href ? (
@@ -877,6 +885,11 @@ export function AppSideBar() {
                                           </span>
                                         )}
                                         <span className="truncate">{n.title || "Lesson"}</span>
+                                        {availability === "soft_remediate" ? (
+                                          <span className="ms-1 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-sidebar-foreground/80">
+                                            Soft
+                                          </span>
+                                        ) : null}
                                       </Link>
                                     ) : (
                                       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -911,6 +924,11 @@ export function AppSideBar() {
                                           </span>
                                         )}
                                         <span className="truncate">{n.title || "Lesson"}</span>
+                                        {isBlocked ? (
+                                          <span className="rounded-full border border-sidebar-border/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-sidebar-foreground/70">
+                                            Blocked
+                                          </span>
+                                        ) : null}
                                       </div>
                                     )}
                                   </SidebarMenuSubButton>
